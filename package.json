@@ -14,5 +14,11 @@
   "devDependencies": {
     "electron": "^45.3.3",
     "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.local.moviearchive",
+    "productName": "Movie Archive",
+    "files": ["src/**", "package.json"],
+    "win": { "target": "nsis" }
   }
 }
