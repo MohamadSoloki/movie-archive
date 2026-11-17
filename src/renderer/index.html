@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' poster: data:; style-src 'self'; script-src 'self'">
+  <title>Movie Archive</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="bar">
+    <h1 data-i18n="app_title"></h1>
+    <input id="q" type="search" data-i18n-placeholder="search_placeholder" autocomplete="off">
+    <button id="scan" type="button" class="primary" data-i18n="scan"></button>
+    <button id="fetch" type="button" class="primary" data-i18n="fetch_info"></button>
+    <span id="status" role="status"></span>
+    <button id="settings-btn" type="button" data-i18n="settings"></button>
+    <button id="lang" type="button"></button>
+  </header>
+
+  <aside id="rail">
+    <h2 data-i18n="drives"></h2>
+    <ul id="drives" class="plain"></ul>
+    <h2 data-i18n="folders"></h2>
+    <ul id="roots" class="plain"></ul>
+    <form id="add-root">
+      <input id="root-path" type="text" dir="ltr" data-i18n-placeholder="folder_path_placeholder">
+      <div class="row">
+        <button id="browse" type="button" data-i18n="browse"></button>
+        <button type="submit" class="primary" data-i18n="add_folder"></button>
+      </div>
+      <p id="rail-msg" class="msg" role="alert"></p>
+    </form>
+  </aside>
+
+  <main>
+    <p id="count" class="count"></p>
+    <div id="grid"></div>
+    <p id="empty" class="empty"></p>
+    <div id="sentinel"></div>
+  </main>
+
+  <section id="detail" hidden></section>
+
+  <dialog id="settings-dlg">
+    <form id="settings-form">
+      <h2 data-i18n="settings"></h2>
+      <label for="set-key" data-i18n="settings_omdb_key"></label>
+      <input id="set-key" type="password" dir="ltr" autocomplete="off">
+      <p class="help" data-i18n="settings_omdb_hint"></p>
+      <label for="set-patterns" data-i18n="settings_patterns"></label>
+      <textarea id="set-patterns" rows="4" dir="ltr"></textarea>
+      <p class="help" data-i18n="settings_patterns_hint"></p>
+      <label for="set-ignore" data-i18n="settings_ignore"></label>
+      <textarea id="set-ignore" rows="3" dir="ltr"></textarea>
+      <p class="help" data-i18n="settings_ignore_hint"></p>
+      <label for="set-collections" data-i18n="settings_collections"></label>
+      <textarea id="set-collections" rows="3" dir="ltr"></textarea>
+      <p class="help" data-i18n="settings_collections_hint"></p>
+      <div class="row end">
+        <button id="settings-cancel" type="button" data-i18n="close"></button>
+        <button type="submit" class="primary" data-i18n="save"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
