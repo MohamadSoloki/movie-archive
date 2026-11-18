@@ -47,6 +47,22 @@ test('an OMDb link is read for its id only; the api key is never stored', async 
   assert.ok(!dump(db).includes('SECRET123'));
 });
 
+test('fixing a title whose new poster is unavailable does not keep the old movie poster', async () => {
+  const db = openDb(); const { d } = deps({ savePoster: async () => null });
+  const t = upsertTitle(db, mk('tt0096895', 'Batman'), 'old.jpg');
+  addLoc(db, { titleId: t, status: 'matched' });
+  await applyFix(db, { titleId: t }, 'tt1877830', d);
+  const row = db.prepare('SELECT poster_file, poster_url FROM titles WHERE id = ?').get(t);
+  assert.deepEqual([row.poster_file, row.poster_url], [null, 'https://x/tt1877830.jpg']);
+});
+
+test('getCandidates with a typed query searches that text without the folder year', async () => {
+  const db = openDb(); const { d, calls } = deps();
+  const id = addLoc(db, { title: 'بتمن', year: '2022' });
+  await getCandidates(db, id, d, 'The Batman');
+  assert.deepEqual(calls.search.at(-1), ['The Batman']);
+});
+
 test('fixing a matched title updates the same row and pins its locations', async () => {
   const db = openDb(); const { d } = deps();
   const t = upsertTitle(db, mk('tt0096895', 'Batman'), 'old.jpg');

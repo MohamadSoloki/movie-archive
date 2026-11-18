@@ -60,4 +60,23 @@ test('an unreadable child folder is skipped and the scan still succeeds', () => 
   const scan = scanFolder(root, '', { ...opts, fsApi });
   assert.equal(scan.ok, true);
   assert.deepEqual(names(scan), ['Good']);
+  assert.deepEqual(scan.unreadable, ['Locked']);
+});
+
+test('an unreadable collection folder is reported as unreadable', () => {
+  const root = tree(['Marvel/Thor', 'Solo']);
+  const fsApi = {
+    ...fs,
+    readdirSync(p, o) {
+      if (String(p).endsWith('Marvel')) throw Object.assign(new Error('denied'), { code: 'EACCES' });
+      return fs.readdirSync(p, o);
+    },
+  };
+  const scan = scanFolder(root, 'Movies', { ...opts, collections: ['Movies/Marvel'], fsApi });
+  assert.deepEqual(names(scan), ['Solo']);
+  assert.deepEqual(scan.unreadable, ['Movies/Marvel']);
+});
+
+test('a clean scan has an empty unreadable list', () => {
+  assert.deepEqual(scanFolder(tree(['A']), '', opts).unreadable, []);
 });

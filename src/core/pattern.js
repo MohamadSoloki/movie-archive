@@ -5,7 +5,7 @@ const JUNK = new Set(['1080p', '720p', '2160p', '4k', 'bluray', 'brrip', 'webrip
 const SEP = /[._\-]+/g;
 const TOKENS = {
   '{title}': '(?<title>.+)',
-  '{year}': '(?<year>(?:18|19|20)\\d{2})(?!\\d)',
+  '{year}': '[(\\[]?(?<year>(?:18|19|20)\\d{2})(?!\\d)',
   '{season}': '(?<season>\\d{1,2})(?!\\d)',
   '*': '.*',
 };
@@ -13,13 +13,18 @@ const TOKENS = {
 const squash = (s) => s.replace(SEP, ' ').replace(/\s+/g, ' ');
 const norm = (s) => squash(s).trim();
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const clean = (s) => s.replace(/^[\s(\[]+|[\s)\]]+$/g, '');
+const clean = (s) => s.replace(/^[\s(\[]+|[\s()\[\]]+$/g, '');
 
+// null for a pattern that cannot be compiled (e.g. a token used twice): it is skipped, never thrown
 function compile(pattern) {
   const src = pattern.trim().split(/(\{title\}|\{year\}|\{season\}|\*)/)
     .map((p) => (Object.hasOwn(TOKENS, p) ? TOKENS[p] : esc(squash(p))))
     .join('');
-  return new RegExp(`^${src}$`, 'iu');
+  try {
+    return new RegExp(`^${src}$`, 'iu');
+  } catch {
+    return null;
+  }
 }
 
 function auto(n, validYear) {
@@ -40,7 +45,7 @@ function parseFolderName(name, patterns, now = new Date()) {
   const max = now.getFullYear() + 1;
   const validYear = (y) => y >= 1888 && y <= max;
   for (const p of patterns) {
-    const g = compile(p).exec(n)?.groups;
+    const g = compile(p)?.exec(n)?.groups;
     if (!g || (g.year && !validYear(+g.year))) continue;
     return { title: clean(g.title ?? n), year: g.year ?? null, season: g.season ?? null, by: 'pattern' };
   }

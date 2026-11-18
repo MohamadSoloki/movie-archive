@@ -17,14 +17,16 @@ function subdirs(fsApi, dir) {
 function scanFolder(absPath, relPath, { ignore = [], collections = [], fsApi = nodeFs } = {}) {
   const skip = new Set([...DEFAULT_IGNORE, ...ignore.map((s) => s.toLowerCase())]);
   const top = subdirs(fsApi, absPath);
-  if (!top) return { ok: false, entries: [] };
+  if (!top) return { ok: false, entries: [], unreadable: [] };
 
   const entries = [];
+  // folders that exist but could not be read: the sync must not call them missing
+  const unreadable = [];
   const add = (abs, rel, name) => {
     try {
       entries.push({ name, relPath: rel, isEmpty: fsApi.readdirSync(abs).length === 0 });
     } catch {
-      // unreadable folder: skip it, keep scanning
+      unreadable.push(rel);
     }
   };
   for (const name of top) {
@@ -32,14 +34,16 @@ function scanFolder(absPath, relPath, { ignore = [], collections = [], fsApi = n
     const rel = joinRel(relPath, name);
     const abs = path.join(absPath, name);
     if (collections.includes(rel)) {
-      for (const sub of subdirs(fsApi, abs) || []) {
+      const subs = subdirs(fsApi, abs);
+      if (!subs) { unreadable.push(rel); continue; }
+      for (const sub of subs) {
         if (!skip.has(sub.toLowerCase())) add(path.join(abs, sub), joinRel(rel, sub), sub);
       }
     } else {
       add(abs, rel, name);
     }
   }
-  return { ok: true, entries };
+  return { ok: true, entries, unreadable };
 }
 
 module.exports = { scanFolder };

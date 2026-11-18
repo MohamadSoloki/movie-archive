@@ -102,10 +102,10 @@ function createApi({ db, userDataDir, fetch = globalThis.fetch, listDrives = def
       return search.query(query);
     },
     applyFix: fixLocation,
-    async getCandidates(locationId) {
+    async getCandidates(locationId, query = '') {
       if (!key()) return { ok: false, error: 'bad_key' };
       try {
-        return { ok: true, candidates: await fix.getCandidates(db, locationId, deps()) };
+        return { ok: true, candidates: await fix.getCandidates(db, locationId, deps(), query) };
       } catch (e) {
         if (e.kind) return { ok: false, error: e.kind };
         throw e;

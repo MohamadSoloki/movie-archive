@@ -36,6 +36,19 @@ function createOmdb({ apiKey, fetch = globalThis.fetch }) {
     return body;
   }
 
+  async function search(title, year = null) {
+    try {
+      const body = await call({ s: title, y: year });
+      return (body.Search || []).map((r) => ({
+        imdbId: r.imdbID, title: r.Title, year: r.Year, type: r.Type, posterUrl: na(r.Poster),
+      }));
+    } catch (e) {
+      if (e.kind !== 'not_found') throw e;
+      // a folder year that is off by one would otherwise hide every candidate
+      return year ? search(title, null) : [];
+    }
+  }
+
   return {
     async byTitle(title, year = null, type = null) {
       return toInfo(await call({ t: title, y: year, type, plot: 'full' }));
@@ -43,17 +56,7 @@ function createOmdb({ apiKey, fetch = globalThis.fetch }) {
     async byId(imdbId) {
       return toInfo(await call({ i: imdbId, plot: 'full' }));
     },
-    async search(title, year = null) {
-      try {
-        const body = await call({ s: title, y: year });
-        return (body.Search || []).map((r) => ({
-          imdbId: r.imdbID, title: r.Title, year: r.Year, type: r.Type, posterUrl: na(r.Poster),
-        }));
-      } catch (e) {
-        if (e.kind === 'not_found') return [];
-        throw e;
-      }
-    },
+    search,
   };
 }
 

@@ -5,6 +5,25 @@ const ARABIC = /\p{Script=Arabic}/u;
 const LATIN = /[A-Za-z]/;
 const STOPS = new Set(['quota', 'network', 'bad_key']);
 
+// Jikan is a best-effort fallback: its failure must not stop the queue or look like "no internet"
+async function animeOrNull(jikan, title, year) {
+  try {
+    return await jikan.searchAnime(title, year);
+  } catch {
+    return null;
+  }
+}
+
+// Titles whose poster download failed earlier. Stops at the first failure: the host is probably unreachable.
+async function backfillPosters(db, deps) {
+  const rows = db.prepare('SELECT id, imdb_id, mal_id, poster_url FROM titles WHERE poster_file IS NULL AND poster_url IS NOT NULL').all();
+  for (const r of rows) {
+    const file = await deps.savePoster(r.poster_url, r.imdb_id ?? `mal${r.mal_id}`);
+    if (!file) return;
+    db.prepare('UPDATE titles SET poster_file = ? WHERE id = ?').run(file, r.id);
+  }
+}
+
 async function resolveLocation(db, id, deps) {
   const loc = db.prepare('SELECT * FROM locations WHERE id = ?').get(id);
   const setStatus = (status, titleId = null) =>
@@ -26,7 +45,7 @@ async function resolveLocation(db, id, deps) {
     } catch (e) {
       if (e.kind !== 'not_found') throw e;
       if ((await deps.omdb.search(t, loc.parsed_year)).length) { setStatus('review'); return 'review'; }
-      info = await deps.jikan.searchAnime(t, loc.parsed_year);
+      info = await animeOrNull(deps.jikan, t, loc.parsed_year);
       if (!info) { setStatus('review'); return 'review'; }
     }
     const poster = await deps.savePoster(info.posterUrl, info.imdbId ?? `mal${info.malId}`);
@@ -39,6 +58,7 @@ async function resolveLocation(db, id, deps) {
 }
 
 async function runQueue(db, deps, onProgress) {
+  await backfillPosters(db, deps);
   const ids = db.prepare("SELECT id FROM locations WHERE status = 'pending' AND missing = 0 ORDER BY id").all().map((r) => r.id);
   let processed = 0;
   let stoppedBy = null;

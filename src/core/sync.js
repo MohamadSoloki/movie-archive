@@ -8,7 +8,11 @@ function syncScan(db, { driveSerial, rootRel, scan, patterns }) {
   const insert = db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, parsed_year, season, guessed, is_empty)
     VALUES(?, ?, ?, ?, ?, ?, ?, ?)`);
   const touch = db.prepare('UPDATE locations SET missing = 0, is_empty = ? WHERE id = ?');
-  const reparse = db.prepare('UPDATE locations SET parsed_title = ?, parsed_year = ?, season = ?, guessed = ? WHERE id = ?');
+  // a review location whose parse changed (new patterns) is queued again; unchanged ones stay in review
+  const reparse = db.prepare(`UPDATE locations SET
+    status = CASE WHEN status = 'review' AND (parsed_title IS NOT ?1 OR parsed_year IS NOT ?2) THEN 'pending' ELSE status END,
+    parsed_title = ?1, parsed_year = ?2, season = ?3, guessed = ?4 WHERE id = ?5`);
+  const unreadable = scan.unreadable || [];
   const setMissing = db.prepare('UPDATE locations SET missing = 1 WHERE id = ?');
 
   db.exec('BEGIN');
@@ -27,7 +31,8 @@ function syncScan(db, { driveSerial, rootRel, scan, patterns }) {
     }
     const prefix = rootRel ? `${rootRel}/` : '';
     for (const r of db.prepare('SELECT id, rel_path FROM locations WHERE drive_serial = ?').all(driveSerial)) {
-      if (r.rel_path.startsWith(prefix) && !seen.has(r.rel_path)) setMissing.run(r.id);
+      const blind = unreadable.some((u) => r.rel_path === u || r.rel_path.startsWith(`${u}/`));
+      if (r.rel_path.startsWith(prefix) && !seen.has(r.rel_path) && !blind) setMissing.run(r.id);
     }
     db.exec('COMMIT');
   } catch (err) {

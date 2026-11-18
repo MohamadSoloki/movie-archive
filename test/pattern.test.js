@@ -59,6 +59,25 @@ test('persian title', () => {
   assert.equal(parse('بتمن 2022').title, 'بتمن');
 });
 
+test('parenthesised and bracketed years match the default pattern', () => {
+  const a = parse('Batman (2022)');
+  assert.deepEqual([a.title, a.year, a.by], ['Batman', '2022', 'pattern']);
+  const b = parse('Blade Runner 2049 (2017)');
+  assert.deepEqual([b.title, b.year], ['Blade Runner 2049', '2017']);
+  const c = parse('Dune [2021] 1080p');
+  assert.deepEqual([c.title, c.year], ['Dune', '2021']);
+});
+
+test('auto parsing strips a dangling opening bracket from the title', () => {
+  const r = parse('Batman (2022)', ['{title} S{season}']);
+  assert.deepEqual([r.title, r.year, r.by], ['Batman', '2022', 'auto']);
+});
+
+test('an invalid pattern is skipped instead of throwing', () => {
+  assert.doesNotThrow(() => parse('x 2020', ['{title} {year} {year}']));
+  assert.equal(parse('x 2020', ['{title}{title}', '{title} {year}']).year, '2020');
+});
+
 test('first matching pattern wins', () => {
   const r = parse('Show S01 2020', ['{title} S{season}*', '{title} {year}*']);
   assert.equal(r.title, 'Show');

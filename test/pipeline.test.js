@@ -8,6 +8,7 @@ const { openDb } = require('../src/core/db.js');
 const { ProviderError } = require('../src/core/errors.js');
 const { resolveLocation, runQueue } = require('../src/core/pipeline.js');
 const { savePoster } = require('../src/core/posters.js');
+const { upsertTitle } = require('../src/core/titles.js');
 
 const INFO = {
   source: 'omdb', imdbId: 'tt1877830', malId: null, title: 'The Batman', year: '2022', type: 'movie',
@@ -48,6 +49,42 @@ test('OMDb hit links a title and marks the location matched', async () => {
   const t = db.prepare('SELECT * FROM titles WHERE id = ?').get(l.title_id);
   assert.deepEqual([t.imdb_id, t.title, t.poster_file], ['tt1877830', 'The Batman', 'tt1877830.jpg']);
   assert.deepEqual(calls.byTitle[0], ['batman', '2022', null]);
+});
+
+test('a Jikan failure sends the title to review instead of stopping the queue', async () => {
+  const db = openDb();
+  const { d } = deps({
+    omdb: { byTitle: notFound, search: async () => [] },
+    jikan: { searchAnime: async () => { throw new ProviderError('network'); } },
+  });
+  const a = addLoc(db, { title: 'x' });
+  const b = addLoc(db, { title: 'y' });
+  const r = await runQueue(db, d);
+  assert.deepEqual([r.stoppedBy, r.processed], [null, 2]);
+  assert.deepEqual([loc(db, a).status, loc(db, b).status], ['review', 'review']);
+});
+
+test('a failed poster download is retried at the start of the next run', async () => {
+  const db = openDb();
+  let up = false;
+  const { d } = deps({ savePoster: async (url, key) => (up && url ? `${key}.jpg` : null) });
+  addLoc(db, { title: 'batman', year: '2022' });
+  await runQueue(db, d);
+  const t = db.prepare('SELECT poster_file, poster_url FROM titles').get();
+  assert.deepEqual([t.poster_file, t.poster_url], [null, 'https://x/p.jpg']);
+  up = true;
+  await runQueue(db, d);
+  assert.equal(db.prepare('SELECT poster_file FROM titles').get().poster_file, 'tt1877830.jpg');
+});
+
+test('poster retry stops at the first failure', async () => {
+  const db = openDb();
+  let calls = 0;
+  const { d } = deps({ savePoster: async () => { calls += 1; return null; } });
+  upsertTitle(db, { ...INFO, imdbId: 'tt1' }, null);
+  upsertTitle(db, { ...INFO, imdbId: 'tt2' }, null);
+  await runQueue(db, d);
+  assert.equal(calls, 1);
 });
 
 test('season folders ask OMDb for a series', async () => {

@@ -89,6 +89,20 @@ test('search with no results returns []', async () => {
   assert.deepEqual(await client({ Response: 'False', Error: 'Movie not found!' }).omdb.search('zzz'), []);
 });
 
+test('search retries without the year when the year filter finds nothing', async () => {
+  const urls = [];
+  const fetch = async (u) => {
+    const p = new URL(u).searchParams;
+    urls.push(p.has('y'));
+    return { ok: true, status: 200, json: async () => (p.has('y')
+      ? { Response: 'False', Error: 'Movie not found!' }
+      : { Response: 'True', Search: [{ Title: 'Batman', Year: '1989', imdbID: 'tt0096895', Type: 'movie', Poster: 'N/A' }] }) };
+  };
+  const c = await createOmdb({ apiKey: 'K', fetch }).search('batman', '1990');
+  assert.equal(c.length, 1);
+  assert.deepEqual(urls, [true, false]);
+});
+
 test('search still throws on quota', async () => {
   await assert.rejects(client({ Response: 'False', Error: 'Request limit reached!' }).omdb.search('x'), (e) => e.kind === 'quota');
 });

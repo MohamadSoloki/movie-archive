@@ -140,26 +140,35 @@
   }
 
   function candidatesSection(e) {
-    const box = h('section', { class: 'cands' }, h('h3', {}, t('candidates_title')));
-    api.getCandidates(e.locationId).then((r) => {
-      if (state.selected !== e.key) return;
-      if (!r.ok) { box.append(h('p', { class: 'msg' }, errText(r.error))); return; }
-      if (!r.candidates.length) { box.append(h('p', { class: 'help' }, t('candidates_none'))); return; }
-      for (const c of r.candidates) {
-        box.append(h('div', { class: 'cand' },
-          h('span', {}, `${c.title} ${c.year}`),
-          h('button', {
-            type: 'button',
-            onclick: async () => {
-              const p = await api.pickCandidate(e.locationId, c.imdbId);
-              if (!p.ok) { box.append(h('p', { class: 'msg' }, errText(p.error))); return; }
-              state.selected = `t:${p.titleId}`;
-              setStatus(t('fix_done'));
-              await refresh();
-            },
-          }, t('candidates_use'))));
-      }
-    });
+    // the typed search is for folders OMDb cannot read, e.g. a Persian name: type the English title
+    const input = h('input', { type: 'text', dir: 'ltr', placeholder: t('candidates_search_ph'), 'aria-label': t('candidates_search') });
+    const list = h('div', {});
+    const box = h('section', { class: 'cands' }, h('h3', {}, t('candidates_title')),
+      h('form', { onsubmit: (ev) => { ev.preventDefault(); load(input.value); } },
+        input, h('button', { type: 'submit' }, t('candidates_search'))), list);
+    function load(query) {
+      api.getCandidates(e.locationId, query).then((r) => {
+        if (state.selected !== e.key) return;
+        list.replaceChildren();
+        if (!r.ok) { list.append(h('p', { class: 'msg' }, errText(r.error))); return; }
+        if (!r.candidates.length) { list.append(h('p', { class: 'help' }, t('candidates_none'))); return; }
+        for (const c of r.candidates) {
+          list.append(h('div', { class: 'cand' },
+            h('span', {}, `${c.title} ${c.year}`),
+            h('button', {
+              type: 'button',
+              onclick: async () => {
+                const p = await api.pickCandidate(e.locationId, c.imdbId);
+                if (!p.ok) { list.append(h('p', { class: 'msg' }, errText(p.error))); return; }
+                state.selected = `t:${p.titleId}`;
+                setStatus(t('fix_done'));
+                await refresh();
+              },
+            }, t('candidates_use'))));
+        }
+      });
+    }
+    load('');
     return box;
   }
 
@@ -241,7 +250,7 @@
       setStatus(t('scan_done', { n: r.scanned }));
       await renderRail();
       await refresh();
-    } finally { busy(false); }
+    } catch { setStatus(t('err_unexpected')); } finally { busy(false); }
   });
 
   $('fetch').addEventListener('click', async () => {
@@ -254,7 +263,7 @@
       else if (r.stoppedBy === 'bad_key') setStatus(t('err_bad_key'));
       else setStatus(t('fetch_done'));
       await refresh();
-    } finally { busy(false); }
+    } catch { setStatus(t('err_unexpected')); } finally { busy(false); }
   });
 
   let timer = null;

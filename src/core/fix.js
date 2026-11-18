@@ -27,7 +27,8 @@ async function applyFix(db, target, link, deps) {
     const taken = db.prepare('SELECT id FROM titles WHERE imdb_id = ?').get(imdbId);
     if (!taken && oldTitleId != null) {
       // re-point the existing row at the new id; upsertTitle below then refreshes its fields
-      db.prepare('UPDATE titles SET imdb_id = ?, mal_id = NULL WHERE id = ?').run(imdbId, oldTitleId);
+      // poster_file is cleared too: the old file belongs to a different movie
+      db.prepare('UPDATE titles SET imdb_id = ?, mal_id = NULL, poster_file = NULL WHERE id = ?').run(imdbId, oldTitleId);
     }
     const titleId = upsertTitle(db, info, poster);
     const pin = db.prepare("UPDATE locations SET title_id = ?, status = 'matched', pinned = 1, guessed = 0 WHERE id = ?");
@@ -44,7 +45,9 @@ async function applyFix(db, target, link, deps) {
   }
 }
 
-function getCandidates(db, locationId, deps) {
+// A typed query (for example an English title for a Persian folder) is searched as typed, with no year.
+function getCandidates(db, locationId, deps, query = '') {
+  if (query.trim()) return deps.omdb.search(query.trim());
   const loc = db.prepare('SELECT parsed_title, parsed_year FROM locations WHERE id = ?').get(locationId);
   return deps.omdb.search(loc.parsed_title, loc.parsed_year);
 }

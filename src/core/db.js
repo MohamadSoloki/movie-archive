@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS roots(
 CREATE TABLE IF NOT EXISTS titles(
   id INTEGER PRIMARY KEY, imdb_id TEXT UNIQUE, mal_id INTEGER UNIQUE, source TEXT,
   title TEXT, year TEXT, type TEXT, plot TEXT, genres TEXT, rating TEXT, runtime TEXT,
-  actors TEXT, poster_file TEXT);
+  actors TEXT, poster_file TEXT, poster_url TEXT);
 CREATE TABLE IF NOT EXISTS locations(
   id INTEGER PRIMARY KEY, drive_serial TEXT NOT NULL, rel_path TEXT NOT NULL,
   folder_name TEXT NOT NULL, parsed_title TEXT, parsed_year TEXT, season TEXT,
@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS locations(
 function openDb(file = ':memory:') {
   const db = new DatabaseSync(file);
   db.exec(SCHEMA);
+  // databases created before poster_url existed
+  if (!db.prepare('PRAGMA table_info(titles)').all().some((c) => c.name === 'poster_url')) {
+    db.exec('ALTER TABLE titles ADD COLUMN poster_url TEXT');
+  }
   return db;
 }
 

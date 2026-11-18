@@ -41,6 +41,24 @@ test('scan with ok false changes nothing (unreadable root does not mark everythi
   assert.equal(rows(db)[0].missing, 0);
 });
 
+test('unreadable folders and everything under them are never marked missing', () => {
+  const db = openDb();
+  syncScan(db, args(scanOf(entry('a 2000'), entry('b 2001'))));
+  db.prepare("INSERT INTO locations(drive_serial, rel_path, folder_name) VALUES('S1', 'Movies/Marvel/Thor', 'Thor')").run();
+  syncScan(db, args({ ok: true, entries: [entry('a 2000')], unreadable: ['Movies/b 2001', 'Movies/Marvel'] }));
+  assert.deepEqual(rows(db).map((r) => r.missing), [0, 0, 0]);
+});
+
+test('a review location whose parse changes after a pattern change goes back to pending', () => {
+  const db = openDb();
+  syncScan(db, args(scanOf(entry('batman (2022)')), { patterns: ['{title}'] }));
+  db.prepare("UPDATE locations SET status = 'review'").run();
+  syncScan(db, args(scanOf(entry('batman (2022)')), { patterns: ['{title}'] }));
+  assert.equal(rows(db)[0].status, 'review');
+  syncScan(db, args(scanOf(entry('batman (2022)'))));
+  assert.deepEqual([rows(db)[0].parsed_title, rows(db)[0].parsed_year, rows(db)[0].status], ['batman', '2022', 'pending']);
+});
+
 test('missing only applies under the scanned root', () => {
   const db = openDb();
   syncScan(db, args(scanOf(entry('a 2000'))));
