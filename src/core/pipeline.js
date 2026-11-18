@@ -1,5 +1,7 @@
 'use strict';
 const { upsertTitle } = require('./titles.js');
+const { searchCached } = require('./cache.js');
+const { pickConfident } = require('./match.js');
 
 const ARABIC = /\p{Script=Arabic}/u;
 const LATIN = /[A-Za-z]/;
@@ -44,9 +46,22 @@ async function resolveLocation(db, id, deps) {
       info = await deps.omdb.byTitle(t, loc.parsed_year, loc.season ? 'series' : null);
     } catch (e) {
       if (e.kind !== 'not_found') throw e;
-      if ((await deps.omdb.search(t, loc.parsed_year)).length) { setStatus('review'); return 'review'; }
-      info = await animeOrNull(deps.jikan, t, loc.parsed_year);
-      if (!info) { setStatus('review'); return 'review'; }
+      const candidates = await searchCached(db, deps.omdb, t, loc.parsed_year);
+      if (candidates.length) {
+        const pick = pickConfident({ title: t, year: loc.parsed_year, season: loc.season }, candidates);
+        if (!pick) { setStatus('review'); return 'review'; }
+        try {
+          info = await deps.omdb.byId(pick.imdbId);
+        } catch (e2) {
+          if (e2.kind !== 'not_found') throw e2;
+          setStatus('review');
+          return 'review';
+        }
+        db.prepare('UPDATE locations SET guessed = 1 WHERE id = ?').run(id);
+      } else {
+        info = await animeOrNull(deps.jikan, t, loc.parsed_year);
+        if (!info) { setStatus('review'); return 'review'; }
+      }
     }
     const poster = await deps.savePoster(info.posterUrl, info.imdbId ?? `mal${info.malId}`);
     setStatus('matched', upsertTitle(db, info, poster));

@@ -1,6 +1,7 @@
 'use strict';
 const { extractImdbId } = require('./link.js');
 const { upsertTitle } = require('./titles.js');
+const { searchCached } = require('./cache.js');
 
 // target: { titleId } or { locationId }. A location that already has a title fixes that whole title.
 async function applyFix(db, target, link, deps) {
@@ -49,7 +50,7 @@ async function applyFix(db, target, link, deps) {
 function getCandidates(db, locationId, deps, query = '') {
   if (query.trim()) return deps.omdb.search(query.trim());
   const loc = db.prepare('SELECT parsed_title, parsed_year FROM locations WHERE id = ?').get(locationId);
-  return deps.omdb.search(loc.parsed_title, loc.parsed_year);
+  return searchCached(db, deps.omdb, loc.parsed_title, loc.parsed_year);
 }
 
 const pickCandidate = (db, locationId, imdbId, deps) => applyFix(db, { locationId }, imdbId, deps);

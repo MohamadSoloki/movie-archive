@@ -63,6 +63,15 @@ test('getCandidates with a typed query searches that text without the folder yea
   assert.deepEqual(calls.search.at(-1), ['The Batman']);
 });
 
+test('folder candidates are stored; typed queries are not', async () => {
+  const db = openDb(); const { d, calls } = deps();
+  const id = addLoc(db, { title: 'batman', year: '2022' });
+  await getCandidates(db, id, d); await getCandidates(db, id, d);
+  assert.equal(calls.search.length, 1);
+  await getCandidates(db, id, d, 'The Batman'); await getCandidates(db, id, d, 'The Batman');
+  assert.equal(calls.search.length, 3);
+});
+
 test('fixing a matched title updates the same row and pins its locations', async () => {
   const db = openDb(); const { d } = deps();
   const t = upsertTitle(db, mk('tt0096895', 'Batman'), 'old.jpg');

@@ -87,6 +87,39 @@ test('poster retry stops at the first failure', async () => {
   assert.equal(calls, 1);
 });
 
+test('not found and one confident search hit: auto-matched and flagged guessed', async () => {
+  const db = openDb(); const byIdCalls = [];
+  const { d, calls } = deps({ omdb: { byTitle: notFound,
+    search: async () => [{ imdbId: 'tt1877830', title: 'The Batman', year: '2022', type: 'movie', posterUrl: null }],
+    byId: async (id) => { byIdCalls.push(id); return INFO; } } });
+  const id = addLoc(db, { title: 'Batman', year: '2022' });
+  assert.equal(await resolveLocation(db, id, d), 'matched');
+  assert.deepEqual([loc(db, id).status, loc(db, id).guessed], ['matched', 1]);
+  assert.deepEqual(byIdCalls, ['tt1877830']);
+  assert.equal(calls.jikan, 0);
+});
+
+test('not found and an ambiguous search: review, Jikan not asked, search stored once', async () => {
+  const db = openDb(); let searches = 0;
+  const { d, calls } = deps({ omdb: { byTitle: notFound,
+    search: async () => { searches += 1; return [{ imdbId: 'a', title: 'Dune', year: '1984', type: 'movie' }, { imdbId: 'b', title: 'Dune', year: '2021', type: 'movie' }]; } } });
+  const a = addLoc(db, { title: 'Dune' });
+  const b = addLoc(db, { title: 'Dune' });
+  assert.equal(await resolveLocation(db, a, d), 'review');
+  assert.equal(await resolveLocation(db, b, d), 'review');
+  assert.equal(searches, 1);
+  assert.equal(calls.jikan, 0);
+});
+
+test('a confident pick that OMDb then cannot load goes to review', async () => {
+  const db = openDb();
+  const { d } = deps({ omdb: { byTitle: notFound,
+    search: async () => [{ imdbId: 'tt9', title: 'Batman', year: '2022', type: 'movie' }],
+    byId: notFound } });
+  const id = addLoc(db, { title: 'Batman', year: '2022' });
+  assert.equal(await resolveLocation(db, id, d), 'review');
+});
+
 test('season folders ask OMDb for a series', async () => {
   const db = openDb(); const { d, calls } = deps();
   await resolveLocation(db, addLoc(db, { title: 'Breaking Bad', season: '02' }), d);
