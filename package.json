@@ -9,7 +9,8 @@
     "dist": "electron-builder --win"
   },
   "dependencies": {
-    "fuse.js": "^7.0.0"
+    "fuse.js": "^7.0.0",
+    "electron-updater": "^6.8.11"
   },
   "devDependencies": {
     "electron": "^45.3.3",
@@ -18,7 +19,19 @@
   "build": {
     "appId": "com.local.moviearchive",
     "productName": "Movie Archive",
-    "files": ["src/**", "package.json"],
-    "win": { "target": "nsis" }
+    "files": [
+      "src/**",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "MohamadSoloki",
+        "repo": "movie-archive"
+      }
+    ]
   }
 }

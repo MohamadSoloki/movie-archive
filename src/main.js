@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { openDb } = require('./core/db.js');
 const { createApi } = require('./api.js');
+const { checkForUpdates } = require('./updater.js');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'poster', privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -39,6 +40,7 @@ app.whenReady().then(() => {
   });
   win.setMenuBarVisibility(false);
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  checkForUpdates({ isPackaged: app.isPackaged });
 });
 
 app.on('window-all-closed', () => app.quit());
