@@ -7,6 +7,7 @@ const DEFAULTS = {
   collections: [],
   language: 'fa',
   omdbKey: '',
+  translateEmail: '',
 };
 
 const SCHEMA = `
@@ -26,14 +27,23 @@ CREATE TABLE IF NOT EXISTS locations(
   pinned INTEGER NOT NULL DEFAULT 0, guessed INTEGER NOT NULL DEFAULT 0,
   is_empty INTEGER NOT NULL DEFAULT 0, missing INTEGER NOT NULL DEFAULT 0,
   UNIQUE(drive_serial, rel_path));
+CREATE TABLE IF NOT EXISTS episodes(
+  title_id INTEGER NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, ext_id TEXT, name TEXT,
+  released TEXT, rating TEXT, plot TEXT, PRIMARY KEY(title_id, season, number));
+CREATE TABLE IF NOT EXISTS translations(hash TEXT PRIMARY KEY, text TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `;
+
+// added after the first release, so databases that already exist get them too
+const TITLE_COLUMNS = [['director', 'TEXT'], ['awards', 'TEXT'], ['rated', 'TEXT'], ['country', 'TEXT'], ['total_seasons', 'INTEGER']];
 
 function openDb(file = ':memory:') {
   const db = new DatabaseSync(file);
   db.exec(SCHEMA);
-  // databases created before poster_url existed
-  if (!db.prepare('PRAGMA table_info(titles)').all().some((c) => c.name === 'poster_url')) {
-    db.exec('ALTER TABLE titles ADD COLUMN poster_url TEXT');
+  const have = db.prepare('PRAGMA table_info(titles)').all().map((c) => c.name);
+  if (!have.includes('poster_url')) db.exec('ALTER TABLE titles ADD COLUMN poster_url TEXT');
+  for (const [name, type] of TITLE_COLUMNS) {
+    if (!have.includes(name)) db.exec(`ALTER TABLE titles ADD COLUMN ${name} ${type}`);
   }
   return db;
 }

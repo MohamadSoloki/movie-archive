@@ -31,3 +31,21 @@ test('openDb twice on the same file does not throw', () => {
   openDb(file).close();
   assert.doesNotThrow(() => openDb(file).close());
 });
+
+test('new tables exist and translateEmail defaults to empty', () => {
+  const db = openDb();
+  const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name);
+  for (const n of ['episodes', 'translations', 'cache']) assert.ok(names.includes(n), n);
+  assert.equal(getSetting(db, 'translateEmail'), '');
+});
+
+test('a database made before the new title columns gets them on open', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ma-')), 'old.db');
+  const { DatabaseSync } = require('node:sqlite');
+  const old = new DatabaseSync(file);
+  old.exec('CREATE TABLE titles(id INTEGER PRIMARY KEY, imdb_id TEXT UNIQUE, mal_id INTEGER UNIQUE, source TEXT, title TEXT, year TEXT, type TEXT, plot TEXT, genres TEXT, rating TEXT, runtime TEXT, actors TEXT, poster_file TEXT, poster_url TEXT)');
+  old.close();
+  const db = openDb(file);
+  const cols = db.prepare('PRAGMA table_info(titles)').all().map((c) => c.name);
+  for (const c of ['director', 'awards', 'rated', 'country', 'total_seasons']) assert.ok(cols.includes(c), c);
+});

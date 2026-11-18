@@ -18,7 +18,7 @@ test('maps the best Jikan hit to TitleInfo', async () => {
   assert.deepEqual(info, {
     source: 'jikan', imdbId: null, malId: 16498, title: 'Attack on Titan', year: '2013', type: 'anime',
     plot: 'Humanity lives behind walls.', genres: 'Action, Drama', rating: '8.57', runtime: '24 min per ep',
-    actors: null, posterUrl: 'https://x/a.jpg',
+    actors: null, posterUrl: 'https://x/a.jpg', director: null, awards: null, rated: null, country: null, totalSeasons: null,
   });
   assert.match(urls[0], /q=attack%20on%20titan/);
 });
@@ -46,4 +46,29 @@ test('two 429s in a row and thrown fetches map to network', async () => {
   await assert.rejects(limited.searchAnime('x'), (e) => e.kind === 'network');
   const down = createJikan({ fetch: async () => { throw new Error('down'); }, sleep: noSleep });
   await assert.rejects(down.searchAnime('x'), (e) => e.kind === 'network');
+});
+
+const page = (data, hasNext) => ({ ok: true, status: 200, json: async () => ({ data, pagination: { has_next_page: hasNext } }) });
+
+test('episodes follows the pages and maps score and aired date', async () => {
+  const urls = [];
+  const answers = [
+    page([{ mal_id: 1, title: 'To You', aired: '2013-04-07T00:00:00+00:00', score: 4.3 }], true),
+    page([{ mal_id: 2, title: 'That Day', aired: null, score: null }], false),
+  ];
+  const jikan = createJikan({ fetch: async (u) => { urls.push(String(u)); return answers.shift(); }, sleep: noSleep });
+  assert.deepEqual(await jikan.episodes(16498), [
+    { number: 1, name: 'To You', released: '2013-04-07', rating: '4.3' },
+    { number: 2, name: 'That Day', released: null, rating: null },
+  ]);
+  assert.match(urls[0], /\/anime\/16498\/episodes\?page=1/);
+  assert.match(urls[1], /page=2/);
+});
+
+test('episode returns the synopsis, and 404 gives null / []', async () => {
+  const ok = createJikan({ fetch: async () => resp({ synopsis: 'Eren sees.' }), sleep: noSleep });
+  assert.equal(await ok.episode(16498, 2), 'Eren sees.');
+  const gone = createJikan({ fetch: async () => ({ ok: false, status: 404, json: async () => ({}) }), sleep: noSleep });
+  assert.equal(await gone.episode(1, 99), null);
+  assert.deepEqual(await gone.episodes(1), []);
 });

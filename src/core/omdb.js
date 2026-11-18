@@ -15,6 +15,8 @@ function toInfo(b) {
     source: 'omdb', imdbId: b.imdbID, malId: null, title: b.Title, year: na(b.Year), type: na(b.Type),
     plot: na(b.Plot), genres: na(b.Genre), rating: na(b.imdbRating), runtime: na(b.Runtime),
     actors: na(b.Actors), posterUrl: na(b.Poster),
+    director: na(b.Director), awards: na(b.Awards), rated: na(b.Rated), country: na(b.Country),
+    totalSeasons: Number.isInteger(+b.totalSeasons) && +b.totalSeasons > 0 ? +b.totalSeasons : null,
   };
 }
 
@@ -55,6 +57,15 @@ function createOmdb({ apiKey, fetch = globalThis.fetch }) {
     },
     async byId(imdbId) {
       return toInfo(await call({ i: imdbId, plot: 'full' }));
+    },
+    async season(imdbId, season) {
+      const b = await call({ i: imdbId, Season: season });
+      return {
+        totalSeasons: Number.isInteger(+b.totalSeasons) && +b.totalSeasons > 0 ? +b.totalSeasons : null,
+        episodes: (b.Episodes || []).map((e) => ({
+          number: Number(e.Episode), name: e.Title, released: na(e.Released), rating: na(e.imdbRating), imdbId: e.imdbID,
+        })),
+      };
     },
     search,
   };
