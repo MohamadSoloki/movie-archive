@@ -96,3 +96,18 @@ test('same serial with a new drive letter keeps one location and nothing missing
   assert.equal(rows(db)[0].missing, 0);
   assert.equal(db.prepare('SELECT COUNT(*) c FROM drives').get().c, 1);
 });
+
+test('a season entry stores its season and the show title; the folder name stays', () => {
+  const db = openDb();
+  const e = { name: 'Mentalist S01', relPath: 'Movies/Mentalist S01', isEmpty: false, season: '01', titleName: 'Mentalist' };
+  syncScan(db, args(scanOf(e)));
+  const r = rows(db)[0];
+  assert.deepEqual([r.parsed_title, r.season, r.folder_name], ['Mentalist', '01', 'Mentalist S01']);
+});
+
+test('the year of a parent folder name reaches the parsed year', () => {
+  const db = openDb();
+  const e = { name: 'S01', relPath: 'Movies/The Mentalist (2008)/S01', isEmpty: false, season: '01', titleName: 'The Mentalist (2008)' };
+  syncScan(db, args(scanOf(e)));
+  assert.deepEqual([rows(db)[0].parsed_title, rows(db)[0].parsed_year], ['The Mentalist', '2008']);
+});

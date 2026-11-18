@@ -20,7 +20,8 @@ function syncScan(db, { driveSerial, rootRel, scan, patterns }) {
     const seen = new Set();
     for (const e of scan.entries) {
       seen.add(e.relPath);
-      const p = parseFolderName(e.name, patterns);
+      const p = parseFolderName(e.titleName ?? e.name, patterns);
+      p.season = e.season ?? p.season;
       const row = find.get(driveSerial, e.relPath);
       if (!row) {
         insert.run(driveSerial, e.relPath, e.name, p.title, p.year, p.season, p.by === 'auto' ? 1 : 0, e.isEmpty ? 1 : 0);
