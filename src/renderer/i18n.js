@@ -141,11 +141,21 @@
     },
   };
 
+  // OMDb genre names; Jikan genres are shown as they come
+  const GENRES_FA = {
+    Action: 'اکشن', Adventure: 'ماجراجویی', Animation: 'انیمیشن', Biography: 'زندگی‌نامه‌ای', Comedy: 'کمدی', Crime: 'جنایی',
+    Documentary: 'مستند', Drama: 'درام', Family: 'خانوادگی', Fantasy: 'فانتزی', 'Film-Noir': 'فیلم نوآر', History: 'تاریخی',
+    Horror: 'ترسناک', Music: 'موسیقی', Musical: 'موزیکال', Mystery: 'معمایی', Romance: 'عاشقانه', 'Sci-Fi': 'علمی‌تخیلی',
+    Short: 'کوتاه', Sport: 'ورزشی', Thriller: 'هیجان‌انگیز', War: 'جنگی', Western: 'وسترن', 'Reality-TV': 'تلویزیون واقعی',
+    'Talk-Show': 'گفتگو محور', 'Game-Show': 'مسابقه‌ای', News: 'خبری', Adult: 'بزرگسال',
+  };
+  const genreLabel = (lang, genre) => (lang === 'fa' && GENRES_FA[genre]) || genre;
+
   function t(lang, key, vars) {
     const s = (STRINGS[lang] && STRINGS[lang][key]) || key;
     return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m)) : s;
   }
 
-  if (typeof module === 'object' && module.exports) module.exports = { STRINGS, t };
-  else root.i18n = { STRINGS, t };
+  if (typeof module === 'object' && module.exports) module.exports = { STRINGS, t, GENRES_FA, genreLabel };
+  else root.i18n = { STRINGS, t, GENRES_FA, genreLabel };
 })(typeof window !== 'undefined' ? window : globalThis);

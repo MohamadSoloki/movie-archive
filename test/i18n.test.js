@@ -41,3 +41,14 @@ test('every t() key used in app.js exists', () => {
   assert.ok(keys.length > 10);
   for (const k of keys) assert.ok(k in STRINGS.en, k);
 });
+
+test('genre names are translated to Persian; unknown genres and English stay as they are', () => {
+  const { GENRES_FA, genreLabel } = require('../src/renderer/i18n.js');
+  assert.equal(genreLabel('fa', 'Horror'), 'ترسناک');
+  assert.equal(genreLabel('fa', 'Unknown'), 'Unknown');
+  assert.equal(genreLabel('en', 'Horror'), 'Horror');
+  const all = ['Action', 'Adventure', 'Animation', 'Biography', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy',
+    'Film-Noir', 'History', 'Horror', 'Music', 'Musical', 'Mystery', 'Romance', 'Sci-Fi', 'Short', 'Sport', 'Thriller', 'War',
+    'Western', 'Reality-TV', 'Talk-Show', 'Game-Show', 'News', 'Adult'];
+  for (const g of all) assert.ok(GENRES_FA[g], g);
+});
