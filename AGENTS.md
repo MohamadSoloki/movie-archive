@@ -5,8 +5,9 @@ identifies each title from its **folder name**, and fills in poster, plot and de
 (Jikan/MyAnimeList as the anime fallback). UI is Persian (RTL) and English (LTR). The owner speaks Persian:
 answer him in Persian, keep code and comments in English.
 
-Spec: `docs/superpowers/specs/2026-11-17-movie-archive-design.md` (Persian, the authority).
-Plan it was built from: `docs/superpowers/plans/2026-11-17-movie-archive.md`.
+Specs (Persian, the authority): `docs/superpowers/specs/2026-11-17-movie-archive-design.md` (v1) and
+`docs/superpowers/specs/2026-11-18-series-translation-design.md` (v2: recursive scan, series, translation, tabs; wins where it differs).
+Plans: `docs/superpowers/plans/2026-11-17-movie-archive.md`, `docs/superpowers/plans/2026-11-18-series-translation.md`.
 
 ## Commands
 
@@ -17,8 +18,10 @@ Plan it was built from: `docs/superpowers/plans/2026-11-17-movie-archive.md`.
 ## Layout
 
 - `src/core/*.js` — all logic, plain CommonJS. I/O (`fetch`, `fs`, PowerShell) is passed in, so tests use fakes.
-  `pattern` folder-name parser · `scanner` read-only folder scan · `sync` scan → DB · `drives` drive serials ·
-  `omdb`/`jikan` providers · `pipeline` matching queue · `fix` Online Info Fix · `library`/`search` entries and fuzzy search.
+  `pattern` folder-name parser · `scanner` read-only recursive scan · `sync` scan → DB · `drives` drive serials ·
+  `omdb`/`jikan` providers · `cache` stored API answers (`cache` table, `searchCached`) · `match` `pickConfident` (auto-pick of a search hit) ·
+  `pipeline` matching queue · `episodes` season/episode queue · `translate` MyMemory + stored translations ·
+  `fix` Online Info Fix · `library`/`search` entries, tabs, genre filter, sort, fuzzy search.
 - `src/api.js` — wires core modules into one object. `src/main.js` + `src/preload.js` only expose it over IPC.
 - `src/renderer/` — vanilla HTML/JS, `i18n.js` holds both languages (keys must match; `test/i18n.test.js` checks).
 - `src/updater.js` — self-update from GitHub Releases (packaged app only).
@@ -32,6 +35,16 @@ Plan it was built from: `docs/superpowers/plans/2026-11-17-movie-archive.md`.
 - A title with several folders or drives is one entry with many locations.
 - OMDb answers HTTP 200 with `Response:"False"`; map errors to `ProviderError.kind` (`not_found`, `quota`, `bad_key`, `network`).
   `quota` and `network` stop the queue and leave the location `pending`.
+- Scan classification (`scanner.js`): ignored name → skip; season token (`S01`, `Season 1`, `فصل 1`, not followed by a letter or digit)
+  → one location, never opened, series name = text before the token or the parent folder; has a season child, is in `collections`,
+  or has subfolders with no video and no year in its name → opened, not a location; otherwise one title (even if empty). Max depth 8,
+  symlinks not followed, an unreadable folder is never marked missing.
+- Never store a MyMemory quota or error text as a translation (`quotaFinished`, status 429, text starting `MYMEMORY WARNING` → `ProviderError('quota')`).
+  Translations are stored per ≤450-char chunk (SHA-1 of the chunk), so quota mid-text loses nothing. Persian text is never sent.
+- Episode plots come only from OMDb (series) or Jikan (anime, one request per episode, 400 ms apart). `episodes.plot` NULL = not fetched,
+  `''` = source has none. Season lists that OMDb does not know are remembered under cache key `season-none:<titleId>:<n>`.
+- Anime show only under the All tab (`kind` is `other`); there is no anime tab yet.
+- The interface must not offer watched/favourite/random-pick features; the owner rejected them.
 - TDD: write the failing test first, watch it fail, then fix.
 
 ## Release (how the owner updates the app)
@@ -52,4 +65,7 @@ Plan it was built from: `docs/superpowers/plans/2026-11-17-movie-archive.md`.
 - Poster file name uses the imdbID unsanitised; old poster files are not deleted after a fix.
 - No `setWindowOpenHandler`/`will-navigate` guard; IPC does not check the sender; malformed `poster://` URL can throw.
 - `getEntries` sends every entry over IPC on each keystroke (fine up to a few thousand titles).
+- All anime seasons map to one MyAnimeList entry (shown as season 1). A category folder with a year in its name is read as a movie
+  unless listed in `collections`. Persian-only folder names still go to review (the owner searches an English title by hand).
+- Machine translation can be poor and its free quota is small (about 5000 chars/day, 50000 with an e-mail in settings).
 - Never run on real Windows yet: PowerShell drive listing, the NSIS build and live OMDb/Jikan are untested.
