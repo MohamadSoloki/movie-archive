@@ -183,7 +183,7 @@ test('network error mid-queue stops the queue and leaves the rest pending', asyn
   } });
   const ids = ['a', 'b', 'c'].map((t) => addLoc(db, { title: t }));
   const r = await runQueue(db, d);
-  assert.deepEqual(r, { processed: 1, remaining: 2, stoppedBy: 'network' });
+  assert.deepEqual(r, { processed: 1, remaining: 2, stoppedBy: 'network', episodes: 0 });
   assert.deepEqual(ids.map((i) => loc(db, i).status), ['matched', 'pending', 'pending']);
 });
 
@@ -194,7 +194,7 @@ test('runQueue reports progress and skips missing locations', async () => {
   db.prepare('UPDATE locations SET missing = 1 WHERE id = ?').run(gone);
   const seen = [];
   const r = await runQueue(db, d, (p) => seen.push(p));
-  assert.deepEqual(r, { processed: 1, remaining: 0, stoppedBy: null });
+  assert.deepEqual(r, { processed: 1, remaining: 0, stoppedBy: null, episodes: 0 });
   assert.deepEqual(seen, [{ processed: 1, remaining: 0 }]);
   assert.equal(loc(db, gone).status, 'pending');
 });
@@ -222,4 +222,20 @@ test('savePoster writes the file and returns its name; failures give null', asyn
   assert.equal(await savePoster(null, dir, 'tt2', ok), null);
   assert.equal(await savePoster('https://x/p.jpg', dir, 'tt3', async () => ({ ok: false })), null);
   assert.equal(await savePoster('https://x/p.jpg', dir, 'tt4', async () => { throw new Error('down'); }), null);
+});
+
+test('runQueue fetches episodes after the locations and reports how many; a stopped location loop skips them', async () => {
+  const db = openDb();
+  const seasonCalls = [];
+  const mk = (over = {}) => deps({ sleep: async () => {}, omdb: {
+    byTitle: async () => ({ ...INFO, type: 'series' }), search: async () => [],
+    season: async (id, s) => { seasonCalls.push(s); return { totalSeasons: 1, episodes: [{ number: 1, name: 'E', released: null, rating: '8', imdbId: 'tt11' }] }; },
+    byId: async () => ({ plot: 'p', rating: null }), ...over } }).d;
+  addLoc(db, { title: 'batman', year: '2022', season: '01' });
+  const r = await runQueue(db, mk());
+  assert.deepEqual([r.stoppedBy, r.episodes, seasonCalls], [null, 2, [1]]);
+  addLoc(db, { title: 'other' });
+  seasonCalls.length = 0;
+  const stopped = await runQueue(db, mk({ byTitle: async () => { throw new ProviderError('network'); } }));
+  assert.deepEqual([stopped.stoppedBy, stopped.episodes, seasonCalls], ['network', 0, []]);
 });

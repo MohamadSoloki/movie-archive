@@ -26,11 +26,12 @@ function setup({ key = 'K' } = {}) {
     }
     return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([9, 9]).buffer };
   };
+  const db = openDb();
   const api = createApi({
-    db: openDb(), userDataDir: userData, fetch,
+    db, userDataDir: userData, fetch,
     listDrives: async () => [{ serial: 'S1', label: 'Test', root: media + path.sep }],
   });
-  return { api, media, userData, fetchCalls, key };
+  return { api, db, media, userData, fetchCalls, key };
 }
 const snapshot = (dir) => fs.readdirSync(dir, { recursive: true }).sort().join('|');
 
@@ -63,7 +64,7 @@ test('startQueue without an OMDb key stops with bad_key and sends no request', a
   await api.addRoot(path.join(media, 'Movies'));
   await api.scan();
   const r = await api.startQueue(() => {});
-  assert.deepEqual(r, { processed: 0, remaining: 1, stoppedBy: 'bad_key' });
+  assert.deepEqual(r, { processed: 0, remaining: 1, stoppedBy: 'bad_key', episodes: 0 });
   assert.equal(fetchCalls.length, 0);
 });
 
@@ -74,7 +75,7 @@ test('startQueue with a key matches the folder and saves the poster under userDa
   await api.scan();
   await api.setSettings({ omdbKey: 'K' });
   const r = await api.startQueue(() => {});
-  assert.deepEqual(r, { processed: 1, remaining: 0, stoppedBy: null });
+  assert.deepEqual(r, { processed: 1, remaining: 0, stoppedBy: null, episodes: 0 });
   const [e] = await api.getEntries();
   assert.deepEqual([e.title, e.status, e.posterFile], ['The Batman', 'matched', 'tt1877830.jpg']);
   assert.ok(fs.existsSync(path.join(userData, 'posters', 'tt1877830.jpg')));
@@ -104,7 +105,7 @@ test('applyFix without a key reports bad_key and sends no request', async () => 
 });
 
 test('removeRoot drops the root, its folders and titles left without a folder', async () => {
-  const { api, media } = setup();
+  const { api, db, media } = setup();
   fs.mkdirSync(path.join(media, 'Movies', 'batman 2022'), { recursive: true });
   fs.mkdirSync(path.join(media, 'Anime', 'naruto'), { recursive: true });
   await api.addRoot(path.join(media, 'Movies'));
@@ -114,7 +115,10 @@ test('removeRoot drops the root, its folders and titles left without a folder', 
   await api.startQueue(() => {});
   assert.equal((await api.getEntries()).length, 2);
   const movies = (await api.getRoots()).find((r) => r.relPath === 'Movies');
+  const batman = db.prepare("SELECT title_id FROM locations WHERE rel_path = 'Movies/batman 2022'").get().title_id;
+  db.prepare("INSERT INTO episodes(title_id, season, number) VALUES(?, 1, 1)").run(batman);
   await api.removeRoot(movies.id);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM episodes').get().c, 0);
   const left = await api.getEntries();
   assert.deepEqual(left.map((e) => e.locations[0].relPath), ['Anime/naruto']);
   assert.equal((await api.getRoots()).length, 1);

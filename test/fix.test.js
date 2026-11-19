@@ -104,6 +104,29 @@ test('fix that points at an existing title merges locations and drops the emptie
   assert.equal(db.prepare('SELECT COUNT(*) c FROM titles WHERE id = ?').get(b).c, 0);
 });
 
+const addEp = (db, titleId) => db.prepare("INSERT INTO episodes(title_id, season, number, ext_id) VALUES(?, 1, 1, 'tt1')").run(titleId);
+const epCount = (db, titleId) => db.prepare('SELECT COUNT(*) c FROM episodes WHERE title_id = ?').get(titleId).c;
+
+test('re-pointing a title in place drops its episodes and season count', async () => {
+  const db = openDb(); const { d } = deps();
+  const t = upsertTitle(db, { ...mk('tt0096895', 'Batman'), totalSeasons: 4 }, null);
+  addLoc(db, { titleId: t, status: 'matched' });
+  addEp(db, t);
+  await applyFix(db, { titleId: t }, 'tt1877830', d);
+  assert.deepEqual([epCount(db, t), db.prepare('SELECT total_seasons FROM titles WHERE id = ?').get(t).total_seasons], [0, null]);
+});
+
+test('a merge drops the episodes of the title it deletes and keeps the survivor\'s', async () => {
+  const db = openDb(); const { d } = deps();
+  const a = upsertTitle(db, mk('tt1877830', 'The Batman'), null);
+  const b = upsertTitle(db, mk('tt0096895', 'Batman'), null);
+  addLoc(db, { titleId: a, status: 'matched' });
+  addLoc(db, { titleId: b, status: 'matched', serial: 'S2' });
+  addEp(db, a); addEp(db, b);
+  await applyFix(db, { titleId: b }, 'tt1877830', d);
+  assert.deepEqual([epCount(db, a), epCount(db, b)], [1, 0]);
+});
+
 test('provider errors are returned and nothing changes', async () => {
   for (const kind of ['not_found', 'quota', 'network', 'bad_key']) {
     const db = openDb();

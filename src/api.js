@@ -66,6 +66,7 @@ function createApi({ db, userDataDir, fetch = globalThis.fetch, listDrives = def
           if (l.rel_path.startsWith(prefix)) db.prepare('DELETE FROM locations WHERE id = ?').run(l.id);
         }
         db.exec('DELETE FROM titles WHERE id NOT IN (SELECT title_id FROM locations WHERE title_id IS NOT NULL)');
+        db.exec('DELETE FROM episodes WHERE title_id NOT IN (SELECT id FROM titles)');
         db.prepare('DELETE FROM roots WHERE id = ?').run(id);
         db.exec('COMMIT');
       } catch (e) {
@@ -93,7 +94,7 @@ function createApi({ db, userDataDir, fetch = globalThis.fetch, listDrives = def
       return { scanned: roots.length };
     },
     async startQueue(onProgress) {
-      if (!key()) return { processed: 0, remaining: pendingCount(), stoppedBy: 'bad_key' };
+      if (!key()) return { processed: 0, remaining: pendingCount(), stoppedBy: 'bad_key', episodes: 0 };
       const r = await runQueue(db, deps(), onProgress);
       search.invalidate();
       return r;

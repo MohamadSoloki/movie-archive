@@ -2,6 +2,7 @@
 const { upsertTitle } = require('./titles.js');
 const { searchCached } = require('./cache.js');
 const { pickConfident } = require('./match.js');
+const { runEpisodes } = require('./episodes.js');
 
 const ARABIC = /\p{Script=Arabic}/u;
 const LATIN = /[A-Za-z]/;
@@ -83,7 +84,8 @@ async function runQueue(db, deps, onProgress) {
     processed += 1;
     if (onProgress) onProgress({ processed, remaining: ids.length - processed });
   }
-  return { processed, remaining: ids.length - processed, stoppedBy };
+  const eps = stoppedBy ? { fetched: 0, stoppedBy } : await runEpisodes(db, deps);
+  return { processed, remaining: ids.length - processed, stoppedBy: stoppedBy ?? eps.stoppedBy, episodes: eps.fetched };
 }
 
 module.exports = { resolveLocation, runQueue };
