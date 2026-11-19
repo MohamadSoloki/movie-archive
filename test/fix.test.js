@@ -162,3 +162,12 @@ test('pickCandidate is a fix by bare id', async () => {
   assert.equal((await pickCandidate(db, id, 'tt1877830', d)).ok, true);
   assert.equal(loc(db, id).status, 'matched');
 });
+
+test('re-pointing a title forgets which seasons OMDb did not know', async () => {
+  const db = openDb(); const { d } = deps();
+  const t = upsertTitle(db, mk('tt0096895', 'Batman'), null);
+  addLoc(db, { titleId: t, status: 'matched' });
+  db.prepare('INSERT INTO cache(key, value) VALUES(?, ?), (?, ?)').run(`season-none:${t}:2`, '1', `season-none:${t}0:2`, '1');
+  await applyFix(db, { titleId: t }, 'tt1877830', d);
+  assert.deepEqual(db.prepare('SELECT key FROM cache').all().map((r) => r.key), [`season-none:${t}0:2`]);
+});

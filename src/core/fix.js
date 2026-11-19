@@ -1,7 +1,7 @@
 'use strict';
 const { extractImdbId } = require('./link.js');
 const { upsertTitle } = require('./titles.js');
-const { searchCached } = require('./cache.js');
+const { searchCached, forgetSeasons } = require('./cache.js');
 
 // target: { titleId } or { locationId }. A location that already has a title fixes that whole title.
 async function applyFix(db, target, link, deps) {
@@ -31,6 +31,7 @@ async function applyFix(db, target, link, deps) {
       // poster_file is cleared too: the old file belongs to a different movie
       db.prepare('UPDATE titles SET imdb_id = ?, mal_id = NULL, poster_file = NULL, total_seasons = NULL WHERE id = ?').run(imdbId, oldTitleId);
       db.prepare('DELETE FROM episodes WHERE title_id = ?').run(oldTitleId);
+      forgetSeasons(db, oldTitleId);
     }
     const titleId = upsertTitle(db, info, poster);
     const pin = db.prepare("UPDATE locations SET title_id = ?, status = 'matched', pinned = 1, guessed = 0 WHERE id = ?");
@@ -39,6 +40,7 @@ async function applyFix(db, target, link, deps) {
       && !db.prepare('SELECT 1 FROM locations WHERE title_id = ?').get(oldTitleId)) {
       db.prepare('DELETE FROM titles WHERE id = ?').run(oldTitleId);
       db.prepare('DELETE FROM episodes WHERE title_id = ?').run(oldTitleId);
+      forgetSeasons(db, oldTitleId);
     }
     db.exec('COMMIT');
     return { ok: true, titleId };

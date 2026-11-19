@@ -41,16 +41,22 @@ function createTranslator({ fetch = globalThis.fetch, email = '' } = {}) {
       url.searchParams.set('q', text);
       url.searchParams.set('langpair', 'en|fa');
       if (email) url.searchParams.set('de', email);
-      let body;
+      let res;
+      let body = null;
       try {
-        const res = await fetch(url);
+        res = await fetch(url);
+      } catch (e) {
+        throw new ProviderError('network', e.message);
+      }
+      if (res.status === 429) throw new ProviderError('quota'); // before reading the body: it may not be JSON
+      try {
         body = await res.json();
       } catch (e) {
         throw new ProviderError('network', e.message);
       }
       const out = String(body?.responseData?.translatedText ?? '');
       // the quota notice comes back as a "translation", so it is recognised by its wording too
-      if (body?.quotaFinished === true || Number(body?.responseStatus) === 429 || out.startsWith('MYMEMORY WARNING')) {
+      if (body?.quotaFinished === true || Number(body?.responseStatus) === 429 || /^\s*MYMEMORY WARNING/i.test(out)) {
         throw new ProviderError('quota');
       }
       if (Number(body?.responseStatus) !== 200) throw new ProviderError('network', `status ${body?.responseStatus}`);

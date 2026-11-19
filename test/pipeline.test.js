@@ -239,3 +239,14 @@ test('runQueue fetches episodes after the locations and reports how many; a stop
   const stopped = await runQueue(db, mk({ byTitle: async () => { throw new ProviderError('network'); } }));
   assert.deepEqual([stopped.stoppedBy, stopped.episodes, seasonCalls], ['network', 0, []]);
 });
+
+test('a season folder is not merged into a movie with the same name', async () => {
+  const db = openDb(); const { d, calls } = deps();
+  const movie = addLoc(db, { title: 'Fargo' });
+  const show = addLoc(db, { title: 'Fargo', season: '01', serial: 'S2' });
+  await resolveLocation(db, movie, d);
+  calls.byTitle.length = 0;
+  await resolveLocation(db, show, d);
+  assert.equal(calls.byTitle.length, 1);
+  assert.equal(calls.byTitle[0][2], 'series');
+});

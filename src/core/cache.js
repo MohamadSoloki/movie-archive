@@ -24,4 +24,10 @@ function searchCached(db, omdb, title, year = null) {
   return cached(db, `s|${title.toLowerCase()}|${year ?? ''}`, () => omdb.search(title, year));
 }
 
-module.exports = { getCache, putCache, cached, searchCached };
+// A title id can be reused after a delete, so its "season unknown" marks must not outlive it.
+function forgetSeasons(db, titleId) {
+  // a string: node:sqlite binds a JS number as a float, which would concatenate as "1.0"
+  db.prepare("DELETE FROM cache WHERE key LIKE 'season-none:' || ? || ':%'").run(String(titleId));
+}
+
+module.exports = { getCache, putCache, cached, searchCached, forgetSeasons };

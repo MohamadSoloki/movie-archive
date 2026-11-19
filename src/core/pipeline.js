@@ -35,7 +35,7 @@ async function resolveLocation(db, id, deps) {
 
   // another location already matched the same title: no request needed
   const twin = db.prepare(`SELECT title_id FROM locations WHERE id != ? AND status = 'matched' AND title_id IS NOT NULL
-    AND lower(parsed_title) = lower(?) AND parsed_year IS ?`).get(id, t, loc.parsed_year);
+    AND lower(parsed_title) = lower(?) AND parsed_year IS ? AND (season IS NULL) = (? IS NULL)`).get(id, t, loc.parsed_year, loc.season);
   if (twin) { setStatus('matched', twin.title_id); return 'matched'; }
 
   // OMDb and Jikan only know English titles

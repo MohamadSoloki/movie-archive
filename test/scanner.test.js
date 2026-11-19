@@ -154,3 +154,17 @@ test('an unreadable season folder is listed as unreadable and the scan still suc
   assert.deepEqual(scan.unreadable, ['Show/Season 1']);
   assert.deepEqual(scan.entries.map((e) => e.relPath), ['Show/Season 2']);
 });
+
+test('a folder holding several seasons is the whole show, not season 1', () => {
+  const root = tree(['Friends S01-S10', 'Dexter S1-S8 Complete', 'Lost/Seasons 1-5']);
+  const m = Object.fromEntries(scanFolder(root, '', opts).entries.map((e) => [e.name, e]));
+  assert.deepEqual([m['Friends S01-S10'].season, m['Friends S01-S10'].titleName], [null, 'Friends']);
+  assert.deepEqual([m['Dexter S1-S8 Complete'].season, m['Dexter S1-S8 Complete'].titleName], [null, 'Dexter']);
+  assert.deepEqual([m['Seasons 1-5'].season, m['Seasons 1-5'].titleName], [null, 'Lost']);
+});
+
+test('season folders inside a multi-season wrapper take the clean show name', () => {
+  const root = tree(['Friends S01-S10/Season 1', 'Friends S01-S10/Season 2']);
+  const e = scanFolder(root, '', opts).entries;
+  assert.deepEqual(e.map((x) => [x.season, x.titleName]), [['1', 'Friends'], ['2', 'Friends']]);
+});

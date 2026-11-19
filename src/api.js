@@ -11,6 +11,7 @@ const { runQueue } = require('./core/pipeline.js');
 const fs = require('node:fs');
 const fix = require('./core/fix.js');
 const { createTranslator, translateCached } = require('./core/translate.js');
+const { forgetSeasons } = require('./core/cache.js');
 const { createSearch } = require('./core/search.js');
 
 const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail'];
@@ -70,6 +71,7 @@ function createApi({
         for (const l of db.prepare('SELECT id, rel_path FROM locations WHERE drive_serial = ?').all(root.drive_serial)) {
           if (l.rel_path.startsWith(prefix)) db.prepare('DELETE FROM locations WHERE id = ?').run(l.id);
         }
+        for (const o of db.prepare('SELECT id FROM titles WHERE id NOT IN (SELECT title_id FROM locations WHERE title_id IS NOT NULL)').all()) forgetSeasons(db, o.id);
         db.exec('DELETE FROM titles WHERE id NOT IN (SELECT title_id FROM locations WHERE title_id IS NOT NULL)');
         db.exec('DELETE FROM episodes WHERE title_id NOT IN (SELECT id FROM titles)');
         db.prepare('DELETE FROM roots WHERE id = ?').run(id);
@@ -128,7 +130,8 @@ function createApi({
       const l = db.prepare(`SELECT l.rel_path, d.root, COALESCE(d.online, 0) AS online FROM locations l
         LEFT JOIN drives d ON d.serial = l.drive_serial WHERE l.id = ?`).get(locationId);
       if (!l) return { ok: false, error: 'unknown' };
-      if (!l.online) return { ok: false, error: 'offline' };
+      // the stored online flag can be stale: the drive may have been unplugged since the last refresh
+      if (!l.online || !fs.existsSync(l.root)) return { ok: false, error: 'offline' };
       const abs = path.join(l.root, l.rel_path);
       if (!fs.existsSync(abs)) return { ok: false, error: 'missing' };
       // shell.openPath answers with an error text, or '' on success

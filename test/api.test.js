@@ -119,8 +119,10 @@ test('removeRoot drops the root, its folders and titles left without a folder', 
   const movies = (await api.getRoots()).find((r) => r.relPath === 'Movies');
   const batman = db.prepare("SELECT title_id FROM locations WHERE rel_path = 'Movies/batman 2022'").get().title_id;
   db.prepare("INSERT INTO episodes(title_id, season, number) VALUES(?, 1, 1)").run(batman);
+  db.prepare('INSERT INTO cache(key, value) VALUES(?, ?)').run(`season-none:${batman}:2`, '1');
   await api.removeRoot(movies.id);
   assert.equal(db.prepare('SELECT COUNT(*) c FROM episodes').get().c, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) c FROM cache WHERE key LIKE 'season-none:%'").get().c, 0);
   const left = (await api.getEntries()).entries;
   assert.deepEqual(left.map((e) => e.locations[0].relPath), ['Anime/naruto']);
   assert.equal((await api.getRoots()).length, 1);
@@ -153,7 +155,7 @@ async function scanned(over = {}) {
 
 test('openLocation opens the folder on its drive; offline, deleted and unknown folders are refused', async () => {
   const opened = [];
-  const { api, media, e, locId, state } = await scanned({ openPath: async (p) => { opened.push(p); return ''; } });
+  const { api, db, media, e, locId, state } = await scanned({ openPath: async (p) => { opened.push(p); return ''; } });
   assert.deepEqual(await api.openLocation(locId), { ok: true });
   assert.deepEqual(opened, [path.join(media, 'Movies', 'batman 2022')]);
   assert.deepEqual(await api.openLocation(99999), { ok: false, error: 'unknown' });
@@ -163,6 +165,9 @@ test('openLocation opens the folder on its drive; offline, deleted and unknown f
   await api.getDrives();
   assert.deepEqual(await api.openLocation(locId), { ok: false, error: 'offline' });
   assert.equal(opened.length, 1);
+  // unplugged after the last drive refresh: the stored flag still says online
+  db.prepare('UPDATE drives SET online = 1, root = ?').run(path.join(media, 'gone') + path.sep);
+  assert.deepEqual(await api.openLocation(locId), { ok: false, error: 'offline' });
   assert.ok(e);
 });
 

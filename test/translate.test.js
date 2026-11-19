@@ -86,3 +86,10 @@ test('translateCached: Persian text is returned as is, with no request', async (
   const tr = { translate: async () => { throw new Error('no request expected'); } };
   assert.equal(await translateCached(db, tr, 'داستان یک مرد'), 'داستان یک مرد');
 });
+
+test('translate: HTTP 429 is quota whatever the body says, and a padded warning is still a warning', async () => {
+  const kind = async (f) => { try { await createTranslator({ fetch: f }).translate('x'); return 'none'; } catch (e) { return e.kind; } };
+  assert.equal(await kind(async () => ({ ok: false, status: 429, json: async () => ok('slow down') })), 'quota');
+  assert.equal(await kind(async () => ({ ok: false, status: 429, json: async () => { throw new Error('html'); } })), 'quota');
+  assert.equal(await kind(reply(ok(`  ${WARN.toLowerCase()}`))), 'quota');
+});
