@@ -168,3 +168,11 @@ test('season folders inside a multi-season wrapper take the clean show name', ()
   const e = scanFolder(root, '', opts).entries;
   assert.deepEqual(e.map((x) => [x.season, x.titleName]), [['1', 'Friends'], ['2', 'Friends']]);
 });
+
+test('only: scans just that one folder, case-insensitively, and classifies it like any other', () => {
+  const root = tree(['Batman 2022', 'Other', 'Mentalist/Season 1', 'Mentalist/Season 2']);
+  assert.deepEqual(names(scanFolder(root, 'Movies', { ...opts, only: 'batman 2022' })), ['Batman 2022']);
+  const show = scanFolder(root, 'Movies', { ...opts, only: 'Mentalist' }).entries;
+  assert.deepEqual(show.map((e) => [e.relPath, e.season, e.titleName]), [['Movies/Mentalist/Season 1', '1', 'Mentalist'], ['Movies/Mentalist/Season 2', '2', 'Mentalist']]);
+  assert.deepEqual(scanFolder(root, 'Movies', { ...opts, only: 'nothing' }).entries, []);
+});

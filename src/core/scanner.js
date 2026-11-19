@@ -33,7 +33,7 @@ function list(fsApi, dir) {
  * A season folder is never opened. A folder is opened (and is no entry itself) when it holds season
  * folders, is listed in `collections`, or holds only subfolders with no year in its name.
  */
-function scanFolder(absPath, relPath, { ignore = [], collections = [], fsApi = nodeFs, maxDepth = 8 } = {}) {
+function scanFolder(absPath, relPath, { ignore = [], collections = [], fsApi = nodeFs, maxDepth = 8, only = null } = {}) {
   const skip = new Set([...DEFAULT_IGNORE, ...ignore.map((s) => s.toLowerCase())]);
   const skipped = (name) => skip.has(name.toLowerCase()) || DISC.test(name);
   const top = list(fsApi, absPath);
@@ -68,6 +68,7 @@ function scanFolder(absPath, relPath, { ignore = [], collections = [], fsApi = n
 
   const rootName = path.basename(absPath);
   for (const d of top) {
+    if (only && d.name.toLowerCase() !== only.toLowerCase()) continue; // single-folder root
     if (d.isDirectory() && !skipped(d.name)) walk(path.join(absPath, d.name), joinRel(relPath, d.name), d.name, rootName, 1);
   }
   return { ok: true, entries, unreadable };

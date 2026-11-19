@@ -43,6 +43,8 @@ Plans: `docs/superpowers/plans/2026-11-17-movie-archive.md`, `docs/superpowers/p
   Translations are stored per ≤450-char chunk (SHA-1 of the chunk), so quota mid-text loses nothing. Persian text is never sent.
 - Episode plots come only from OMDb (series) or Jikan (anime, one request per episode, 400 ms apart). `episodes.plot` NULL = not fetched,
   `''` = source has none. Season lists that OMDb does not know are remembered under cache key `season-none:<titleId>:<n>`.
+- Rescan is incremental: existing `(drive, rel_path)` rows keep status/title/pins/translations; only new folders are inserted (`syncScan` returns the count, `api.scan` returns `{scanned, added}`).
+- A root with `single = 1` is one folder (one title, or a series), not a folder of titles. `scanFolder(..., { only })` keeps just that child; `syncScan` marks only that rel_path (and below) missing, never siblings.
 - Anime show only under the All tab (`kind` is `other`); there is no anime tab yet.
 - The interface must not offer watched/favourite/random-pick features; the owner rejected them.
 - TDD: write the failing test first, watch it fail, then fix.

@@ -111,3 +111,23 @@ test('the year of a parent folder name reaches the parsed year', () => {
   syncScan(db, args(scanOf(e)));
   assert.deepEqual([rows(db)[0].parsed_title, rows(db)[0].parsed_year], ['The Mentalist', '2008']);
 });
+
+test('rescan keeps matched rows untouched, adds only new folders and reports how many', () => {
+  const db = openDb();
+  assert.equal(syncScan(db, args(scanOf(entry('batman 2022'), entry('dune 2021')))), 2);
+  db.prepare("UPDATE locations SET status = 'matched', title_id = 7, pinned = 1, parsed_title = 'The Batman' WHERE parsed_title = 'batman'").run();
+  const before = rows(db).find((r) => r.parsed_title === 'The Batman');
+  assert.equal(syncScan(db, args(scanOf(entry('batman 2022'), entry('dune 2021'), entry('alien 1979')))), 1);
+  const after = rows(db);
+  assert.equal(after.length, 3);
+  assert.deepEqual(after.find((r) => r.id === before.id), before);
+  assert.deepEqual(after.filter((r) => r.status === 'pending').map((r) => r.parsed_title).sort(), ['alien', 'dune']);
+  assert.equal(syncScan(db, args(scanOf(entry('batman 2022'), entry('dune 2021'), entry('alien 1979')))), 0);
+});
+
+test('a single-folder root marks only its own folder missing, never its siblings', () => {
+  const db = openDb();
+  syncScan(db, args(scanOf(entry('batman 2022'), entry('dune 2021'))));
+  syncScan(db, { driveSerial: 'S1', rootRel: 'Movies/Batman 2022', scan: scanOf(), patterns: P });
+  assert.deepEqual(rows(db).map((r) => [r.parsed_title, r.missing]), [['batman', 1], ['dune', 0]]);
+});

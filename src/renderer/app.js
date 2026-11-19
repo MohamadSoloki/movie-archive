@@ -29,6 +29,8 @@
       case 'bad_key': return t('err_bad_key');
       case 'network': return t('err_network');
       case 'no_drive': return t('err_no_drive');
+      case 'drive_root': return t('err_drive_root');
+      case 'not_folder': return t('err_not_folder');
       case 'offline': return t('err_open_offline');
       case 'missing': return t('err_open_missing');
       case 'unknown': return t('err_open_unknown');
@@ -317,7 +319,7 @@
       : [h('li', { class: 'none' }, t('no_drives'))]));
     $('roots').replaceChildren(...(roots.length
       ? roots.map((r) => h('li', { class: 'root' },
-        h('span', { class: 'rpath' }, `${r.driveLabel} `, h('span', { class: 'path', dir: 'ltr' }, `/${r.relPath}`)),
+        h('span', { class: 'rpath' }, `${r.driveLabel} `, h('span', { class: 'path', dir: 'ltr' }, `/${r.relPath}`), r.single ? h('span', { class: 'tag' }, t('single_tag')) : null),
         h('button', {
           type: 'button',
           onclick: async () => {
@@ -337,14 +339,15 @@
     $('fetch').disabled = on;
   }
 
-  $('add-root').addEventListener('submit', async (ev) => {
-    ev.preventDefault();
+  async function addRoot(single) {
     const p = $('root-path').value.trim();
     if (!p) return;
-    const r = await api.addRoot(p);
+    const r = await api.addRoot(p, single);
     $('rail-msg').textContent = r.ok ? '' : errText(r.error);
     if (r.ok) { $('root-path').value = ''; await renderRail(); }
-  });
+  }
+  $('add-root').addEventListener('submit', (ev) => { ev.preventDefault(); addRoot(false); });
+  $('add-single').addEventListener('click', () => addRoot(true));
 
   $('browse').addEventListener('click', async () => {
     const p = await api.pickFolder();
@@ -355,7 +358,7 @@
     busy(true);
     try {
       const r = await api.scan();
-      setStatus(t('scan_done', { n: r.scanned }));
+      setStatus(t('scan_done', { n: r.scanned, added: r.added }));
       await renderRail();
       await refresh();
     } catch { setStatus(t('err_unexpected')); } finally { busy(false); }

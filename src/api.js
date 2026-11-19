@@ -56,20 +56,27 @@ function createApi({
       search.invalidate();
     },
     getDrives,
-    async addRoot(absPath) {
+    // single = this one folder is a title (or a series), not a folder that holds titles
+    async addRoot(absPath, single = false) {
       const hit = toDriveRel((await getDrives()).filter((d) => d.online), absPath);
       if (!hit) return { ok: false, error: 'no_drive' };
-      db.prepare('INSERT OR IGNORE INTO roots(drive_serial, rel_path) VALUES(?, ?)').run(hit.serial, hit.relPath);
+      if (single) {
+        if (!hit.relPath) return { ok: false, error: 'drive_root' };
+        let isDir = false;
+        try { isDir = fs.statSync(absPath).isDirectory(); } catch { /* not there */ }
+        if (!isDir) return { ok: false, error: 'not_folder' };
+      }
+      db.prepare('INSERT OR IGNORE INTO roots(drive_serial, rel_path, single) VALUES(?, ?, ?)').run(hit.serial, hit.relPath, single ? 1 : 0);
       return { ok: true };
     },
     async removeRoot(id) {
-      const root = db.prepare('SELECT drive_serial, rel_path FROM roots WHERE id = ?').get(id);
+      const root = db.prepare('SELECT drive_serial, rel_path, single FROM roots WHERE id = ?').get(id);
       if (!root) return;
       const prefix = root.rel_path ? `${root.rel_path}/` : '';
       db.exec('BEGIN');
       try {
         for (const l of db.prepare('SELECT id, rel_path FROM locations WHERE drive_serial = ?').all(root.drive_serial)) {
-          if (l.rel_path.startsWith(prefix)) db.prepare('DELETE FROM locations WHERE id = ?').run(l.id);
+          if (l.rel_path.startsWith(prefix) || (root.single && l.rel_path.toLowerCase() === root.rel_path.toLowerCase())) db.prepare('DELETE FROM locations WHERE id = ?').run(l.id);
         }
         for (const o of db.prepare('SELECT id FROM titles WHERE id NOT IN (SELECT title_id FROM locations WHERE title_id IS NOT NULL)').all()) forgetSeasons(db, o.id);
         db.exec('DELETE FROM titles WHERE id NOT IN (SELECT title_id FROM locations WHERE title_id IS NOT NULL)');
@@ -83,22 +90,30 @@ function createApi({
       search.invalidate();
     },
     async getRoots() {
-      return db.prepare(`SELECT r.id, r.drive_serial AS driveSerial, d.label AS driveLabel, r.rel_path AS relPath,
+      return db.prepare(`SELECT r.id, r.drive_serial AS driveSerial, d.label AS driveLabel, r.rel_path AS relPath, r.single,
         COALESCE(d.online, 0) AS online FROM roots r LEFT JOIN drives d ON d.serial = r.drive_serial ORDER BY r.id`).all()
-        .map((r) => ({ ...r, driveLabel: r.driveLabel || '', online: !!r.online }));
+        .map((r) => ({ ...r, driveLabel: r.driveLabel || '', online: !!r.online, single: !!r.single }));
     },
     async scan() {
       await getDrives();
-      const roots = db.prepare(`SELECT r.drive_serial, r.rel_path, d.root FROM roots r
+      const roots = db.prepare(`SELECT r.drive_serial, r.rel_path, r.single, d.root FROM roots r
         JOIN drives d ON d.serial = r.drive_serial WHERE d.online = 1`).all();
       const opts = { ignore: getSetting(db, 'ignore'), collections: getSetting(db, 'collections') };
       const patterns = getSetting(db, 'patterns');
+      let added = 0;
       for (const r of roots) {
-        const scan = scanFolder(path.join(r.root, r.rel_path), r.rel_path, opts);
-        syncScan(db, { driveSerial: r.drive_serial, rootRel: r.rel_path, scan, patterns });
+        let scan;
+        if (r.single) { // scan the parent, keeping only this folder
+          const i = r.rel_path.lastIndexOf('/');
+          const parent = i < 0 ? '' : r.rel_path.slice(0, i);
+          scan = scanFolder(path.join(r.root, parent), parent, { ...opts, only: r.rel_path.slice(i + 1) });
+        } else {
+          scan = scanFolder(path.join(r.root, r.rel_path), r.rel_path, opts);
+        }
+        added += syncScan(db, { driveSerial: r.drive_serial, rootRel: r.rel_path, scan, patterns });
       }
       search.invalidate();
-      return { scanned: roots.length };
+      return { scanned: roots.length, added };
     },
     async startQueue(onProgress) {
       if (!key()) return { processed: 0, remaining: pendingCount(), stoppedBy: 'bad_key', episodes: 0 };

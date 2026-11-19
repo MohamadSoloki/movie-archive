@@ -21,7 +21,7 @@ function setup({ key = 'K', openPath, openExternal, mymemory } = {}) {
     if (String(url).includes('omdbapi.com')) {
       const t = new URL(url).searchParams.get('t');
       // any title other than "batman" gets its own imdb id, so tests can have two distinct titles
-      const body = t && t !== 'batman' ? { ...OMDB_BODY, imdbID: 'tt7654321', Title: t, Poster: 'N/A' } : OMDB_BODY;
+      const body = t && t !== 'batman' ? { ...OMDB_BODY, imdbID: `tt${1000000 + [...t].reduce((a, c) => a + c.charCodeAt(0), 0)}`, Title: t, Poster: 'N/A' } : OMDB_BODY;
       return { ok: true, status: 200, json: async () => body };
     }
     if (String(url).includes('mymemory')) return { ok: true, status: 200, json: async () => (mymemory ? mymemory(url) : { responseStatus: 200, responseData: { translatedText: 'سلام' } }) };
@@ -53,7 +53,7 @@ test('scan lists folders as entries, including empty ones, and never writes into
   fs.writeFileSync(path.join(media, 'Movies', 'batman 2022', 'movie.mkv'), 'x');
   await api.addRoot(path.join(media, 'Movies'));
   const before = snapshot(media);
-  assert.deepEqual(await api.scan(), { scanned: 1 });
+  assert.deepEqual(await api.scan(), { scanned: 1, added: 2 });
   assert.equal(snapshot(media), before);
   const entries = (await api.getEntries()).entries;
   assert.equal(entries.length, 2);
@@ -216,4 +216,49 @@ test('getEntries takes tab and sort and returns entries with genre counts', asyn
   const r = await api.getEntries({ tab: 'movie', sort: 'year' });
   assert.deepEqual([r.entries.length, r.genres], [1, [{ name: 'Action', count: 1 }]]);
   assert.equal((await api.getEntries({ tab: 'series' })).entries.length, 0);
+});
+
+test('a second scan adds only the new folders and the queue asks OMDb only for them', async () => {
+  const { api, media, fetchCalls } = setup();
+  for (const n of ['batman 2022', 'dune 2021']) fs.mkdirSync(path.join(media, 'Movies', n), { recursive: true });
+  await api.addRoot(path.join(media, 'Movies'));
+  assert.equal((await api.scan()).added, 2);
+  await api.setSettings({ omdbKey: 'K' });
+  await api.startQueue(() => {});
+  const asked = () => fetchCalls.filter((u) => u.includes('omdbapi.com')).length;
+  const first = asked();
+  const before = (await api.getEntries()).entries.map((e) => [e.title, e.status]);
+  fs.mkdirSync(path.join(media, 'Movies', 'alien 1979'));
+  assert.deepEqual(await api.scan(), { scanned: 1, added: 1 });
+  await api.startQueue(() => {});
+  assert.equal(asked(), first + 1);
+  const after = (await api.getEntries()).entries;
+  assert.equal(after.length, 3);
+  for (const [title, status] of before) assert.equal(after.find((e) => e.title === title).status, status);
+  assert.deepEqual(await api.scan(), { scanned: 1, added: 0 });
+});
+
+test('addRoot single adds one folder as a title; its siblings are not scanned; removing it removes it', async () => {
+  const { api, media } = setup();
+  for (const n of ['batman 2022', 'dune 2021']) fs.mkdirSync(path.join(media, 'Movies', n), { recursive: true });
+  assert.deepEqual(await api.addRoot(path.join(media, 'Movies', 'batman 2022'), true), { ok: true });
+  assert.deepEqual(await api.scan(), { scanned: 1, added: 1 });
+  let entries = (await api.getEntries()).entries;
+  assert.deepEqual(entries.map((e) => e.locations[0].relPath), ['Movies/batman 2022']);
+  fs.rmSync(path.join(media, 'Movies', 'batman 2022'), { recursive: true });
+  await api.scan();
+  assert.equal((await api.getEntries()).entries[0].locations[0].missing, true);
+  const [root] = await api.getRoots();
+  assert.equal(root.single, true);
+  await api.removeRoot(root.id);
+  assert.equal((await api.getEntries()).entries.length, 0);
+});
+
+test('addRoot single refuses a missing path, a plain file and a drive root', async () => {
+  const { api, media } = setup();
+  fs.writeFileSync(path.join(media, 'a.txt'), 'x');
+  assert.deepEqual(await api.addRoot(path.join(media, 'nope'), true), { ok: false, error: 'not_folder' });
+  assert.deepEqual(await api.addRoot(path.join(media, 'a.txt'), true), { ok: false, error: 'not_folder' });
+  assert.deepEqual(await api.addRoot(media, true), { ok: false, error: 'drive_root' });
+  assert.equal((await api.getRoots()).length, 0);
 });

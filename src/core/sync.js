@@ -2,7 +2,7 @@
 const { parseFolderName } = require('./pattern.js');
 
 function syncScan(db, { driveSerial, rootRel, scan, patterns }) {
-  if (!scan.ok) return; // unreadable root must not turn everything into "missing"
+  if (!scan.ok) return 0; // unreadable root must not turn everything into "missing"
 
   const find = db.prepare('SELECT id, pinned, status FROM locations WHERE drive_serial = ? AND rel_path = ?');
   const insert = db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, parsed_year, season, guessed, is_empty)
@@ -18,6 +18,7 @@ function syncScan(db, { driveSerial, rootRel, scan, patterns }) {
   db.exec('BEGIN');
   try {
     const seen = new Set();
+    let added = 0;
     for (const e of scan.entries) {
       seen.add(e.relPath);
       const p = parseFolderName(e.titleName ?? e.name, patterns);
@@ -25,6 +26,7 @@ function syncScan(db, { driveSerial, rootRel, scan, patterns }) {
       const row = find.get(driveSerial, e.relPath);
       if (!row) {
         insert.run(driveSerial, e.relPath, e.name, p.title, p.year, p.season, p.by === 'auto' ? 1 : 0, e.isEmpty ? 1 : 0);
+        added += 1;
         continue;
       }
       touch.run(e.isEmpty ? 1 : 0, row.id);
@@ -33,9 +35,12 @@ function syncScan(db, { driveSerial, rootRel, scan, patterns }) {
     const prefix = rootRel ? `${rootRel}/` : '';
     for (const r of db.prepare('SELECT id, rel_path FROM locations WHERE drive_serial = ?').all(driveSerial)) {
       const blind = unreadable.some((u) => r.rel_path === u || r.rel_path.startsWith(`${u}/`));
-      if (r.rel_path.startsWith(prefix) && !seen.has(r.rel_path) && !blind) setMissing.run(r.id);
+      // a single-folder root is its own rel_path, not a parent of it
+      const inRoot = r.rel_path.startsWith(prefix) || (rootRel && r.rel_path.toLowerCase() === rootRel.toLowerCase());
+      if (inRoot && !seen.has(r.rel_path) && !blind) setMissing.run(r.id);
     }
     db.exec('COMMIT');
+    return added;
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
