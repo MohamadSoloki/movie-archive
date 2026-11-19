@@ -276,3 +276,25 @@ test('stored translations survive closing and reopening the app, with no request
   assert.deepEqual(await offline.api.translate('Hello world.'), { ok: true, text: 'سلام دنیا' });
   assert.equal((await offline.api.getSettings()).language, 'fa');
 });
+
+test('a collection folder with movie files is scanned into one entry per film and opens its folder', async () => {
+  const opened = [];
+  const { api, media } = setup({ openPath: async (p) => { opened.push(p); return ''; } });
+  const dir = path.join(media, 'Movies', 'Batman Trilogy');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const f of ['batman begins 2005.mkv', 'the dark knight 2008.mkv']) fs.writeFileSync(path.join(dir, f), 'x');
+  await api.addRoot(path.join(media, 'Movies'));
+  assert.deepEqual(await api.scan(), { scanned: 1, added: 2 });
+  await api.setSettings({ omdbKey: 'K' });
+  await api.startQueue(() => {});
+  const { entries } = await api.getEntries();
+  const pack = entries.find((e) => e.kind === 'collection');
+  assert.deepEqual([entries.length, pack.title, pack.members.length], [3, 'Batman Trilogy', 2]);
+  assert.deepEqual(await api.openCollection(pack.collection.driveSerial, pack.collection.relPath), { ok: true });
+  assert.deepEqual(opened, [dir]);
+  // a file entry opens the folder that holds it, not the video
+  const film = entries.find((e) => e.kind !== 'collection');
+  assert.deepEqual(await api.openLocation(film.locations[0].id), { ok: true });
+  assert.equal(opened[1], dir);
+  assert.deepEqual(await api.openCollection('S1', '../../etc'), { ok: false, error: 'unknown' });
+});

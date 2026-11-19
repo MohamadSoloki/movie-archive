@@ -45,6 +45,7 @@ Plans: `docs/superpowers/plans/2026-11-17-movie-archive.md`, `docs/superpowers/p
   `''` = source has none. Season lists that OMDb does not know are remembered under cache key `season-none:<titleId>:<n>`.
 - Rescan is incremental: existing `(drive, rel_path)` rows keep status/title/pins/translations; only new folders are inserted (`syncScan` returns the count, `api.scan` returns `{scanned, added}`).
 - A root with `single = 1` is one folder (one title, or a series), not a folder of titles. `scanFolder(..., { only })` keeps just that child; `syncScan` marks only that rel_path (and below) missing, never siblings.
+- Collections: a folder that opens (no video of its own, or several separate movie files — `NOT_A_MOVIE` filters samples/trailers/episodes/disc parts) stores its rel path in `locations.collection` for every title under it (a series folder passes the outer collection through). `library.collectionEntries` adds one `kind: 'collection'` entry per folder with ≥2 members (All tab only). A file entry's `rel_path` is the video file; `api.openRel` opens its parent folder. `openCollection` only opens a path some stored location names as its collection.
 - Anime show only under the All tab (`kind` is `other`); there is no anime tab yet.
 - The interface must not offer watched/favourite/random-pick features; the owner rejected them.
 - TDD: write the failing test first, watch it fail, then fix.

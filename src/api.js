@@ -40,6 +40,18 @@ function createApi({
       .map((d) => ({ ...d, online: !!d.online }));
   }
 
+  // Opens a stored folder in the file manager. A file (one film inside a collection folder) opens the folder that holds it.
+  async function openRel(serial, relPath) {
+    const d = db.prepare('SELECT root, online FROM drives WHERE serial = ?').get(serial);
+    // the stored online flag can be stale: the drive may have been unplugged since the last refresh
+    if (!d || !d.online || !fs.existsSync(d.root)) return { ok: false, error: 'offline' };
+    let abs = path.join(d.root, relPath);
+    if (!fs.existsSync(abs)) return { ok: false, error: 'missing' };
+    if (fs.statSync(abs).isFile()) abs = path.dirname(abs);
+    // shell.openPath answers with an error text, or '' on success
+    return (await openPath(abs)) ? { ok: false, error: 'missing' } : { ok: true };
+  }
+
   async function fixLocation(target, link) {
     if (!key()) return { ok: false, error: 'bad_key' };
     const r = await fix.applyFix(db, target, link, deps());
@@ -142,15 +154,13 @@ function createApi({
       }
     },
     async openLocation(locationId) {
-      const l = db.prepare(`SELECT l.rel_path, d.root, COALESCE(d.online, 0) AS online FROM locations l
-        LEFT JOIN drives d ON d.serial = l.drive_serial WHERE l.id = ?`).get(locationId);
-      if (!l) return { ok: false, error: 'unknown' };
-      // the stored online flag can be stale: the drive may have been unplugged since the last refresh
-      if (!l.online || !fs.existsSync(l.root)) return { ok: false, error: 'offline' };
-      const abs = path.join(l.root, l.rel_path);
-      if (!fs.existsSync(abs)) return { ok: false, error: 'missing' };
-      // shell.openPath answers with an error text, or '' on success
-      return (await openPath(abs)) ? { ok: false, error: 'missing' } : { ok: true };
+      const l = db.prepare('SELECT drive_serial, rel_path FROM locations WHERE id = ?').get(locationId);
+      return l ? openRel(l.drive_serial, l.rel_path) : { ok: false, error: 'unknown' };
+    },
+    // only a folder that some stored location names as its collection can be opened this way
+    async openCollection(driveSerial, relPath) {
+      const known = db.prepare('SELECT 1 FROM locations WHERE drive_serial = ? AND collection = ?').get(driveSerial, relPath);
+      return known ? openRel(driveSerial, relPath) : { ok: false, error: 'unknown' };
     },
     async openImdb(titleId) {
       const id = db.prepare('SELECT imdb_id FROM titles WHERE id = ?').get(titleId)?.imdb_id;

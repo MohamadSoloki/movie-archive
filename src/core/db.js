@@ -43,6 +43,10 @@ function openDb(file = ':memory:') {
   const have = db.prepare('PRAGMA table_info(titles)').all().map((c) => c.name);
   if (!have.includes('poster_url')) db.exec('ALTER TABLE titles ADD COLUMN poster_url TEXT');
   // a root added as one single folder (one title) instead of a folder of titles
+  // the folder that groups this title with others (Batman Trilogy/...), as a relative path
+  if (!db.prepare('PRAGMA table_info(locations)').all().some((c) => c.name === 'collection')) {
+    db.exec('ALTER TABLE locations ADD COLUMN collection TEXT');
+  }
   if (!db.prepare('PRAGMA table_info(roots)').all().some((c) => c.name === 'single')) {
     db.exec('ALTER TABLE roots ADD COLUMN single INTEGER NOT NULL DEFAULT 0');
   }

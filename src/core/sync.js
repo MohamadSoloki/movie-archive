@@ -5,9 +5,9 @@ function syncScan(db, { driveSerial, rootRel, scan, patterns }) {
   if (!scan.ok) return 0; // unreadable root must not turn everything into "missing"
 
   const find = db.prepare('SELECT id, pinned, status FROM locations WHERE drive_serial = ? AND rel_path = ?');
-  const insert = db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, parsed_year, season, guessed, is_empty)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?)`);
-  const touch = db.prepare('UPDATE locations SET missing = 0, is_empty = ? WHERE id = ?');
+  const insert = db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, parsed_year, season, guessed, is_empty, collection)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const touch = db.prepare('UPDATE locations SET missing = 0, is_empty = ?, collection = ? WHERE id = ?');
   // a review location whose parse changed (new patterns) is queued again; unchanged ones stay in review
   const reparse = db.prepare(`UPDATE locations SET
     status = CASE WHEN status = 'review' AND (parsed_title IS NOT ?1 OR parsed_year IS NOT ?2) THEN 'pending' ELSE status END,
@@ -25,11 +25,11 @@ function syncScan(db, { driveSerial, rootRel, scan, patterns }) {
       p.season = e.season ?? p.season;
       const row = find.get(driveSerial, e.relPath);
       if (!row) {
-        insert.run(driveSerial, e.relPath, e.name, p.title, p.year, p.season, p.by === 'auto' ? 1 : 0, e.isEmpty ? 1 : 0);
+        insert.run(driveSerial, e.relPath, e.name, p.title, p.year, p.season, p.by === 'auto' ? 1 : 0, e.isEmpty ? 1 : 0, e.collection ?? null);
         added += 1;
         continue;
       }
-      touch.run(e.isEmpty ? 1 : 0, row.id);
+      touch.run(e.isEmpty ? 1 : 0, e.collection ?? null, row.id);
       if (!row.pinned && row.status !== 'matched') reparse.run(p.title, p.year, p.season, p.by === 'auto' ? 1 : 0, row.id);
     }
     const prefix = rootRel ? `${rootRel}/` : '';

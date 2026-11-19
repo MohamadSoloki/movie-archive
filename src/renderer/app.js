@@ -74,6 +74,7 @@
 
   function flagsOf(e) {
     const flags = [];
+    if (e.kind === 'collection') return flags;
     const present = e.locations.filter((l) => !l.missing);
     if (!present.length) flags.push({ cls: 'missing', text: t('badge_missing') });
     if (e.status === 'review') flags.push({ cls: 'review', text: t('badge_review') });
@@ -103,6 +104,7 @@
     posterEl(e),
     h('span', { class: 'name' }, e.title),
     e.year ? h('span', { class: 'year' }, e.year) : null,
+    e.kind === 'collection' ? h('span', { class: 'flag' }, t('collection_n', { n: e.members.length })) : null,
     e.genreList.length ? h('span', { class: 'tags' }, e.genreList.slice(0, 3).map((g) => h('span', { class: 'tag' }, genreName(g)))) : null,
     first ? h('span', { class: 'flag' }, first.text) : null);
   }
@@ -277,11 +279,39 @@
     return box;
   }
 
+  // A folder that groups several titles: its folder button and the titles inside it.
+  function collectionDetail(e) {
+    const c = e.collection;
+    const blocked = !c.online ? t('open_offline') : (c.missing ? t('open_missing') : null);
+    return [
+      h('button', { class: 'close', type: 'button', 'aria-label': t('close'), onclick: () => select(null) }, '×'),
+      posterEl(e),
+      h('h2', { dir: 'auto' }, e.title),
+      h('p', { class: 'sub' }, t('collection_n', { n: e.members.length })),
+      h('button', {
+        type: 'button', class: 'open', disabled: !!blocked, title: blocked,
+        onclick: async () => { const r = await api.openCollection(c.driveSerial, c.relPath); if (!r.ok) setStatus(errText(r.error)); },
+      }, t('open_folder')),
+      h('h3', {}, t('collection_members')),
+      h('ul', { class: 'plain members' }, e.members.map((m) => h('li', {}, h('button', { type: 'button', class: 'member', onclick: () => openMember(m.key) },
+        h('span', { dir: 'auto' }, m.title), m.year ? h('span', { class: 'year' }, ` ${m.year}`) : null)))),
+    ];
+  }
+
+  // the member may be hidden by the current tab, genre filter or search, so these are reset first
+  async function openMember(key) {
+    state.tab = 'all'; state.genres = []; state.query = ''; $('q').value = '';
+    for (const x of document.querySelectorAll('#tabs button')) x.setAttribute('aria-selected', String(x.dataset.tab === 'all'));
+    state.selected = key;
+    await refresh();
+  }
+
   function renderDetail() {
     const d = $('detail');
     const e = state.entries.find((x) => x.key === state.selected);
     if (!e) { d.hidden = true; d.replaceChildren(); return; }
     d.hidden = false;
+    if (e.kind === 'collection') { d.replaceChildren(...collectionDetail(e)); return; }
     const facts = [[t('rating'), e.rating], [t('runtime'), e.runtime], [t('director'), e.director], [t('actors'), e.actors],
       [t('country'), e.country], [t('rated'), e.rated], [t('awards'), e.awards]].filter(([, v]) => v);
     // dir="auto": English titles and plots from OMDb stay left-to-right inside the right-to-left Persian UI

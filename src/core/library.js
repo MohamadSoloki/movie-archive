@@ -7,6 +7,7 @@ function listEntries(db) {
   const shape = (l) => ({
     id: l.id, driveSerial: l.drive_serial, driveLabel: l.drive_label || '', online: !!l.drive_online,
     relPath: l.rel_path, folderName: l.folder_name, season: l.season, isEmpty: !!l.is_empty, missing: !!l.missing,
+    collection: l.collection,
   });
 
   const kindOf = (type) => (type === 'movie' || type === 'series' ? type : 'other');
@@ -39,7 +40,35 @@ function listEntries(db) {
     e.locations.push(shape(l));
     if (l.guessed) e.guessed = true;
   }
+  entries.push(...collectionEntries(entries));
   return entries.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+}
+
+// A folder that holds two or more titles (Batman Trilogy/...) is shown as one more entry that lists them.
+function collectionEntries(entries) {
+  const groups = new Map();
+  for (const e of entries) {
+    for (const l of e.locations) {
+      if (!l.collection) continue;
+      const key = `${l.driveSerial}|${l.collection}`;
+      if (!groups.has(key)) groups.set(key, { l, members: new Map(), locs: [] });
+      const g = groups.get(key);
+      g.members.set(e.key, e);
+      g.locs.push(l);
+    }
+  }
+  return [...groups.values()].filter((g) => g.members.size >= 2).map(({ l, members, locs }) => {
+    const list = [...members.values()].sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+    return {
+      key: `c:${l.driveSerial}|${l.collection}`, kind: 'collection', titleId: null, locationId: null,
+      title: l.collection.split('/').pop(), year: null, type: 'collection', plot: null, genres: null, rating: null, runtime: null,
+      actors: null, posterFile: list.find((m) => m.posterFile)?.posterFile ?? null, status: 'matched', guessed: false, locations: [],
+      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, totalSeasons: null,
+      addedOrder: Math.min(...locs.map((x) => x.id)),
+      collection: { driveSerial: l.driveSerial, relPath: l.collection, online: l.online, missing: locs.every((x) => x.missing) },
+      members: list.map((m) => ({ key: m.key, title: m.title, year: m.year, posterFile: m.posterFile, status: m.status, kind: m.kind })),
+    };
+  });
 }
 
 module.exports = { listEntries };

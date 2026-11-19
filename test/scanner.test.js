@@ -9,7 +9,10 @@ const { scanFolder } = require('../src/core/scanner.js');
 function tree(dirs, files = []) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'scan-'));
   for (const d of dirs) fs.mkdirSync(path.join(root, d), { recursive: true });
-  for (const f of files) fs.writeFileSync(path.join(root, f), 'x');
+  for (const f of files) {
+    fs.mkdirSync(path.dirname(path.join(root, f)), { recursive: true });
+    fs.writeFileSync(path.join(root, f), 'x');
+  }
   return root;
 }
 const opts = { ignore: [], collections: [] };
@@ -175,4 +178,44 @@ test('only: scans just that one folder, case-insensitively, and classifies it li
   const show = scanFolder(root, 'Movies', { ...opts, only: 'Mentalist' }).entries;
   assert.deepEqual(show.map((e) => [e.relPath, e.season, e.titleName]), [['Movies/Mentalist/Season 1', '1', 'Mentalist'], ['Movies/Mentalist/Season 2', '2', 'Mentalist']]);
   assert.deepEqual(scanFolder(root, 'Movies', { ...opts, only: 'nothing' }).entries, []);
+});
+
+const colOf = (scan) => Object.fromEntries(scan.entries.map((e) => [e.name, e.collection]));
+
+test('a collection folder of movie folders: each movie is an entry that remembers the collection', () => {
+  const scan = scanFolder(tree(['Batman Trilogy/Batman Begins (2005)', 'Batman Trilogy/The Dark Knight (2008)', 'Batman Trilogy/The Dark Knight Rises (2012)']), 'Movies', opts);
+  assert.equal(scan.entries.length, 3);
+  assert.ok(scan.entries.every((e) => e.collection === 'Movies/Batman Trilogy'));
+  assert.deepEqual(colOf(scanFolder(tree(['Alien 1979']), '', opts)), { 'Alien 1979': null });
+});
+
+test('a collection whose own name has a year is still opened when it holds several movie folders', () => {
+  const scan = scanFolder(tree(['Batman Trilogy (2005-2012)/Batman Begins (2005)', 'Batman Trilogy (2005-2012)/The Dark Knight (2008)']), '', opts);
+  assert.deepEqual(scan.entries.map((e) => e.relPath).sort(), ['Batman Trilogy (2005-2012)/Batman Begins (2005)', 'Batman Trilogy (2005-2012)/The Dark Knight (2008)']);
+});
+
+test('a folder holding several movie files gives one entry per file, named after the file', () => {
+  const files = ['Batman Trilogy/Batman.Begins.2005.1080p.mkv', 'Batman Trilogy/The.Dark.Knight.2008.1080p.mkv', 'Batman Trilogy/The.Dark.Knight.Rises.2012.mkv', 'Batman Trilogy/readme.txt'];
+  const scan = scanFolder(tree(['Batman Trilogy'], files), '', opts);
+  assert.deepEqual(scan.entries.map((e) => [e.name, e.relPath, e.collection, e.titleName]), [
+    ['Batman.Begins.2005.1080p', 'Batman Trilogy/Batman.Begins.2005.1080p.mkv', 'Batman Trilogy', 'Batman.Begins.2005.1080p'],
+    ['The.Dark.Knight.2008.1080p', 'Batman Trilogy/The.Dark.Knight.2008.1080p.mkv', 'Batman Trilogy', 'The.Dark.Knight.2008.1080p'],
+    ['The.Dark.Knight.Rises.2012', 'Batman Trilogy/The.Dark.Knight.Rises.2012.mkv', 'Batman Trilogy', 'The.Dark.Knight.Rises.2012']]);
+});
+
+test('samples, trailers, episodes and disc parts are not separate movies', () => {
+  const one = (files) => scanFolder(tree([], files), '', opts).entries.map((e) => e.relPath);
+  assert.deepEqual(one(['Movie (2010)/movie.mkv', 'Movie (2010)/movie-sample.mkv', 'Movie (2010)/trailer.mp4']), ['Movie (2010)']);
+  assert.deepEqual(one(['Show/Show.S01E01.mkv', 'Show/Show.S01E02.mkv']), ['Show']);
+  assert.deepEqual(one(['Film/film.cd1.mkv', 'Film/film.cd2.mkv']), ['Film']);
+  assert.deepEqual(one(['Film Name/film.part1.mkv', 'Film Name/film.part2.mkv']), ['Film Name']);
+});
+
+test('a movie folder with a year and two unrelated-year-less files stays one title', () => {
+  assert.deepEqual(scanFolder(tree([], ['Inception (2010)/a.mkv', 'Inception (2010)/b.mkv']), '', opts).entries.map((e) => e.relPath), ['Inception (2010)']);
+});
+
+test('a series inside a collection keeps the collection; the series folder itself is not one', () => {
+  const scan = scanFolder(tree(['Pack/Mentalist/Season 1', 'Pack/Mentalist/Season 2', 'Pack/Alien 1979']), '', opts);
+  assert.deepEqual(scan.entries.map((e) => [e.relPath, e.collection]).sort(), [['Pack/Alien 1979', 'Pack'], ['Pack/Mentalist/Season 1', 'Pack'], ['Pack/Mentalist/Season 2', 'Pack']]);
 });

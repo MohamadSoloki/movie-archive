@@ -131,3 +131,13 @@ test('a single-folder root marks only its own folder missing, never its siblings
   syncScan(db, { driveSerial: 'S1', rootRel: 'Movies/Batman 2022', scan: scanOf(), patterns: P });
   assert.deepEqual(rows(db).map((r) => [r.parsed_title, r.missing]), [['batman', 1], ['dune', 0]]);
 });
+
+test('the collection folder is stored on each location and kept up to date on rescan', () => {
+  const db = openDb();
+  const e = (name, collection) => ({ ...entry(name), collection });
+  syncScan(db, args(scanOf(e('a 2000', 'Movies/Pack'), e('b 2001', null))));
+  assert.deepEqual(rows(db).map((r) => r.collection), ['Movies/Pack', null]);
+  db.prepare("UPDATE locations SET status = 'matched', pinned = 1").run();
+  syncScan(db, args(scanOf(e('a 2000', null), e('b 2001', 'Movies/Pack'))));
+  assert.deepEqual(rows(db).map((r) => [r.collection, r.status, r.pinned]), [[null, 'matched', 1], ['Movies/Pack', 'matched', 1]]);
+});

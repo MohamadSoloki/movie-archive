@@ -83,3 +83,22 @@ test('entries carry genre list, extra facts, kind and add order', () => {
   assert.deepEqual([by.Lost.kind, by.Lost.totalSeasons, by.Naruto.kind], ['series', 6, 'other']);
   assert.deepEqual([by['unknown show'].kind, by['unknown film'].kind, by['unknown film'].genreList, by['unknown film'].imdbId], ['series', 'movie', [], null]);
 });
+
+test('a folder that groups two or more titles is a collection entry listing its members', () => {
+  const db = openDb();
+  refreshDrives(db, [{ serial: 'S1', label: 'Films1', root: 'E:\\' }]);
+  const a = upsertTitle(db, info('tt11', 'Batman Begins'), 'tt11.jpg');
+  const b = upsertTitle(db, info('tt12', 'The Dark Knight'), null);
+  const inPack = (id) => db.prepare("UPDATE locations SET collection = 'Movies/Batman Trilogy' WHERE id = ?").run(id);
+  inPack(addLoc(db, { titleId: a, status: 'matched' }));
+  inPack(addLoc(db, { titleId: b, status: 'matched' }));
+  inPack(addLoc(db, { title: 'unknown third', status: 'review' }));
+  const lone = upsertTitle(db, info('tt13', 'Alone'), null);
+  db.prepare("UPDATE locations SET collection = 'Movies/Solo' WHERE id = ?").run(addLoc(db, { titleId: lone, status: 'matched' }));
+  const all = listEntries(db);
+  const c = all.find((e) => e.kind === 'collection');
+  assert.equal(all.filter((e) => e.kind === 'collection').length, 1);
+  assert.deepEqual([c.title, c.posterFile, c.collection.online, c.collection.relPath, c.collection.missing], ['Batman Trilogy', 'tt11.jpg', true, 'Movies/Batman Trilogy', false]);
+  assert.deepEqual(c.members.map((m) => m.title).sort(), ['Batman Begins', 'The Dark Knight', 'unknown third']);
+  assert.equal(all.length, 5); // 4 titles/unmatched + the collection
+});
