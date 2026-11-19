@@ -262,3 +262,17 @@ test('addRoot single refuses a missing path, a plain file and a drive root', asy
   assert.deepEqual(await api.addRoot(media, true), { ok: false, error: 'drive_root' });
   assert.equal((await api.getRoots()).length, 0);
 });
+
+test('stored translations survive closing and reopening the app, with no request', async () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'reopen-')), 'archive.db');
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'ud-'));
+  const open = (fetch) => { const db = openDb(file); return { db, api: createApi({ db, userDataDir: userData, fetch, listDrives: async () => [] }) }; };
+  const online = async () => ({ ok: true, status: 200, json: async () => ({ responseStatus: 200, responseData: { translatedText: 'سلام دنیا' } }) });
+  const first = open(online);
+  await first.api.setSettings({ language: 'fa' });
+  assert.deepEqual(await first.api.translate('Hello world.'), { ok: true, text: 'سلام دنیا' });
+  first.db.close();
+  const offline = open(async () => { throw new Error('no network'); });
+  assert.deepEqual(await offline.api.translate('Hello world.'), { ok: true, text: 'سلام دنیا' });
+  assert.equal((await offline.api.getSettings()).language, 'fa');
+});
