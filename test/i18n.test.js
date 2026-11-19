@@ -52,3 +52,13 @@ test('genre names are translated to Persian; unknown genres and English stay as 
     'Western', 'Reality-TV', 'Talk-Show', 'Game-Show', 'News', 'Adult'];
   for (const g of all) assert.ok(GENRES_FA[g], g);
 });
+
+test('interface keys for tabs, sorting, opening and translation exist in both languages', () => {
+  for (const k of ['tab_all', 'tab_movie', 'tab_series', 'open_folder', 'open_imdb', 'sort_name', 'sort_year', 'sort_rating', 'sort_added',
+    'genre_clear', 'director', 'awards', 'rated', 'country', 'plot_translated', 'translate_quota', 'season_title', 'episode_no_plot',
+    'episodes_missing', 'translate_email', 'translate_email_hint', 'open_offline', 'open_missing']) {
+    for (const lang of ['fa', 'en']) {
+      assert.ok(t(lang, k).length > 0 && t(lang, k) !== k, `${lang}.${k}`);
+    }
+  }
+});

@@ -2,8 +2,9 @@
 (() => {
   const api = window.api;
   const $ = (id) => document.getElementById(id);
-  const state = { lang: 'fa', entries: [], selected: null, query: '', shown: 0 };
+  const state = { lang: 'fa', entries: [], selected: null, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], sort: 'name' };
   const t = (key, vars) => window.i18n.t(state.lang, key, vars);
+  const genreName = (g) => window.i18n.genreLabel(state.lang, g);
   const CHUNK = 200;
 
   // Builds DOM with textContent only, so titles and plots from the web can never inject markup.
@@ -28,6 +29,9 @@
       case 'bad_key': return t('err_bad_key');
       case 'network': return t('err_network');
       case 'no_drive': return t('err_no_drive');
+      case 'offline': return t('err_open_offline');
+      case 'missing': return t('err_open_missing');
+      case 'unknown': return t('err_open_unknown');
       default: return String(code);
     }
   }
@@ -39,6 +43,29 @@
     for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
     for (const el of document.querySelectorAll('[data-i18n-placeholder]')) el.placeholder = t(el.dataset.i18nPlaceholder);
     $('lang').textContent = t('lang_toggle');
+    for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === state.tab));
+    $('sort').value = state.sort;
+  }
+
+  // ---- tabs, sorting, genre filter ---------------------------------------
+
+  const sameGenre = (a, b) => a.toLowerCase() === b.toLowerCase();
+  const hasGenre = (g) => state.genres.some((x) => sameGenre(x, g));
+
+  function toggleGenre(g) {
+    state.genres = hasGenre(g) ? state.genres.filter((x) => !sameGenre(x, g)) : [...state.genres, g];
+    return refresh();
+  }
+
+  function renderGenres() {
+    // a selected genre stays visible even when the current tab has none of it, so it can be switched off
+    const shown = [...state.genreCounts];
+    for (const g of state.genres) if (!shown.some((c) => sameGenre(c.name, g))) shown.push({ name: g, count: 0 });
+    const chips = shown.map((c) => h('button', {
+      type: 'button', class: 'chip', 'aria-pressed': String(hasGenre(c.name)), onclick: () => toggleGenre(c.name),
+    }, genreName(c.name), h('span', { class: 'n' }, String(c.count))));
+    if (state.genres.length) chips.push(h('button', { type: 'button', class: 'chip clear', onclick: () => { state.genres = []; refresh(); } }, t('genre_clear')));
+    $('genres').replaceChildren(...chips);
   }
 
   // ---- archive grid ----------------------------------------------------
@@ -74,6 +101,7 @@
     posterEl(e),
     h('span', { class: 'name' }, e.title),
     e.year ? h('span', { class: 'year' }, e.year) : null,
+    e.genreList.length ? h('span', { class: 'tags' }, e.genreList.slice(0, 3).map((g) => h('span', { class: 'tag' }, genreName(g)))) : null,
     first ? h('span', { class: 'flag' }, first.text) : null);
   }
 
@@ -88,11 +116,15 @@
     state.shown = 0;
     appendChunk();
     $('count').textContent = t('count', { n: state.entries.length });
-    $('empty').textContent = state.entries.length ? '' : (state.query ? t('no_results') : t('empty_archive'));
+    const filtered = state.query || state.genres.length || state.tab !== 'all';
+    $('empty').textContent = state.entries.length ? '' : (filtered ? t('no_results') : t('empty_archive'));
   }
 
   async function refresh() {
-    state.entries = await api.getEntries(state.query);
+    const r = await api.getEntries({ query: state.query, tab: state.tab, genres: state.genres, sort: state.sort });
+    state.entries = r.entries;
+    state.genreCounts = r.genres;
+    renderGenres();
     if (state.selected && !state.entries.some((e) => e.key === state.selected)) state.selected = null;
     renderGrid();
     renderDetail();
@@ -114,10 +146,18 @@
       if (l.isEmpty) notes.push(t('badge_empty'));
       if (!l.online) notes.push(t('badge_offline'));
     }
+    const blocked = !l.online ? t('open_offline') : (l.missing ? t('open_missing') : null);
     return h('li', { class: 'loc' },
       h('span', { class: `led ${l.online ? 'on' : 'off'}` }),
       h('span', { class: 'where' }, `${l.driveLabel || l.driveSerial} `, h('span', { class: 'path' }, l.relPath)),
-      notes.length ? h('span', { class: 'note' }, notes.join('، ')) : null);
+      notes.length ? h('span', { class: 'note' }, notes.join('، ')) : null,
+      h('button', {
+        type: 'button', class: 'open', disabled: !!blocked, title: blocked, 'aria-label': `${t('open_folder')}: ${l.relPath}`,
+        onclick: async () => {
+          const r = await api.openLocation(l.id);
+          if (!r.ok) setStatus(errText(r.error));
+        },
+      }, t('open_folder')));
   }
 
   function fixSection(e) {
@@ -172,13 +212,76 @@
     return box;
   }
 
+  // Shows the English text at once and swaps in the stored or fresh Persian translation when it arrives.
+  // Returns 'quota' when the daily translation limit is gone, so callers can stop asking.
+  async function translateInto(el, text, still) {
+    const r = await api.translate(text);
+    if (!still()) return null;
+    if (!r.ok) return r.error;
+    el.textContent = r.text;
+    return 'done';
+  }
+
+  function plotBlock(e) {
+    const el = h('p', { class: 'plot', dir: 'auto' }, e.plot || t('no_plot'));
+    const note = h('p', { class: 'help' });
+    if (e.plot && state.lang === 'fa') {
+      translateInto(el, e.plot, () => el.isConnected).then((r) => {
+        if (r === 'done') note.textContent = t('plot_translated');
+        else if (r === 'quota') note.textContent = t('translate_quota');
+      });
+    }
+    return [el, note];
+  }
+
+  function episodeRow(ep) {
+    const plot = h('p', { class: `ep-plot${ep.plot ? '' : ' muted'}`, dir: 'auto' }, ep.plot || t('episode_no_plot'));
+    return {
+      plot, text: ep.plot,
+      el: h('li', { class: 'ep' },
+        h('span', { class: 'ep-no' }, String(ep.number)),
+        h('span', { class: 'ep-name', dir: 'auto' }, ep.name || ''),
+        h('span', { class: 'ep-meta' },
+          ep.released ? h('span', { class: 'ep-date', dir: 'ltr' }, ep.released) : null,
+          ep.rating ? h('span', { class: 'ep-rate' }, ` ⭐ ${ep.rating}`) : null),
+        plot),
+    };
+  }
+
+  function episodesSection(e) {
+    const box = h('section', { class: 'episodes' });
+    api.getEpisodes(e.titleId).then((seasons) => {
+      if (state.selected !== e.key || !box.isConnected || !seasons.length) return;
+      let quotaHit = false;
+      const lacking = seasons.reduce((n, s) => n + s.episodes.filter((x) => !x.plot).length, 0);
+      for (const s of seasons) {
+        const rows = s.episodes.map(episodeRow);
+        const det = h('details', {}, h('summary', {}, t('season_title', { n: s.season, m: s.episodes.length })), h('ul', { class: 'eps' }, rows.map((r) => r.el)));
+        let started = false;
+        det.addEventListener('toggle', async () => {
+          if (!det.open || started || state.lang !== 'fa') return;
+          started = true;
+          for (const r of rows) {
+            if (!r.text || quotaHit) continue;
+            const res = await translateInto(r.plot, r.text, () => det.isConnected);
+            if (res === 'quota') { quotaHit = true; box.append(h('p', { class: 'help' }, t('translate_quota'))); }
+            if (res !== 'done') break;
+          }
+        });
+        box.append(det);
+      }
+      if (lacking) box.append(h('p', { class: 'help' }, t('episodes_missing', { n: lacking })));
+    });
+    return box;
+  }
+
   function renderDetail() {
     const d = $('detail');
     const e = state.entries.find((x) => x.key === state.selected);
     if (!e) { d.hidden = true; d.replaceChildren(); return; }
     d.hidden = false;
-    const facts = [[t('rating'), e.rating], [t('runtime'), e.runtime], [t('genres'), e.genres], [t('actors'), e.actors]]
-      .filter(([, v]) => v);
+    const facts = [[t('rating'), e.rating], [t('runtime'), e.runtime], [t('director'), e.director], [t('actors'), e.actors],
+      [t('country'), e.country], [t('rated'), e.rated], [t('awards'), e.awards]].filter(([, v]) => v);
     // dir="auto": English titles and plots from OMDb stay left-to-right inside the right-to-left Persian UI
     d.replaceChildren(...[
       h('button', { class: 'close', type: 'button', 'aria-label': t('close'), onclick: () => select(null) }, '×'),
@@ -186,9 +289,14 @@
       h('h2', { dir: 'auto' }, e.title),
       h('p', { class: 'sub', dir: 'auto' }, [e.year, e.type].filter(Boolean).join(' ')),
       h('ul', { class: 'flags' }, flagsOf(e).map((f) => h('li', {}, f.text))),
+      e.imdbId ? h('button', { type: 'button', class: 'imdb', onclick: () => api.openImdb(e.titleId) }, t('open_imdb')) : null,
+      e.genreList.length ? h('div', { class: 'detail-tags', 'aria-label': t('genres') }, e.genreList.map((g) => h('button', {
+        type: 'button', class: 'tag', 'aria-pressed': String(hasGenre(g)), onclick: () => toggleGenre(g),
+      }, genreName(g)))) : null,
       h('dl', { class: 'facts' }, facts.flatMap(([k, v]) => [h('dt', {}, k), h('dd', { dir: 'auto' }, v)])),
       h('h3', {}, t('plot')),
-      h('p', { class: 'plot', dir: 'auto' }, e.plot || t('no_plot')),
+      ...plotBlock(e),
+      e.titleId != null && e.kind !== 'movie' ? episodesSection(e) : null,
       h('h3', {}, t('locations')),
       h('ul', { class: 'plain' }, e.locations.map(locationRow)),
       e.titleId == null && e.status === 'review' ? candidatesSection(e) : null,
@@ -266,6 +374,15 @@
     } catch { setStatus(t('err_unexpected')); } finally { busy(false); }
   });
 
+  for (const b of document.querySelectorAll('#tabs button')) {
+    b.addEventListener('click', () => {
+      state.tab = b.dataset.tab;
+      for (const x of document.querySelectorAll('#tabs button')) x.setAttribute('aria-selected', String(x === b));
+      refresh();
+    });
+  }
+  $('sort').addEventListener('change', () => { state.sort = $('sort').value; refresh(); });
+
   let timer = null;
   $('q').addEventListener('input', () => {
     clearTimeout(timer);
@@ -278,6 +395,7 @@
     applyLang();
     await renderRail();
     renderGrid();
+    renderGenres();
     renderDetail();
   });
 
@@ -287,6 +405,7 @@
     $('set-patterns').value = s.patterns.join('\n');
     $('set-ignore').value = s.ignore.join('\n');
     $('set-collections').value = s.collections.join('\n');
+    $('set-email').value = s.translateEmail || '';
     $('settings-dlg').showModal();
   });
   $('settings-cancel').addEventListener('click', () => $('settings-dlg').close());
@@ -298,6 +417,7 @@
       patterns: lines('set-patterns'),
       ignore: lines('set-ignore'),
       collections: lines('set-collections'),
+      translateEmail: $('set-email').value.trim(),
     });
     $('settings-dlg').close();
     setStatus(t('saved'));
