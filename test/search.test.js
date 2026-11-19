@@ -24,31 +24,74 @@ function seed() {
 
 test('a typo still finds the title', () => {
   const s = createSearch(seed());
-  assert.equal(s.query('batmn')[0].title, 'The Batman');
+  assert.equal(s.query({ query: 'batmn' }).entries[0].title, 'The Batman');
 });
 
 test('a persian query finds an entry through its folder name', () => {
   const s = createSearch(seed());
-  assert.equal(s.query('بتمن')[0].title, 'The Batman');
+  assert.equal(s.query({ query: 'بتمن' }).entries[0].title, 'The Batman');
 });
 
 test('actors are searchable', () => {
   const s = createSearch(seed());
-  assert.equal(s.query('Weaver')[0].title, 'Alien');
+  assert.equal(s.query({ query: 'Weaver' }).entries[0].title, 'Alien');
 });
 
 test('blank query returns everything and nonsense returns nothing', () => {
   const s = createSearch(seed());
-  assert.equal(s.query('   ').length, 2);
-  assert.deepEqual(s.query('qqqqqqqq'), []);
+  assert.equal(s.query({ query: '   ' }).entries.length, 2);
+  assert.deepEqual(s.query({ query: 'qqqqqqqq' }).entries, []);
 });
 
 test('invalidate makes new data searchable', () => {
   const db = seed();
   const s = createSearch(db);
-  assert.equal(s.query('matrix').length, 0);
+  assert.equal(s.query({ query: 'matrix' }).entries.length, 0);
   const t = upsertTitle(db, info('tt3', 'The Matrix'), null);
   addLoc(db, { titleId: t, folder: 'the matrix 1999' });
   s.invalidate();
-  assert.equal(s.query('matrix')[0].title, 'The Matrix');
+  assert.equal(s.query({ query: 'matrix' }).entries[0].title, 'The Matrix');
+});
+
+function library() {
+  const db = openDb();
+  const add = (imdbId, over, folder, season = null) => {
+    const t = upsertTitle(db, { ...info(imdbId, over.title), ...over }, null);
+    n += 1;
+    db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, title_id, status, season)
+      VALUES('S1', ?, ?, 'x', ?, 'matched', ?)`).run(`Lib/${folder}${n}`, folder, t, season);
+  };
+  add('tt1', { title: 'Scream', genres: 'Horror, Comedy', year: '1996', rating: '7.4' }, 'scream');
+  add('tt2', { title: 'Alien', genres: 'Horror, Sci-Fi', year: '1979', rating: '8.5' }, 'alien');
+  add('tt3', { title: 'airplane', genres: 'Comedy', year: '1980', rating: null }, 'airplane');
+  add('tt4', { title: 'Dexter', genres: 'Crime, Horror', type: 'series', year: '2006', rating: '8.6' }, 'dexter', '01');
+  return createSearch(db);
+}
+const names = (r) => r.entries.map((e) => e.title);
+
+test('tab series keeps only series; tab movie only movies', () => {
+  const s = library();
+  assert.deepEqual(names(s.query({ tab: 'series' })), ['Dexter']);
+  assert.deepEqual(names(s.query({ tab: 'movie' })).sort(), ['Alien', 'airplane', 'Scream'].sort());
+});
+
+test('all selected genres are required, case-insensitively', () => {
+  const s = library();
+  assert.deepEqual(names(s.query({ genres: ['horror', 'Comedy'] })), ['Scream']);
+});
+
+test('genre counts follow the tab and the text, not the genre filter', () => {
+  const s = library();
+  const r = s.query({ tab: 'movie', genres: ['Sci-Fi'] });
+  assert.deepEqual(names(r), ['Alien']);
+  assert.deepEqual(r.genres, [{ name: 'Comedy', count: 2 }, { name: 'Horror', count: 2 }, { name: 'Sci-Fi', count: 1 }]);
+  assert.deepEqual(s.query({ query: 'dexter' }).genres.map((g) => g.name), ['Crime', 'Horror']);
+});
+
+test('sorting: name ignores case, year newest first, rating highest first with missing last, added newest first', () => {
+  const s = library();
+  assert.deepEqual(names(s.query({})), ['airplane', 'Alien', 'Dexter', 'Scream']);
+  assert.deepEqual(names(s.query({ sort: 'year' })), ['Dexter', 'Scream', 'airplane', 'Alien']);
+  assert.deepEqual(names(s.query({ sort: 'rating' })), ['Dexter', 'Alien', 'Scream', 'airplane']);
+  assert.deepEqual(names(s.query({ sort: 'added' })), ['Dexter', 'airplane', 'Alien', 'Scream']);
 });

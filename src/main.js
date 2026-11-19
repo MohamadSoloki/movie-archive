@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, protocol, net, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, net, dialog, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -14,7 +14,10 @@ protocol.registerSchemesAsPrivileged([
 app.whenReady().then(() => {
   const userData = app.getPath('userData');
   fs.mkdirSync(userData, { recursive: true });
-  const api = createApi({ db: openDb(path.join(userData, 'archive.db')), userDataDir: userData });
+  const api = createApi({
+    db: openDb(path.join(userData, 'archive.db')), userDataDir: userData,
+    openPath: (p) => shell.openPath(p), openExternal: (u) => shell.openExternal(u),
+  });
 
   // poster://x/<file>: serves only files inside <userData>/posters (api.posterPath keeps the base name)
   protocol.handle('poster', (req) => {

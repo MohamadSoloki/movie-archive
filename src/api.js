@@ -8,12 +8,17 @@ const { createOmdb } = require('./core/omdb.js');
 const { createJikan } = require('./core/jikan.js');
 const { savePoster } = require('./core/posters.js');
 const { runQueue } = require('./core/pipeline.js');
+const fs = require('node:fs');
 const fix = require('./core/fix.js');
+const { createTranslator, translateCached } = require('./core/translate.js');
 const { createSearch } = require('./core/search.js');
 
-const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections'];
+const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail'];
 
-function createApi({ db, userDataDir, fetch = globalThis.fetch, listDrives = defaultListDrives }) {
+function createApi({
+  db, userDataDir, fetch = globalThis.fetch, listDrives = defaultListDrives,
+  openPath = async () => '', openExternal = async () => {},
+}) {
   const search = createSearch(db);
   const postersDir = path.join(userDataDir, 'posters');
   const key = () => getSetting(db, 'omdbKey');
@@ -99,8 +104,41 @@ function createApi({ db, userDataDir, fetch = globalThis.fetch, listDrives = def
       search.invalidate();
       return r;
     },
-    async getEntries(query = '') {
-      return search.query(query);
+    async getEntries(opts = {}) {
+      return search.query(opts);
+    },
+    async getEpisodes(titleId) {
+      const seasons = new Map();
+      for (const e of db.prepare('SELECT season, number, name, released, rating, plot FROM episodes WHERE title_id = ? ORDER BY season, number').all(titleId)) {
+        if (!seasons.has(e.season)) seasons.set(e.season, { season: e.season, episodes: [] });
+        seasons.get(e.season).episodes.push({ number: e.number, name: e.name, released: e.released, rating: e.rating, plot: e.plot || null });
+      }
+      return [...seasons.values()];
+    },
+    async translate(text) {
+      try {
+        const translator = createTranslator({ fetch, email: getSetting(db, 'translateEmail') });
+        return { ok: true, text: await translateCached(db, translator, text) };
+      } catch (e) {
+        if (e.kind) return { ok: false, error: e.kind };
+        throw e;
+      }
+    },
+    async openLocation(locationId) {
+      const l = db.prepare(`SELECT l.rel_path, d.root, COALESCE(d.online, 0) AS online FROM locations l
+        LEFT JOIN drives d ON d.serial = l.drive_serial WHERE l.id = ?`).get(locationId);
+      if (!l) return { ok: false, error: 'unknown' };
+      if (!l.online) return { ok: false, error: 'offline' };
+      const abs = path.join(l.root, l.rel_path);
+      if (!fs.existsSync(abs)) return { ok: false, error: 'missing' };
+      // shell.openPath answers with an error text, or '' on success
+      return (await openPath(abs)) ? { ok: false, error: 'missing' } : { ok: true };
+    },
+    async openImdb(titleId) {
+      const id = db.prepare('SELECT imdb_id FROM titles WHERE id = ?').get(titleId)?.imdb_id;
+      if (!/^tt\d{7,10}$/.test(id || '')) return { ok: false };
+      await openExternal(`https://www.imdb.com/title/${id}/`);
+      return { ok: true };
     },
     applyFix: fixLocation,
     async getCandidates(locationId, query = '') {

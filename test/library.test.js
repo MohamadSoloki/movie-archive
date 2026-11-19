@@ -64,3 +64,22 @@ test('titles without any location are not listed; entries are sorted by title', 
   addLoc(db, { titleId: a, status: 'matched' });
   assert.deepEqual(listEntries(db).map((e) => e.title), ['Alien', 'Batman']);
 });
+
+test('entries carry genre list, extra facts, kind and add order', () => {
+  const db = openDb();
+  const movie = upsertTitle(db, { ...info('tt7', 'Heat'), genres: 'Action, Crime', director: 'Michael Mann', awards: '3 wins', rated: 'R', country: 'USA' }, null);
+  const show = upsertTitle(db, { ...info('tt8', 'Lost'), type: 'series', totalSeasons: 6 }, null);
+  const odd = upsertTitle(db, { ...info('tt9', 'Naruto'), type: 'anime', imdbId: null, malId: 5, source: 'jikan' }, null);
+  const first = addLoc(db, { titleId: movie, status: 'matched' });
+  addLoc(db, { titleId: movie, status: 'matched', serial: 'S2' });
+  addLoc(db, { titleId: show, status: 'matched' });
+  addLoc(db, { titleId: odd, status: 'matched' });
+  addLoc(db, { title: 'unknown show', season: '02' });
+  addLoc(db, { title: 'unknown film' });
+  const by = Object.fromEntries(listEntries(db).map((e) => [e.title, e]));
+  const h = by.Heat;
+  assert.deepEqual([h.imdbId, h.genreList, h.director, h.awards, h.rated, h.country, h.kind, h.addedOrder],
+    ['tt7', ['Action', 'Crime'], 'Michael Mann', '3 wins', 'R', 'USA', 'movie', first]);
+  assert.deepEqual([by.Lost.kind, by.Lost.totalSeasons, by.Naruto.kind], ['series', 6, 'other']);
+  assert.deepEqual([by['unknown show'].kind, by['unknown film'].kind, by['unknown film'].genreList, by['unknown film'].imdbId], ['series', 'movie', [], null]);
+});
