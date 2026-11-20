@@ -102,3 +102,21 @@ test('a folder that groups two or more titles is a collection entry listing its 
   assert.deepEqual(c.members.map((m) => m.title).sort(), ['Batman Begins', 'The Dark Knight', 'unknown third']);
   assert.equal(all.length, 5); // 4 titles/unmatched + the collection
 });
+
+test('attention: verified is ok, a guess is guess, anything unsure or broken is problem', () => {
+  const db = openDb();
+  const t = (id) => upsertTitle(db, info(id, `T ${id}`), null);
+  addLoc(db, { titleId: t('tt21'), status: 'matched' });
+  addLoc(db, { titleId: t('tt22'), status: 'matched', guessed: 1 });
+  addLoc(db, { titleId: t('tt23'), status: 'matched', empty: 1 });
+  addLoc(db, { titleId: t('tt24'), status: 'matched', missing: 1 });
+  const both = t('tt25');
+  addLoc(db, { titleId: both, status: 'matched', missing: 1 });
+  addLoc(db, { titleId: both, status: 'matched', serial: 'S2' });
+  addLoc(db, { title: 'review me', status: 'review' });
+  addLoc(db, { title: 'not yet', status: 'pending' });
+  addLoc(db, { titleId: t('tt26'), status: 'matched', guessed: 1, empty: 1 });
+  const by = Object.fromEntries(listEntries(db).map((e) => [e.title, e.attention]));
+  assert.deepEqual(by, { 'T tt21': 'ok', 'T tt22': 'guess', 'T tt23': 'problem', 'T tt24': 'problem', 'T tt25': 'ok',
+    'review me': 'problem', 'not yet': 'problem', 'T tt26': 'problem' });
+});

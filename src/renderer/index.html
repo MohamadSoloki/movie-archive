@@ -44,15 +44,8 @@
         <button type="button" role="tab" data-tab="movie" data-i18n="tab_movie"></button>
         <button type="button" role="tab" data-tab="series" data-i18n="tab_series"></button>
       </div>
-      <label class="sort"><span data-i18n="sort_label"></span>
-        <select id="sort">
-          <option value="name" data-i18n="sort_name"></option>
-          <option value="year" data-i18n="sort_year"></option>
-          <option value="rating" data-i18n="sort_rating"></option>
-          <option value="added" data-i18n="sort_added"></option>
-        </select>
-      </label>
-      <div id="genres" class="chips"></div>
+      <button id="filter-open" type="button" class="filter-btn"><span data-i18n="filters"></span><span id="filter-badge" class="badge" hidden></span></button>
+      <div id="active" class="chips"></div>
     </div>
     <p id="count" class="count"></p>
     <div id="grid"></div>
@@ -61,6 +54,22 @@
   </main>
 
   <section id="detail" hidden></section>
+
+  <dialog id="filter-dlg" class="sheet" aria-labelledby="filter-title">
+    <header class="sheet-head">
+      <h2 id="filter-title" data-i18n="filters_title"></h2>
+      <button id="filter-x" type="button" class="close" data-i18n-label="close">×</button>
+    </header>
+    <div class="sheet-body">
+      <section><h3 data-i18n="filter_status"></h3><div id="f-status" class="chips"></div></section>
+      <section><h3 data-i18n="filter_genres"></h3><div id="f-genres" class="chips"></div></section>
+      <section><h3 data-i18n="sort_label"></h3><div id="f-sort" class="seg"></div></section>
+    </div>
+    <footer class="sheet-foot">
+      <button id="filter-clear" type="button" data-i18n="filter_clear_all"></button>
+      <button id="filter-show" type="button" class="primary"></button>
+    </footer>
+  </dialog>
 
   <dialog id="settings-dlg">
     <form id="settings-form">

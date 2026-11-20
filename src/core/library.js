@@ -40,11 +40,21 @@ function listEntries(db) {
     e.locations.push(shape(l));
     if (l.guessed) e.guessed = true;
   }
+  for (const e of entries) e.attention = attentionOf(e);
   entries.push(...collectionEntries(entries));
   return entries.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
 }
 
 // A folder that holds two or more titles (Batman Trilogy/...) is shown as one more entry that lists them.
+// What the owner should look at: 'problem' (unsure or broken), 'guess' (auto-picked, check it), 'ok' (verified).
+// A drive that is only unplugged is not a problem.
+function attentionOf(e) {
+  const present = e.locations.filter((l) => !l.missing);
+  if (e.status !== 'matched' || !present.length || present.some((l) => l.isEmpty)) return 'problem';
+  return e.guessed ? 'guess' : 'ok';
+}
+
+// A folder that groups two or more titles (Batman Trilogy/...) is shown as one more entry that lists them.
 function collectionEntries(entries) {
   const groups = new Map();
   for (const e of entries) {
@@ -63,7 +73,7 @@ function collectionEntries(entries) {
       key: `c:${l.driveSerial}|${l.collection}`, kind: 'collection', titleId: null, locationId: null,
       title: l.collection.split('/').pop(), year: null, type: 'collection', plot: null, genres: null, rating: null, runtime: null,
       actors: null, posterFile: list.find((m) => m.posterFile)?.posterFile ?? null, status: 'matched', guessed: false, locations: [],
-      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, totalSeasons: null,
+      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, totalSeasons: null, attention: 'ok',
       addedOrder: Math.min(...locs.map((x) => x.id)),
       collection: { driveSerial: l.driveSerial, relPath: l.collection, online: l.online, missing: locs.every((x) => x.missing) },
       members: list.map((m) => ({ key: m.key, title: m.title, year: m.year, posterFile: m.posterFile, status: m.status, kind: m.kind })),

@@ -95,3 +95,23 @@ test('sorting: name ignores case, year newest first, rating highest first with m
   assert.deepEqual(names(s.query({ sort: 'rating' })), ['Dexter', 'Alien', 'Scream', 'airplane']);
   assert.deepEqual(names(s.query({ sort: 'added' })), ['Dexter', 'airplane', 'Alien', 'Scream']);
 });
+
+test('attention filter keeps the chosen states and counts every state for the current tab, text and genres', () => {
+  const db = openDb();
+  const add = (id, title, guessed, status = 'matched', genres = 'Horror') => {
+    // an unmatched location (review) has no title; a matched one does
+    const tid = status === 'matched' ? upsertTitle(db, { ...info(id, title), genres }, null) : null;
+    n += 1;
+    db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, title_id, status, guessed)
+      VALUES('S1', ?, ?, ?, ?, ?, ?)`).run(`P/${title}${n}`, title, title, tid, status, guessed);
+  };
+  add('tt31', 'Okay', 0); add('tt32', 'Guessy', 1); add('tt33', 'Broken', 0, 'review'); add('tt34', 'Comic', 0, 'matched', 'Comedy');
+  const s = createSearch(db);
+  const r = s.query({ attention: ['guess', 'problem'] });
+  assert.deepEqual(r.entries.map((e) => e.title).sort(), ['Broken', 'Guessy']);
+  assert.deepEqual(r.attentionCounts, { ok: 2, guess: 1, problem: 1 });
+  const h = s.query({ genres: ['Horror'] });
+  assert.deepEqual(h.attentionCounts, { ok: 1, guess: 1, problem: 0 }); // the unmatched one has no genre
+  // genre counts follow the attention filter
+  assert.deepEqual(s.query({ attention: ['ok'] }).genres, [{ name: 'Comedy', count: 1 }, { name: 'Horror', count: 1 }]);
+});

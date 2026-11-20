@@ -2,7 +2,7 @@
 (() => {
   const api = window.api;
   const $ = (id) => document.getElementById(id);
-  const state = { lang: 'fa', entries: [], selected: null, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], sort: 'name' };
+  const state = { lang: 'fa', entries: [], selected: null, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, sort: 'name' };
   const t = (key, vars) => window.i18n.t(state.lang, key, vars);
   const genreName = (g) => window.i18n.genreLabel(state.lang, g);
   const CHUNK = 200;
@@ -46,28 +46,72 @@
     for (const el of document.querySelectorAll('[data-i18n-placeholder]')) el.placeholder = t(el.dataset.i18nPlaceholder);
     $('lang').textContent = t('lang_toggle');
     for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === state.tab));
-    $('sort').value = state.sort;
+    for (const el of document.querySelectorAll('[data-i18n-label]')) el.setAttribute('aria-label', t(el.dataset.i18nLabel));
   }
 
-  // ---- tabs, sorting, genre filter ---------------------------------------
+  // ---- tabs, filter sheet ------------------------------------------------
 
   const sameGenre = (a, b) => a.toLowerCase() === b.toLowerCase();
   const hasGenre = (g) => state.genres.some((x) => sameGenre(x, g));
+  const SORTS = ['name', 'year', 'rating', 'added'];
+  const STATES = [['ok', 'filter_ok'], ['guess', 'filter_guess'], ['problem', 'filter_problem']];
 
   function toggleGenre(g) {
     state.genres = hasGenre(g) ? state.genres.filter((x) => !sameGenre(x, g)) : [...state.genres, g];
     return refresh();
   }
 
-  function renderGenres() {
+  function toggleAttention(a) {
+    state.attention = state.attention.includes(a) ? state.attention.filter((x) => x !== a) : [...state.attention, a];
+    return refresh();
+  }
+
+  function clearFilters() {
+    state.genres = []; state.attention = [];
+    return refresh();
+  }
+
+  const dot = (cls, text) => h('span', { class: `dot ${cls}`, role: 'img', 'aria-label': text, title: text });
+  const DOT_CLASS = { ok: 'green', guess: 'yellow', problem: 'red' };
+
+  function chip(label, count, pressed, onclick, lead = null) {
+    return h('button', { type: 'button', class: 'chip', 'aria-pressed': String(pressed), onclick }, lead, label,
+      count == null ? null : h('span', { class: 'n' }, String(count)));
+  }
+
+  // the small pills under the tabs: what is filtered right now, each removable
+  function renderActive() {
+    const pills = [
+      ...state.attention.map((a) => h('button', { type: 'button', class: 'pill', onclick: () => toggleAttention(a) },
+        dot(DOT_CLASS[a], t(STATES.find((s) => s[0] === a)[1])), t(STATES.find((s) => s[0] === a)[1]), ' ×')),
+      ...state.genres.map((g) => h('button', { type: 'button', class: 'pill', onclick: () => toggleGenre(g) }, `${genreName(g)} ×`)),
+    ];
+    const n = state.genres.length + state.attention.length;
+    $('filter-badge').hidden = !n;
+    $('filter-badge').textContent = String(n);
+    $('active').replaceChildren(...pills);
+  }
+
+  // the filter page: state of the film, genres and sort order; it applies at once and the button shows the result count
+  function renderSheet() {
+    $('f-status').replaceChildren(...STATES.map(([key, label]) =>
+      chip(t(label), state.attentionCounts[key], state.attention.includes(key), () => toggleAttention(key), dot(DOT_CLASS[key], ''))));
     // a selected genre stays visible even when the current tab has none of it, so it can be switched off
     const shown = [...state.genreCounts];
     for (const g of state.genres) if (!shown.some((c) => sameGenre(c.name, g))) shown.push({ name: g, count: 0 });
-    const chips = shown.map((c) => h('button', {
-      type: 'button', class: 'chip', 'aria-pressed': String(hasGenre(c.name)), onclick: () => toggleGenre(c.name),
-    }, genreName(c.name), h('span', { class: 'n' }, String(c.count))));
-    if (state.genres.length) chips.push(h('button', { type: 'button', class: 'chip clear', onclick: () => { state.genres = []; refresh(); } }, t('genre_clear')));
-    $('genres').replaceChildren(...chips);
+    $('f-genres').replaceChildren(...(shown.length
+      ? shown.map((c) => chip(genreName(c.name), c.count, hasGenre(c.name), () => toggleGenre(c.name)))
+      : [h('p', { class: 'help' }, t('filter_no_genres'))]));
+    $('f-sort').replaceChildren(...SORTS.map((s) => h('button', {
+      type: 'button', 'aria-pressed': String(state.sort === s), onclick: () => { state.sort = s; refresh(); },
+    }, t(`sort_${s}`))));
+    $('filter-show').textContent = t('filter_show', { n: state.entries.length });
+    $('filter-clear').disabled = !(state.genres.length || state.attention.length);
+  }
+
+  function renderFilters() {
+    renderActive();
+    renderSheet();
   }
 
   // ---- archive grid ----------------------------------------------------
@@ -93,20 +137,27 @@
       : h('div', { class: 'poster none' }, h('span', {}, e.title));
   }
 
+  // The dot beside a name: none when the film is verified, yellow when it was guessed, red when it needs attention.
+  function dotOf(e) {
+    if (e.attention === 'guess') return dot('yellow', t('badge_guessed'));
+    if (e.attention !== 'problem') return null;
+    const why = flagsOf(e).find((f) => f.cls !== 'guessed' && f.cls !== 'offline');
+    return dot('red', why ? why.text : t('badge_review'));
+  }
+
   function card(e) {
-    const first = flagsOf(e)[0];
+    const meta = [e.year, e.rating ? `⭐ ${e.rating}` : null].filter(Boolean).join(' · ');
     return h('button', {
-      class: `card s-${first ? first.cls : 'ok'}${state.selected === e.key ? ' sel' : ''}`,
+      class: `card a-${e.attention}${state.selected === e.key ? ' sel' : ''}`,
       type: 'button',
       'data-key': e.key,
       onclick: () => select(e.key),
     },
     posterEl(e),
-    h('span', { class: 'name' }, e.title),
-    e.year ? h('span', { class: 'year' }, e.year) : null,
+    h('span', { class: 'title-row' }, dotOf(e), h('span', { class: 'name' }, e.title)),
+    meta ? h('span', { class: 'year', dir: 'ltr' }, meta) : null,
     e.kind === 'collection' ? h('span', { class: 'flag' }, t('collection_n', { n: e.members.length })) : null,
-    e.genreList.length ? h('span', { class: 'tags' }, e.genreList.slice(0, 3).map((g) => h('span', { class: 'tag' }, genreName(g)))) : null,
-    first ? h('span', { class: 'flag' }, first.text) : null);
+    e.genreList.length ? h('span', { class: 'tags' }, e.genreList.slice(0, 3).map((g) => h('span', { class: 'tag' }, genreName(g)))) : null);
   }
 
   function appendChunk() {
@@ -120,15 +171,16 @@
     state.shown = 0;
     appendChunk();
     $('count').textContent = t('count', { n: state.entries.length });
-    const filtered = state.query || state.genres.length || state.tab !== 'all';
+    const filtered = state.query || state.genres.length || state.attention.length || state.tab !== 'all';
     $('empty').textContent = state.entries.length ? '' : (filtered ? t('no_results') : t('empty_archive'));
   }
 
   async function refresh() {
-    const r = await api.getEntries({ query: state.query, tab: state.tab, genres: state.genres, sort: state.sort });
+    const r = await api.getEntries({ query: state.query, tab: state.tab, genres: state.genres, attention: state.attention, sort: state.sort });
     state.entries = r.entries;
     state.genreCounts = r.genres;
-    renderGenres();
+    state.attentionCounts = r.attentionCounts;
+    renderFilters();
     if (state.selected && !state.entries.some((e) => e.key === state.selected)) state.selected = null;
     renderGrid();
     renderDetail();
@@ -300,7 +352,7 @@
 
   // the member may be hidden by the current tab, genre filter or search, so these are reset first
   async function openMember(key) {
-    state.tab = 'all'; state.genres = []; state.query = ''; $('q').value = '';
+    state.tab = 'all'; state.genres = []; state.attention = []; state.query = ''; $('q').value = '';
     for (const x of document.querySelectorAll('#tabs button')) x.setAttribute('aria-selected', String(x.dataset.tab === 'all'));
     state.selected = key;
     await refresh();
@@ -414,7 +466,12 @@
       refresh();
     });
   }
-  $('sort').addEventListener('change', () => { state.sort = $('sort').value; refresh(); });
+  const sheet = $('filter-dlg');
+  $('filter-open').addEventListener('click', () => { renderSheet(); sheet.showModal(); });
+  $('filter-x').addEventListener('click', () => sheet.close());
+  $('filter-show').addEventListener('click', () => sheet.close());
+  $('filter-clear').addEventListener('click', clearFilters);
+  sheet.addEventListener('click', (ev) => { if (ev.target === sheet) sheet.close(); }); // the backdrop
 
   let timer = null;
   $('q').addEventListener('input', () => {
@@ -428,7 +485,7 @@
     applyLang();
     await renderRail();
     renderGrid();
-    renderGenres();
+    renderFilters();
     renderDetail();
   });
 
