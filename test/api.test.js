@@ -302,7 +302,7 @@ test('a collection folder with movie files is scanned into one entry per film an
 test('light entries carry only what a card needs; getEntry returns the whole entry by key', async () => {
   const { api, e } = await scanned();
   const light = (await api.getEntries({ light: true })).entries[0];
-  assert.deepEqual(Object.keys(light).sort(), ['attention', 'genres', 'key', 'kind', 'members', 'posterFile', 'rating', 'reason', 'title', 'year']);
+  assert.deepEqual(Object.keys(light).sort(), ['attention', 'genres', 'key', 'kind', 'members', 'posterFile', 'rating', 'reason', 'tags', 'title', 'year']);
   assert.deepEqual([light.key, light.title, light.rating, light.attention, light.members], [e.key, e.title, e.rating, e.attention, 0]);
   assert.ok(JSON.stringify(light).length * 3 < JSON.stringify(e).length);
   assert.deepEqual(await api.getEntry(e.key), e);
@@ -316,4 +316,62 @@ test('getEntry sees changes made after the list was built', async () => {
   db.prepare('UPDATE titles SET plot = ? WHERE id = ?').run('new plot', e.titleId);
   await api.setSettings({}); // any settings write drops the cached list
   assert.equal((await api.getEntry(e.key)).plot, 'new plot');
+});
+
+async function tagged() {
+  const ctx = await scanned();
+  return ctx;
+}
+
+test('addTag tags the entry, shows on light and full entries, is found by search and can be removed', async () => {
+  const { api, e } = await tagged();
+  assert.deepEqual(await api.addTag(e.key, '  Iranian '), { ok: true });
+  assert.deepEqual(await api.addTag(e.key, 'iranian'), { ok: true });
+  assert.deepEqual((await api.getEntry(e.key)).userTags, ['Iranian']);
+  const light = (await api.getEntries({ light: true })).entries[0];
+  assert.deepEqual(light.tags, ['Iranian']);
+  assert.equal((await api.getEntries({ tags: ['iranian'] })).entries.length, 1);
+  assert.equal((await api.getEntries({ tags: ['other'] })).entries.length, 0);
+  assert.deepEqual(await api.getTags(), [{ name: 'Iranian', count: 1 }]);
+  assert.deepEqual(await api.removeTag(e.key, 'IRANIAN'), { ok: true });
+  assert.deepEqual((await api.getEntry(e.key)).userTags, []);
+  assert.deepEqual(await api.getTags(), []);
+});
+
+test('addTag refuses an empty or too long tag, a collection and an unknown entry', async () => {
+  const { api, e } = await tagged();
+  assert.deepEqual(await api.addTag(e.key, '  '), { ok: false, error: 'empty' });
+  assert.deepEqual(await api.addTag(e.key, 'x'.repeat(31)), { ok: false, error: 'too_long' });
+  assert.deepEqual(await api.addTag('t:99999', 'a'), { ok: false, error: 'unknown' });
+  assert.deepEqual(await api.removeTag('t:99999', 'a'), { ok: false, error: 'unknown' });
+});
+
+test('tags stay with the folder through a rescan and through an online fix', async () => {
+  const ctx = await tagged();
+  const { api, e } = ctx;
+  await api.addTag(e.key, 'Iranian');
+  await api.scan();
+  assert.deepEqual((await api.getEntry(e.key)).userTags, ['Iranian']);
+  await api.applyFix({ locationId: e.locations[0].id }, 'https://www.imdb.com/title/tt1877830/');
+  const [after] = (await api.getEntries({ tags: ['Iranian'] })).entries;
+  assert.equal(after.title, 'The Batman');
+});
+
+test('an unmatched folder can be tagged too (its key starts with l:)', async () => {
+  const { api, media } = setup();
+  fs.mkdirSync(path.join(media, 'Movies', 'بتمن'), { recursive: true });
+  await api.addRoot(path.join(media, 'Movies'));
+  await api.scan();
+  const [e] = (await api.getEntries()).entries;
+  assert.match(e.key, /^l:/);
+  assert.deepEqual(await api.addTag(e.key, 'ایرانی'), { ok: true });
+  assert.deepEqual((await api.getEntries({ tags: ['ایرانی'] })).entries.map((x) => x.key), [e.key]);
+});
+
+test('removing an archive folder drops the tags of its films', async () => {
+  const { api, db, e } = await tagged();
+  await api.addTag(e.key, 'Iranian');
+  const [root] = await api.getRoots();
+  await api.removeRoot(root.id);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM tags').get().c, 0);
 });

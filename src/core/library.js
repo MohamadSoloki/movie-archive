@@ -8,6 +8,11 @@ function listEntries(db) {
   const locs = db.prepare(`SELECT l.*, d.label AS drive_label, COALESCE(d.online, 0) AS drive_online
     FROM locations l LEFT JOIN drives d ON d.serial = l.drive_serial ORDER BY l.id`).all();
   const titles = new Map(db.prepare('SELECT * FROM titles').all().map((t) => [t.id, t]));
+  const tagsByLoc = new Map();
+  for (const r of db.prepare('SELECT location_id, tag FROM tags').all()) {
+    if (!tagsByLoc.has(r.location_id)) tagsByLoc.set(r.location_id, []);
+    tagsByLoc.get(r.location_id).push(r.tag);
+  }
   const shape = (l) => ({
     id: l.id, driveSerial: l.drive_serial, driveLabel: l.drive_label || '', online: !!l.drive_online,
     relPath: l.rel_path, folderName: l.folder_name, season: l.season, isEmpty: !!l.is_empty, missing: !!l.missing,
@@ -25,7 +30,7 @@ function listEntries(db) {
         type: null, plot: null, genres: null, rating: null, runtime: null, actors: null, posterFile: null,
         status: l.status, guessed: !!l.guessed, locations: [shape(l)],
         imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, totalSeasons: null,
-        kind: l.season ? 'series' : 'movie', addedOrder: l.id,
+        kind: l.season ? 'series' : 'movie', addedOrder: l.id, userTags: [],
       });
       continue;
     }
@@ -36,13 +41,19 @@ function listEntries(db) {
         genres: t.genres, rating: t.rating, runtime: t.runtime, actors: t.actors, posterFile: t.poster_file,
         status: 'matched', guessed: false, locations: [],
         imdbId: t.imdb_id, genreList: t.genres ? t.genres.split(', ') : [], director: t.director, awards: t.awards,
-        rated: t.rated, country: t.country, totalSeasons: t.total_seasons, kind: kindOf(t.type), addedOrder: l.id,
+        rated: t.rated, country: t.country, totalSeasons: t.total_seasons, kind: kindOf(t.type), addedOrder: l.id, userTags: [],
       };
       byTitle.set(t.id, e);
       entries.push(e);
     }
     e.locations.push(shape(l));
     if (l.guessed) e.guessed = true;
+  }
+  // the tags of an entry's folders, once each (any letter case), in alphabetical order
+  for (const e of entries) {
+    const seen = new Map();
+    for (const l of e.locations) for (const tag of tagsByLoc.get(l.id) ?? []) if (!seen.has(tag.toLowerCase())) seen.set(tag.toLowerCase(), tag);
+    e.userTags = [...seen.values()].sort((a, b) => collator.compare(a, b));
   }
   for (const e of entries) e.attention = attentionOf(e);
   entries.push(...collectionEntries(entries));
@@ -76,7 +87,7 @@ function collectionEntries(entries) {
       key: `c:${l.driveSerial}|${l.collection}`, kind: 'collection', titleId: null, locationId: null,
       title: l.collection.split('/').pop(), year: null, type: 'collection', plot: null, genres: null, rating: null, runtime: null,
       actors: null, posterFile: list.find((m) => m.posterFile)?.posterFile ?? null, status: 'matched', guessed: false, locations: [],
-      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, totalSeasons: null, attention: 'ok',
+      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, totalSeasons: null, attention: 'ok', userTags: [],
       addedOrder: Math.min(...locs.map((x) => x.id)),
       collection: { driveSerial: l.driveSerial, relPath: l.collection, online: l.online, missing: locs.every((x) => x.missing) },
       members: list.map((m) => ({ key: m.key, title: m.title, year: m.year, posterFile: m.posterFile, status: m.status, kind: m.kind })),
@@ -99,7 +110,7 @@ function reasonOf(e) {
 function lightOf(e) {
   return {
     key: e.key, title: e.title, year: e.year, rating: e.rating, posterFile: e.posterFile, kind: e.kind,
-    attention: e.attention, genres: e.genreList.slice(0, 2), reason: reasonOf(e), members: e.members ? e.members.length : 0,
+    attention: e.attention, genres: e.genreList.slice(0, 2), tags: e.userTags.slice(0, 2), reason: reasonOf(e), members: e.members ? e.members.length : 0,
   };
 }
 

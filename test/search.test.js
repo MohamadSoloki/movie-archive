@@ -115,3 +115,36 @@ test('attention filter keeps the chosen states and counts every state for the cu
   // genre counts follow the attention filter
   assert.deepEqual(s.query({ attention: ['ok'] }).genres, [{ name: 'Comedy', count: 1 }, { name: 'Horror', count: 1 }]);
 });
+
+function seedTags() {
+  const db = seed();
+  const ids = db.prepare('SELECT id FROM locations ORDER BY id').all().map((r) => r.id);
+  db.prepare("INSERT INTO tags(location_id, tag) VALUES(?, 'Iranian')").run(ids[0]);
+  db.prepare("INSERT INTO tags(location_id, tag) VALUES(?, 'Classic')").run(ids[0]);
+  db.prepare("INSERT INTO tags(location_id, tag) VALUES(?, 'Classic')").run(ids[1]);
+  return db;
+}
+
+test('the tags filter needs every chosen tag, ignoring case', () => {
+  const s = createSearch(seedTags());
+  assert.deepEqual(s.query({ tags: ['classic'] }).entries.map((e) => e.title).sort(), ['Alien', 'The Batman']);
+  assert.deepEqual(s.query({ tags: ['CLASSIC', 'iranian'] }).entries.map((e) => e.title), ['The Batman']);
+  assert.deepEqual(s.query({ tags: ['nothing'] }).entries, []);
+});
+
+test('tag counts follow the other filters, not the tag filter itself', () => {
+  const s = createSearch(seedTags());
+  const names = (r) => Object.fromEntries(r.tagCounts.map((c) => [c.name, c.count]));
+  assert.deepEqual(names(s.query({})), { Classic: 2, Iranian: 1 });
+  assert.deepEqual(names(s.query({ tags: ['Iranian'] })), { Classic: 2, Iranian: 1 });
+  assert.deepEqual(names(s.query({ genres: ['Horror'] })), { Classic: 1 });
+  // genre and status counts follow the chosen tags
+  assert.deepEqual(s.query({ tags: ['Iranian'] }).genres.map((g) => g.name), ['Action']);
+  assert.equal(s.query({ tags: ['Iranian'] }).attentionCounts.ok + s.query({ tags: ['Iranian'] }).attentionCounts.problem + s.query({ tags: ['Iranian'] }).attentionCounts.guess, 1);
+});
+
+test('a typed query also finds a tag, and tagList counts entries per tag', () => {
+  const s = createSearch(seedTags());
+  assert.deepEqual(s.query({ query: 'iranian' }).entries.map((e) => e.title), ['The Batman']);
+  assert.deepEqual(s.tagList(), [{ name: 'Classic', count: 2 }, { name: 'Iranian', count: 1 }]);
+});

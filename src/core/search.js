@@ -31,14 +31,14 @@ function createSearch(db) {
   const fuzzy = () => {
     fuse ??= new Fuse(all, {
       keys: [{ name: 'title', weight: 3 }, { name: 'locations.folderName', weight: 2 },
-        { name: 'genres', weight: 1 }, { name: 'actors', weight: 1 }],
+        { name: 'userTags', weight: 2 }, { name: 'genres', weight: 1 }, { name: 'actors', weight: 1 }],
       threshold: 0.35,
       ignoreLocation: true,
     });
     return fuse;
   };
   return {
-    query({ query = '', tab = 'all', genres = [], attention = [], sort = 'name' } = {}) {
+    query({ query = '', tab = 'all', genres = [], tags = [], attention = [], sort = 'name' } = {}) {
       if (!all) build();
       const q = query.trim();
       let list = q ? fuzzy().search(q).map((r) => r.item) : [...all];
@@ -46,26 +46,45 @@ function createSearch(db) {
 
       const wanted = genres.map((g) => g.toLowerCase());
       const hasGenres = (e) => wanted.every((g) => e.genreList.some((x) => x.toLowerCase() === g));
+      const wantedTags = tags.map((g) => g.toLowerCase());
+      const hasTags = (e) => wantedTags.every((g) => e.userTags.some((x) => x.toLowerCase() === g));
       const hasAttention = (e) => !attention.length || attention.includes(e.attention);
 
       // each group of counts ignores its own filter, so a chip keeps its number while others of its group are selected
       const attentionCounts = { ok: 0, guess: 0, problem: 0 };
-      for (const e of list) if (hasGenres(e)) attentionCounts[e.attention] += 1;
+      for (const e of list) if (hasGenres(e) && hasTags(e)) attentionCounts[e.attention] += 1;
+      const countOf = (pick, keep) => {
+        const counts = new Map();
+        for (const e of list.filter(keep)) {
+          for (const g of pick(e)) {
+            const c = counts.get(g.toLowerCase()) || { name: g, count: 0 };
+            c.count += 1;
+            counts.set(g.toLowerCase(), c);
+          }
+        }
+        return [...counts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+      };
+      const genreCounts = countOf((e) => e.genreList, (e) => hasAttention(e) && hasTags(e));
+      const tagCounts = countOf((e) => e.userTags, (e) => hasAttention(e) && hasGenres(e));
+
+      list = list.filter((e) => hasGenres(e) && hasTags(e) && hasAttention(e));
+      // the second comparison keeps equal entries in alphabetical order
+      const cmp = SORTS[sort] || byName;
+      list.sort((a, b) => cmp(a, b) || byName(a, b));
+      return { entries: list, genres: genreCounts, tagCounts, attentionCounts };
+    },
+    // every manual tag with the number of entries that carry it, for suggestions
+    tagList() {
+      if (!all) build();
       const counts = new Map();
-      for (const e of list.filter(hasAttention)) {
-        for (const g of e.genreList) {
+      for (const e of all) {
+        for (const g of e.userTags) {
           const c = counts.get(g.toLowerCase()) || { name: g, count: 0 };
           c.count += 1;
           counts.set(g.toLowerCase(), c);
         }
       }
-      const genreCounts = [...counts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-
-      list = list.filter((e) => hasGenres(e) && hasAttention(e));
-      // the second comparison keeps equal entries in alphabetical order
-      const cmp = SORTS[sort] || byName;
-      list.sort((a, b) => cmp(a, b) || byName(a, b));
-      return { entries: list, genres: genreCounts, attentionCounts };
+      return [...counts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
     },
     find(key) {
       if (!all) build();

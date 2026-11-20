@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS episodes(
   released TEXT, rating TEXT, plot TEXT, PRIMARY KEY(title_id, season, number));
 CREATE TABLE IF NOT EXISTS translations(hash TEXT PRIMARY KEY, text TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+-- tags the owner adds by hand; they belong to the folder, so they survive a rescan and an online fix
+CREATE TABLE IF NOT EXISTS tags(location_id INTEGER NOT NULL, tag TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY(location_id, tag));
 `;
 
 // the queue looks a film up by lower-cased name for every folder, and the detail view joins by title

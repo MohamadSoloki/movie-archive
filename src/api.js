@@ -14,6 +14,7 @@ const { createTranslator, translateCached } = require('./core/translate.js');
 const { forgetSeasons } = require('./core/cache.js');
 const { createSearch } = require('./core/search.js');
 const { lightOf } = require('./core/library.js');
+const tags = require('./core/tags.js');
 
 const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail'];
 
@@ -63,6 +64,17 @@ function createApi({
     return r;
   }
 
+  function changeTag(key, text, apply) {
+    const tag = tags.normalizeTag(text);
+    if (tag === null) return { ok: false, error: 'empty' };
+    if (tag === 'too_long') return { ok: false, error: 'too_long' };
+    const e = search.find(key);
+    if (!e || e.kind === 'collection') return { ok: false, error: 'unknown' };
+    apply(db, e.locations.map((l) => l.id), tag);
+    search.invalidate();
+    return { ok: true };
+  }
+
   return {
     async getSettings() {
       return Object.fromEntries(SETTING_KEYS.map((k) => [k, getSetting(db, k)]));
@@ -98,6 +110,7 @@ function createApi({
         for (const o of db.prepare('SELECT id FROM titles WHERE id NOT IN (SELECT title_id FROM locations WHERE title_id IS NOT NULL)').all()) forgetSeasons(db, o.id);
         db.exec('DELETE FROM titles WHERE id NOT IN (SELECT title_id FROM locations WHERE title_id IS NOT NULL)');
         db.exec('DELETE FROM episodes WHERE title_id NOT IN (SELECT id FROM titles)');
+        db.exec('DELETE FROM tags WHERE location_id NOT IN (SELECT id FROM locations)');
         db.prepare('DELETE FROM roots WHERE id = ?').run(id);
         db.exec('COMMIT');
       } catch (e) {
@@ -145,6 +158,16 @@ function createApi({
     },
     async getEntry(key) {
       return search.find(key);
+    },
+    // manual tags belong to the folders of an entry, so they survive rescans and online fixes
+    async addTag(key, text) {
+      return changeTag(key, text, tags.addTag);
+    },
+    async removeTag(key, text) {
+      return changeTag(key, text, tags.removeTag);
+    },
+    async getTags() {
+      return search.tagList();
     },
     async getEpisodes(titleId) {
       const seasons = new Map();

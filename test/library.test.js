@@ -131,3 +131,28 @@ test('reasonOf names why an entry has a dot, in the order the detail view lists 
   assert.equal(reasonOf({ attention: 'problem', status: 'pending', locations: [l()] }), 'pending');
   assert.equal(reasonOf({ attention: 'problem', status: 'matched', guessed: true, locations: [l({ isEmpty: true })] }), 'empty');
 });
+
+test('userTags: the manual tags of every folder of the entry, once each, on matched and unmatched entries', () => {
+  const db = openDb();
+  const t = upsertTitle(db, info('tt1', 'The Batman'), null);
+  const a = addLoc(db, { titleId: t, status: 'matched', serial: 'S1' });
+  const b = addLoc(db, { titleId: t, status: 'matched', serial: 'S2' });
+  const lone = addLoc(db, { title: 'بتمن', status: 'review' });
+  const ins = db.prepare('INSERT INTO tags(location_id, tag) VALUES(?, ?)');
+  ins.run(a, 'Iranian'); ins.run(b, 'iranian'); ins.run(b, 'Classic'); ins.run(lone, 'ایرانی');
+  const by = Object.fromEntries(listEntries(db).map((e) => [e.key, e]));
+  assert.deepEqual(by[`t:${t}`].userTags, ['Classic', 'Iranian']);
+  assert.deepEqual(by[`l:${lone}`].userTags, ['ایرانی']);
+});
+
+test('entries without tags have an empty list, and so does a collection', () => {
+  const db = openDb();
+  const t1 = upsertTitle(db, info('tt1', 'A'), null); const t2 = upsertTitle(db, info('tt2', 'B'), null);
+  const a = addLoc(db, { titleId: t1, status: 'matched' }); addLoc(db, { titleId: t2, status: 'matched' });
+  db.prepare("UPDATE locations SET collection = 'Movies/Pack'").run();
+  db.prepare("INSERT INTO tags(location_id, tag) VALUES(?, 'Iranian')").run(a);
+  const all = listEntries(db);
+  assert.ok(all.some((e) => e.kind === 'collection'));
+  assert.deepEqual(all.filter((e) => e.kind === 'collection').map((e) => e.userTags), [[]]);
+  assert.deepEqual(all.find((e) => e.title === 'B').userTags, []);
+});
