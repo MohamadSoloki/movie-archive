@@ -12,7 +12,7 @@ const OMDB_BODY = {
   imdbRating: '7.8', Runtime: '176 min', Actors: 'Robert Pattinson', Poster: 'https://img.example/p.jpg',
 };
 
-function setup({ key = 'K', openPath, openExternal, mymemory } = {}) {
+function setup({ key = 'K', openPath, openExternal, mymemory, freeSpace } = {}) {
   const media = fs.mkdtempSync(path.join(os.tmpdir(), 'media-'));
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'ud-'));
   const fetchCalls = [];
@@ -30,7 +30,7 @@ function setup({ key = 'K', openPath, openExternal, mymemory } = {}) {
   const db = openDb();
   const state = { online: true };
   const api = createApi({
-    db, userDataDir: userData, fetch, openPath, openExternal,
+    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace,
     listDrives: async () => (state.online ? [{ serial: 'S1', label: 'Test', root: media + path.sep }] : []),
   });
   return { api, db, media, userData, fetchCalls, key, state };
@@ -374,4 +374,100 @@ test('removing an archive folder drops the tags of its films', async () => {
   const [root] = await api.getRoots();
   await api.removeRoot(root.id);
   assert.equal(db.prepare('SELECT COUNT(*) c FROM tags').get().c, 0);
+});
+
+// ---- copy list ----------------------------------------------------------
+
+async function withFilms(opts) {
+  const ctx = setup(opts);
+  const { media, api } = ctx;
+  for (const [dir, bytes] of [['batman 2022', 3000], ['dune 2021', 2000]]) {
+    fs.mkdirSync(path.join(media, 'Movies', dir, 'Subs'), { recursive: true });
+    fs.writeFileSync(path.join(media, 'Movies', dir, 'movie.mkv'), Buffer.alloc(bytes, 1));
+    fs.writeFileSync(path.join(media, 'Movies', dir, 'Subs', 'en.srt'), Buffer.alloc(10, 1));
+  }
+  await api.addRoot(path.join(media, 'Movies'));
+  await api.scan();
+  const keys = (await api.getEntries()).entries.map((e) => e.key);
+  const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'dest-'));
+  return { ...ctx, keys, dest };
+}
+
+test('planTransfer lists what will be copied and where, without writing anything', async () => {
+  const { api, keys, dest } = await withFilms();
+  const plan = await api.planTransfer({ keys, destDir: dest, name: 'claude' });
+  assert.equal(plan.ok, true);
+  assert.equal(plan.target, path.join(dest, 'claude'));
+  assert.deepEqual(plan.jobs.map((j) => path.basename(j.dest)).sort(), ['batman 2022', 'dune 2021']);
+  assert.equal(plan.bytes, 5020);
+  assert.deepEqual(plan.skipped, []);
+  assert.deepEqual(fs.readdirSync(dest), []);
+});
+
+test('planTransfer refuses a bad folder name, a missing destination and a destination inside the archive', async () => {
+  const { api, keys, dest, media } = await withFilms();
+  assert.deepEqual(await api.planTransfer({ keys, destDir: dest, name: 'a/b' }), { ok: false, error: 'bad_name' });
+  assert.deepEqual(await api.planTransfer({ keys, destDir: path.join(dest, 'nope'), name: 'x' }), { ok: false, error: 'bad_dest' });
+  assert.deepEqual(await api.planTransfer({ keys, destDir: path.join(media, 'Movies'), name: 'x' }), { ok: false, error: 'inside_archive' });
+  assert.deepEqual(await api.planTransfer({ keys: [], destDir: dest, name: 'x' }), { ok: false, error: 'nothing' });
+});
+
+test('planTransfer leaves out a film whose drive is unplugged and says why', async () => {
+  const { api, keys, dest, state } = await withFilms();
+  state.online = false;
+  const plan = await api.planTransfer({ keys, destDir: dest, name: 'claude' });
+  assert.deepEqual(plan.jobs, []);
+  assert.deepEqual(plan.skipped.map((x) => x.reason), ['offline', 'offline']);
+});
+
+test('planTransfer refuses when the destination has less free space than the films need', async () => {
+  const { api, keys, dest } = await withFilms({ freeSpace: () => 100 });
+  assert.deepEqual(await api.planTransfer({ keys, destDir: dest, name: 'claude' }), { ok: false, error: 'no_space', needed: 5020, free: 100 });
+});
+
+test('every season of a series is copied under the series name, so two series with a "Season 1" folder do not merge', async () => {
+  const { api, media } = setup();
+  for (const show of ['Alpha Show', 'Beta Show']) {
+    for (const season of ['Season 1', 'Season 2']) {
+      fs.mkdirSync(path.join(media, 'Series', show, season), { recursive: true });
+      fs.writeFileSync(path.join(media, 'Series', show, season, 'e01.mkv'), 'x');
+    }
+  }
+  await api.addRoot(path.join(media, 'Series'));
+  await api.scan();
+  const keys = (await api.getEntries()).entries.map((e) => e.key);
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'dest-'));
+  const plan = await api.planTransfer({ keys, destDir: out, name: 'c' });
+  assert.deepEqual(plan.jobs.map((j) => path.relative(plan.target, j.dest)).sort(),
+    ['Alpha Show/Season 1', 'Alpha Show/Season 2', 'Beta Show/Season 1', 'Beta Show/Season 2'].map((x) => x.split('/').join(path.sep)));
+});
+
+test('startTransfer copies the films into the new folder, reports progress and never changes the media folders', async () => {
+  const { api, keys, dest, media } = await withFilms();
+  const before = snapshot(media);
+  const events = [];
+  const r = await api.startTransfer({ keys, destDir: dest, name: 'claude' }, (p) => events.push(p));
+  assert.equal(r.ok, true);
+  assert.deepEqual([r.done, r.failed, r.cancelled], [2, [], false]);
+  assert.equal(fs.statSync(path.join(dest, 'claude', 'batman 2022', 'movie.mkv')).size, 3000);
+  assert.equal(fs.statSync(path.join(dest, 'claude', 'dune 2021', 'Subs', 'en.srt')).size, 10);
+  assert.equal(snapshot(media), before);
+  assert.ok(events.length >= 2 && events.every((e) => e.type === 'copy'));
+  assert.deepEqual([events.at(-1).doneBytes, events.at(-1).totalBytes], [5020, 5020]);
+});
+
+test('startTransfer does nothing when the plan is refused, and refuses a second run at the same time', async () => {
+  const { api, keys, dest } = await withFilms();
+  assert.deepEqual(await api.startTransfer({ keys, destDir: dest, name: '..' }, () => {}), { ok: false, error: 'bad_name' });
+  assert.deepEqual(fs.readdirSync(dest), []);
+  const first = api.startTransfer({ keys, destDir: dest, name: 'claude' }, () => {});
+  assert.deepEqual(await api.startTransfer({ keys, destDir: dest, name: 'claude' }, () => {}), { ok: false, error: 'busy' });
+  assert.equal((await first).ok, true);
+});
+
+test('cancelTransfer stops the run and reports it', async () => {
+  const { api, keys, dest } = await withFilms();
+  const run = api.startTransfer({ keys, destDir: dest, name: 'claude' }, () => api.cancelTransfer());
+  const r = await run;
+  assert.equal(r.cancelled, true);
 });

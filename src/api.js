@@ -15,6 +15,7 @@ const { forgetSeasons } = require('./core/cache.js');
 const { createSearch } = require('./core/search.js');
 const { lightOf } = require('./core/library.js');
 const tags = require('./core/tags.js');
+const transfer = require('./core/transfer.js');
 
 const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail'];
 
@@ -23,6 +24,7 @@ function createApi({
   openPath = async () => '', openExternal = async () => {},
   updater = { check: async () => ({ state: 'dev' }), install() {} },
   concurrency = 5,
+  freeSpace = (dir) => { try { const s = fs.statfsSync(dir); return s.bavail * s.bsize; } catch { return Infinity; } },
 }) {
   const search = createSearch(db);
   const postersDir = path.join(userDataDir, 'posters');
@@ -62,6 +64,92 @@ function createApi({
     const r = await fix.applyFix(db, target, link, deps());
     search.invalidate();
     return r;
+  }
+
+  // ---- copy list: copy-only, sources are read, the target is always outside the archive folders ----
+
+  let transferAbort = null;
+  const sanitize = (text) => String(text).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/[. ]+$/, '') || '_';
+
+  async function planTransfer({ keys = [], destDir, name }) {
+    const folder = transfer.cleanName(name);
+    if (!folder) return { ok: false, error: 'bad_name' };
+    if (!destDir || !fs.existsSync(destDir) || !fs.statSync(destDir).isDirectory()) return { ok: false, error: 'bad_dest' };
+    const target = path.join(destDir, folder);
+    const drives = await getDrives();
+    search.invalidate(); // online flags may have just changed
+    const rootOf = new Map(drives.map((d) => [d.serial, d.root]));
+    for (const r of db.prepare('SELECT drive_serial, rel_path FROM roots').all()) {
+      const root = rootOf.get(r.drive_serial);
+      if (root && transfer.isInside(path.join(root, r.rel_path), target)) return { ok: false, error: 'inside_archive' };
+    }
+    const destDrive = drives.find((d) => transfer.isInside(d.root, destDir))?.serial;
+    const jobs = [];
+    const skipped = [];
+    const used = new Set();
+    for (const key of keys) {
+      const e = search.find(key);
+      if (!e || e.kind === 'collection') continue;
+      const { picks, reason } = transfer.pickLocations(e.locations, destDrive);
+      if (!picks.length) { skipped.push({ key, title: e.title, reason }); continue; }
+      for (const l of picks) {
+        const src = path.join(rootOf.get(l.driveSerial), l.relPath);
+        if (!fs.existsSync(src)) { skipped.push({ key, title: e.title, reason: 'missing' }); continue; }
+        if (transfer.isInside(src, target)) { skipped.push({ key, title: e.title, reason: 'dest_inside_source' }); continue; }
+        let rel = l.season == null ? path.basename(l.relPath) : path.join(sanitize(e.title), path.basename(l.relPath));
+        for (let n = 2; used.has(rel.toLowerCase()); n += 1) rel = `${rel.replace(/ \(\d+\)$/, '')} (${n})`;
+        used.add(rel.toLowerCase());
+        jobs.push({ key, title: e.title, locationId: l.id, driveSerial: l.driveSerial, src, dest: path.join(target, rel), bytes: transfer.treeSize(src) });
+      }
+    }
+    if (!jobs.length && !skipped.length) return { ok: false, error: 'nothing' };
+    jobs.sort((a, b) => a.driveSerial.localeCompare(b.driveSerial)); // read one disk at a time, front to back
+    const bytes = jobs.reduce((n, j) => n + j.bytes, 0);
+    const free = freeSpace(destDir);
+    if (bytes > free) return { ok: false, error: 'no_space', needed: bytes, free };
+    return { ok: true, target, jobs, skipped, bytes, free };
+  }
+
+  async function startTransfer(request, onProgress = () => {}) {
+    if (transferAbort) return { ok: false, error: 'busy' };
+    const ac = new AbortController();
+    transferAbort = ac; // taken before the first await, so a second call sees it
+    try {
+      return await runTransfer(request, onProgress, ac);
+    } finally {
+      transferAbort = null;
+    }
+  }
+
+  async function runTransfer(request, onProgress, ac) {
+    const plan = await planTransfer(request);
+    if (!plan.ok) return plan;
+    if (!plan.jobs.length) return { ok: false, error: 'nothing' };
+    const result = { ok: true, done: 0, failed: [], skipped: plan.skipped, cancelled: false, bytes: 0 };
+    let doneBytes = 0;
+    let last = 0;
+    const emit = (index, title, force) => {
+      const now = Date.now();
+      if (!force && now - last < 250) return;
+      last = now;
+      onProgress({ type: 'copy', index, total: plan.jobs.length, title, doneBytes, totalBytes: plan.bytes });
+    };
+    fs.mkdirSync(plan.target, { recursive: true });
+    for (const [i, j] of plan.jobs.entries()) {
+      if (ac.signal.aborted) break;
+      emit(i, j.title, true);
+      try {
+        const r = await transfer.copyTree(j.src, j.dest, { signal: ac.signal, onBytes: (n) => { doneBytes += n; emit(i, j.title, false); } });
+        if (r.cancelled) break;
+        result.done += 1;
+      } catch (e) {
+        result.failed.push({ key: j.key, title: j.title, error: e.code || 'error' });
+      }
+    }
+    result.cancelled = ac.signal.aborted;
+    result.bytes = doneBytes;
+    onProgress({ type: 'copy', index: plan.jobs.length, total: plan.jobs.length, title: '', doneBytes, totalBytes: plan.bytes });
+    return result;
   }
 
   function changeTag(key, text, apply) {
@@ -165,6 +253,11 @@ function createApi({
     },
     async removeTag(key, text) {
       return changeTag(key, text, tags.removeTag);
+    },
+    planTransfer,
+    startTransfer,
+    async cancelTransfer() {
+      transferAbort?.abort();
     },
     async getTags() {
       return search.tagList();
