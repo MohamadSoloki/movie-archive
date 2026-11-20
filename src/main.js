@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { openDb } = require('./core/db.js');
 const { createApi } = require('./api.js');
-const { checkForUpdates } = require('./updater.js');
+const { checkForUpdates, createUpdater } = require('./updater.js');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'poster', privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -17,6 +17,7 @@ app.whenReady().then(() => {
   const api = createApi({
     db: openDb(path.join(userData, 'archive.db')), userDataDir: userData,
     openPath: (p) => shell.openPath(p), openExternal: (u) => shell.openExternal(u),
+    updater: createUpdater({ isPackaged: app.isPackaged }),
   });
 
   // poster://x/<file>: serves only files inside <userData>/posters (api.posterPath keeps the base name)

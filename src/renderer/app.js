@@ -43,6 +43,7 @@
     document.documentElement.dir = state.lang === 'fa' ? 'rtl' : 'ltr';
     document.title = t('app_title');
     for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+    if ($('update').dataset.v) $('update').textContent = t('update_install', { v: $('update').dataset.v });
     for (const el of document.querySelectorAll('[data-i18n-placeholder]')) el.placeholder = t(el.dataset.i18nPlaceholder);
     $('lang').textContent = t('lang_toggle');
     for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === state.tab));
@@ -444,6 +445,22 @@
       await renderRail();
       await refresh();
     } catch { setStatus(t('err_unexpected')); } finally { busy(false); }
+  });
+
+  // first press checks (and downloads); once an update is ready the same button installs it
+  $('update').addEventListener('click', async () => {
+    if ($('update').dataset.v) { await api.installUpdate(); return; }
+    $('update').disabled = true;
+    setStatus(t('update_checking'));
+    try {
+      const r = await api.checkUpdate();
+      if (r.state === 'ready') {
+        $('update').dataset.v = r.version;
+        $('update').textContent = t('update_install', { v: r.version });
+        $('update').classList.add('primary');
+        setStatus(t('update_ready', { v: r.version }));
+      } else setStatus(t(`update_${r.state}`));
+    } catch { setStatus(t('err_unexpected')); } finally { $('update').disabled = false; }
   });
 
   $('fetch').addEventListener('click', async () => {

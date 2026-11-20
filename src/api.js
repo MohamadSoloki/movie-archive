@@ -19,6 +19,7 @@ const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections'
 function createApi({
   db, userDataDir, fetch = globalThis.fetch, listDrives = defaultListDrives,
   openPath = async () => '', openExternal = async () => {},
+  updater = { check: async () => ({ state: 'dev' }), install() {} },
 }) {
   const search = createSearch(db);
   const postersDir = path.join(userDataDir, 'posters');
@@ -168,6 +169,8 @@ function createApi({
       await openExternal(`https://www.imdb.com/title/${id}/`);
       return { ok: true };
     },
+    checkUpdate: () => updater.check(),
+    installUpdate() { updater.install(); },
     applyFix: fixLocation,
     async getCandidates(locationId, query = '') {
       if (!key()) return { ok: false, error: 'bad_key' };

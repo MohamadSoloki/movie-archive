@@ -24,7 +24,7 @@ Plans: `docs/superpowers/plans/2026-11-17-movie-archive.md`, `docs/superpowers/p
   `fix` Online Info Fix · `library`/`search` entries, tabs, genre filter, sort, fuzzy search.
 - `src/api.js` — wires core modules into one object. `src/main.js` + `src/preload.js` only expose it over IPC.
 - `src/renderer/` — vanilla HTML/JS, `i18n.js` holds both languages (keys must match; `test/i18n.test.js` checks).
-- `src/updater.js` — self-update from GitHub Releases (packaged app only).
+- `src/updater.js` — self-update from GitHub Releases (packaged app only). `createUpdater` backs the header Update button (`api.checkUpdate` → `{state: dev|latest|ready|error, version}`, then `api.installUpdate`); the startup check stays silent.
 
 ## Rules that must not break
 
