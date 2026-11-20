@@ -15,8 +15,18 @@ function toInfo(a) {
   };
 }
 
-function createJikan({ fetch = globalThis.fetch, sleep = defaultSleep } = {}) {
+// minGap: least milliseconds between two requests (Jikan allows about 3 a second), even when callers run together
+function createJikan({ fetch = globalThis.fetch, sleep = defaultSleep, minGap = 0, now = Date.now } = {}) {
+  let nextAt = 0;
+  async function throttle() {
+    const t = now();
+    const wait = Math.max(0, nextAt - t);
+    nextAt = Math.max(nextAt, t) + minGap;
+    if (wait) await sleep(wait);
+  }
+
   async function get(url, canRetry = true) {
+    await throttle();
     let res;
     try {
       res = await fetch(url);

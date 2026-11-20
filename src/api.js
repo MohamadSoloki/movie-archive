@@ -13,6 +13,7 @@ const fix = require('./core/fix.js');
 const { createTranslator, translateCached } = require('./core/translate.js');
 const { forgetSeasons } = require('./core/cache.js');
 const { createSearch } = require('./core/search.js');
+const { lightOf } = require('./core/library.js');
 
 const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail'];
 
@@ -20,14 +21,16 @@ function createApi({
   db, userDataDir, fetch = globalThis.fetch, listDrives = defaultListDrives,
   openPath = async () => '', openExternal = async () => {},
   updater = { check: async () => ({ state: 'dev' }), install() {} },
+  concurrency = 5,
 }) {
   const search = createSearch(db);
   const postersDir = path.join(userDataDir, 'posters');
   const key = () => getSetting(db, 'omdbKey');
   const deps = () => ({
     omdb: createOmdb({ apiKey: key(), fetch }),
-    jikan: createJikan({ fetch }),
+    jikan: createJikan({ fetch, minGap: 350 }),
     savePoster: (url, k) => savePoster(url, postersDir, k, fetch),
+    concurrency,
   });
   const pendingCount = () => db.prepare("SELECT COUNT(*) c FROM locations WHERE status = 'pending' AND missing = 0").get().c;
 
@@ -88,8 +91,9 @@ function createApi({
       const prefix = root.rel_path ? `${root.rel_path}/` : '';
       db.exec('BEGIN');
       try {
+        const drop = db.prepare('DELETE FROM locations WHERE id = ?');
         for (const l of db.prepare('SELECT id, rel_path FROM locations WHERE drive_serial = ?').all(root.drive_serial)) {
-          if (l.rel_path.startsWith(prefix) || (root.single && l.rel_path.toLowerCase() === root.rel_path.toLowerCase())) db.prepare('DELETE FROM locations WHERE id = ?').run(l.id);
+          if (l.rel_path.startsWith(prefix) || (root.single && l.rel_path.toLowerCase() === root.rel_path.toLowerCase())) drop.run(l.id);
         }
         for (const o of db.prepare('SELECT id FROM titles WHERE id NOT IN (SELECT title_id FROM locations WHERE title_id IS NOT NULL)').all()) forgetSeasons(db, o.id);
         db.exec('DELETE FROM titles WHERE id NOT IN (SELECT title_id FROM locations WHERE title_id IS NOT NULL)');
@@ -134,8 +138,13 @@ function createApi({
       search.invalidate();
       return r;
     },
+    // light: the grid only needs small entries; the whole one comes from getEntry when a card is opened
     async getEntries(opts = {}) {
-      return search.query(opts);
+      const r = search.query(opts);
+      return opts.light ? { ...r, entries: r.entries.map(lightOf) } : r;
+    },
+    async getEntry(key) {
+      return search.find(key);
     },
     async getEpisodes(titleId) {
       const seasons = new Map();

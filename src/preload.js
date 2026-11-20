@@ -5,7 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const METHODS = [
   'getSettings', 'setSettings', 'getDrives', 'addRoot', 'removeRoot', 'getRoots', 'scan', 'startQueue',
   'getEntries', 'applyFix', 'getCandidates', 'pickCandidate', 'posterPath',
-  'getEpisodes', 'translate', 'openLocation', 'openImdb', 'openCollection', 'checkUpdate', 'installUpdate',
+  'getEpisodes', 'translate', 'openLocation', 'openImdb', 'openCollection', 'checkUpdate', 'installUpdate', 'getEntry',
 ];
 
 const api = Object.fromEntries(METHODS.map((m) => [m, (...args) => ipcRenderer.invoke(`api:${m}`, ...args)]));

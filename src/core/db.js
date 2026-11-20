@@ -34,11 +34,20 @@ CREATE TABLE IF NOT EXISTS translations(hash TEXT PRIMARY KEY, text TEXT NOT NUL
 CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `;
 
+// the queue looks a film up by lower-cased name for every folder, and the detail view joins by title
+const INDEXES = `
+CREATE INDEX IF NOT EXISTS loc_twin ON locations(lower(parsed_title), parsed_year);
+CREATE INDEX IF NOT EXISTS loc_title ON locations(title_id);
+DROP INDEX IF EXISTS loc_status;
+`;
+
 // added after the first release, so databases that already exist get them too
 const TITLE_COLUMNS = [['director', 'TEXT'], ['awards', 'TEXT'], ['rated', 'TEXT'], ['country', 'TEXT'], ['total_seasons', 'INTEGER']];
 
 function openDb(file = ':memory:') {
   const db = new DatabaseSync(file);
+  // WAL + NORMAL: a commit no longer waits for the disk, which cost a lot on slow drives and antivirus-scanned folders
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA temp_store = MEMORY; PRAGMA cache_size = -8000;');
   db.exec(SCHEMA);
   const have = db.prepare('PRAGMA table_info(titles)').all().map((c) => c.name);
   if (!have.includes('poster_url')) db.exec('ALTER TABLE titles ADD COLUMN poster_url TEXT');
@@ -53,6 +62,7 @@ function openDb(file = ':memory:') {
   for (const [name, type] of TITLE_COLUMNS) {
     if (!have.includes(name)) db.exec(`ALTER TABLE titles ADD COLUMN ${name} ${type}`);
   }
+  db.exec(INDEXES);
   return db;
 }
 

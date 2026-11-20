@@ -1,5 +1,6 @@
 'use strict';
 const { getCache, putCache } = require('./cache.js');
+const { pool } = require('./pool.js');
 
 const STOPS = new Set(['quota', 'network', 'bad_key']);
 const JIKAN_PAUSE = 400; // Jikan allows about 3 requests a second
@@ -36,16 +37,17 @@ async function runEpisodes(db, deps) {
   let jikanUsed = false;
   const pause = async () => { if (jikanUsed) await sleep(JIKAN_PAUSE); jikanUsed = true; };
 
+  const limit = deps.concurrency ?? 1;
   try {
     // phase A: season / episode lists of every title first, so the cheap requests are never starved by plots
-    for (const t of titles) {
+    await pool(titles, limit, async (t) => {
       if (t.source === 'jikan') {
-        if (hasRows(db, t.id, 1) || getCache(db, noneKey(t.id, 1)) !== undefined) continue;
+        if (hasRows(db, t.id, 1) || getCache(db, noneKey(t.id, 1)) !== undefined) return;
         await pause();
         const list = await jikan.episodes(t.mal_id);
         const stored = insertEpisodes(db, t.id, 1, list);
         if (stored) fetched += 1; else putCache(db, noneKey(t.id, 1), 1);
-        continue;
+        return;
       }
       // the owned list is recomputed each round: season 1 can teach us how many seasons exist
       for (;;) {
@@ -62,33 +64,35 @@ async function runEpisodes(db, deps) {
         if (answer.totalSeasons) db.prepare('UPDATE titles SET total_seasons = ? WHERE id = ?').run(answer.totalSeasons, t.id);
         if (insertEpisodes(db, t.id, season, answer.episodes)) fetched += 1; else putCache(db, noneKey(t.id, season), 1);
       }
-    }
+    });
 
     // phase B: one request per episode plot
     const setPlot = db.prepare('UPDATE episodes SET plot = ?, rating = COALESCE(?, rating) WHERE title_id = ? AND season = ? AND number = ?');
+    const jobs = [];
     for (const t of titles) {
       const seasons = t.source === 'jikan' ? [1] : ownedSeasons(db, t.id);
       const rows = db.prepare('SELECT season, number, ext_id FROM episodes WHERE title_id = ? AND plot IS NULL ORDER BY season, number')
         .all(t.id).filter((r) => seasons.includes(r.season));
-      for (const r of rows) {
-        let plot = '';
-        let rating = null;
-        if (t.source === 'jikan') {
-          await pause();
-          plot = (await jikan.episode(t.mal_id, r.number)) || '';
-        } else if (r.ext_id) {
-          try {
-            const info = await omdb.byId(r.ext_id);
-            plot = info.plot || '';
-            rating = info.rating ?? null;
-          } catch (e) {
-            if (e.kind !== 'not_found') throw e;
-          }
-        }
-        setPlot.run(plot, rating, t.id, r.season, r.number);
-        fetched += 1;
-      }
+      for (const r of rows) jobs.push({ t, r });
     }
+    await pool(jobs, limit, async ({ t, r }) => {
+      let plot = '';
+      let rating = null;
+      if (t.source === 'jikan') {
+        await pause();
+        plot = (await jikan.episode(t.mal_id, r.number)) || '';
+      } else if (r.ext_id) {
+        try {
+          const info = await omdb.byId(r.ext_id);
+          plot = info.plot || '';
+          rating = info.rating ?? null;
+        } catch (e) {
+          if (e.kind !== 'not_found') throw e;
+        }
+      }
+      setPlot.run(plot, rating, t.id, r.season, r.number);
+      fetched += 1;
+    });
   } catch (e) {
     if (STOPS.has(e.kind)) return { fetched, stoppedBy: e.kind };
     throw e;

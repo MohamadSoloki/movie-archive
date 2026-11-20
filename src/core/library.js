@@ -1,5 +1,9 @@
 'use strict';
 
+// one shared collator: building it per comparison is what made sorting thousands of titles slow
+const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
+const compareTitles = (a, b) => collator.compare(a.title, b.title);
+
 function listEntries(db) {
   const locs = db.prepare(`SELECT l.*, d.label AS drive_label, COALESCE(d.online, 0) AS drive_online
     FROM locations l LEFT JOIN drives d ON d.serial = l.drive_serial ORDER BY l.id`).all();
@@ -42,10 +46,9 @@ function listEntries(db) {
   }
   for (const e of entries) e.attention = attentionOf(e);
   entries.push(...collectionEntries(entries));
-  return entries.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+  return entries.sort(compareTitles);
 }
 
-// A folder that holds two or more titles (Batman Trilogy/...) is shown as one more entry that lists them.
 // What the owner should look at: 'problem' (unsure or broken), 'guess' (auto-picked, check it), 'ok' (verified).
 // A drive that is only unplugged is not a problem.
 function attentionOf(e) {
@@ -68,7 +71,7 @@ function collectionEntries(entries) {
     }
   }
   return [...groups.values()].filter((g) => g.members.size >= 2).map(({ l, members, locs }) => {
-    const list = [...members.values()].sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+    const list = [...members.values()].sort(compareTitles);
     return {
       key: `c:${l.driveSerial}|${l.collection}`, kind: 'collection', titleId: null, locationId: null,
       title: l.collection.split('/').pop(), year: null, type: 'collection', plot: null, genres: null, rating: null, runtime: null,
@@ -81,4 +84,23 @@ function collectionEntries(entries) {
   });
 }
 
-module.exports = { listEntries };
+// Why an entry shows a dot, as the key of its badge text; same order the detail view lists its flags.
+function reasonOf(e) {
+  if (e.attention === 'guess') return 'guessed';
+  if (e.attention !== 'problem') return null;
+  const present = e.locations.filter((l) => !l.missing);
+  if (!present.length) return 'missing';
+  if (e.status === 'review') return 'review';
+  if (e.status === 'pending') return 'pending';
+  return 'empty';
+}
+
+// What a grid card needs. The whole entry (plot, cast, folders) is asked for when one is opened.
+function lightOf(e) {
+  return {
+    key: e.key, title: e.title, year: e.year, rating: e.rating, posterFile: e.posterFile, kind: e.kind,
+    attention: e.attention, genres: e.genreList.slice(0, 2), reason: reasonOf(e), members: e.members ? e.members.length : 0,
+  };
+}
+
+module.exports = { listEntries, reasonOf, lightOf, compareTitles };

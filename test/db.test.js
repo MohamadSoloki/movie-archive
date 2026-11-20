@@ -49,3 +49,18 @@ test('a database made before the new title columns gets them on open', () => {
   const cols = db.prepare('PRAGMA table_info(titles)').all().map((c) => c.name);
   for (const c of ['director', 'awards', 'rated', 'country', 'total_seasons']) assert.ok(cols.includes(c), c);
 });
+
+test('a file database uses WAL with normal sync, so a write does not wait for the disk every time', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wal-')), 'a.db');
+  const db = openDb(file);
+  assert.equal(db.prepare('PRAGMA journal_mode').get().journal_mode, 'wal');
+  assert.equal(db.prepare('PRAGMA synchronous').get().synchronous, 1);
+  db.close();
+});
+
+test('the twin lookup of the queue and the per-title joins use indexes, not table scans', () => {
+  const db = openDb();
+  const plan = (sql) => db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all().map((r) => r.detail).join(' | ');
+  assert.match(plan("SELECT title_id FROM locations WHERE id != 1 AND status = 'matched' AND lower(parsed_title) = lower('x') AND parsed_year IS NULL"), /USING INDEX loc_twin/);
+  assert.match(plan('SELECT season FROM locations WHERE title_id = 1 AND missing = 0'), /USING INDEX loc_title/);
+});

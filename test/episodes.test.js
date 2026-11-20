@@ -144,3 +144,45 @@ test('an unexpected error is thrown, not swallowed', async () => {
   d.omdb.season = async () => { throw new TypeError('bug'); };
   await assert.rejects(runEpisodes(db, d), TypeError);
 });
+
+const tick = (ms = 5) => new Promise((r) => { setTimeout(r, ms); });
+
+test('concurrency: episode plots are fetched together, never more than the limit, and all stored', async () => {
+  const db = openDb(); const { d } = fakes();
+  const t = upsertTitle(db, SERIES, null);
+  addLoc(db, t, null);
+  let live = 0; let peak = 0;
+  d.concurrency = 4;
+  d.omdb.byId = async (id) => { live += 1; peak = Math.max(peak, live); await tick(); live -= 1; return { plot: `plot ${id}`, rating: '9.1' }; };
+  const r = await runEpisodes(db, d);
+  assert.equal(peak, 4);
+  assert.equal(r.stoppedBy, null);
+  assert.equal(eps(db, t).length, 6);
+  assert.ok(eps(db, t).every((e) => e.plot));
+});
+
+test('concurrency: season lists of different series are fetched together', async () => {
+  const db = openDb(); const { d } = fakes();
+  for (let i = 0; i < 4; i += 1) addLoc(db, upsertTitle(db, { ...SERIES, imdbId: `tt${100 + i}` }, null), '01');
+  let live = 0; let peak = 0;
+  d.concurrency = 4;
+  d.omdb.season = async (id, s) => { live += 1; peak = Math.max(peak, live); await tick(); live -= 1; return { totalSeasons: 3, episodes: [{ number: 1, name: 'E', released: null, rating: null, imdbId: `${id}-${s}` }] }; };
+  await runEpisodes(db, d);
+  assert.equal(peak, 4);
+});
+
+test('concurrency: quota stops new requests; what was stored stays and the next run finishes the rest', async () => {
+  const db = openDb(); const { d } = fakes();
+  const t = upsertTitle(db, SERIES, null);
+  addLoc(db, t, null);
+  d.concurrency = 2;
+  let k = 0;
+  d.omdb.byId = async (id) => { k += 1; const mine = k; await tick(); if (mine === 3) throw new ProviderError('quota'); return { plot: `p ${id}`, rating: null }; };
+  assert.equal((await runEpisodes(db, d)).stoppedBy, 'quota');
+  const got = eps(db, t).filter((e) => e.plot !== null).length;
+  assert.ok(got >= 2 && got < 6);
+  const again = fakes();
+  await runEpisodes(db, again.d);
+  assert.equal(again.calls.byId.length, 6 - got);
+  assert.equal(eps(db, t).filter((e) => e.plot === null).length, 0);
+});

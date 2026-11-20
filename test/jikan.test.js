@@ -72,3 +72,15 @@ test('episode returns the synopsis, and 404 gives null / []', async () => {
   assert.equal(await gone.episode(1, 99), null);
   assert.deepEqual(await gone.episodes(1), []);
 });
+
+test('minGap spaces requests that are started together; the default never waits', async () => {
+  const sleeps = [];
+  const ok = async () => ({ ok: true, status: 200, json: async () => ({ data: [] }) });
+  const j = createJikan({ fetch: ok, sleep: async (ms) => { sleeps.push(ms); }, minGap: 400, now: () => 1000 });
+  await Promise.all([j.searchAnime('a'), j.searchAnime('b'), j.searchAnime('c')]);
+  assert.deepEqual(sleeps, [400, 800]);
+  const none = [];
+  const j2 = createJikan({ fetch: ok, sleep: async (ms) => { none.push(ms); } });
+  await Promise.all([j2.searchAnime('a'), j2.searchAnime('b')]);
+  assert.deepEqual(none, []);
+});

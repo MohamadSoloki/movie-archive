@@ -250,3 +250,52 @@ test('a season folder is not merged into a movie with the same name', async () =
   assert.equal(calls.byTitle.length, 1);
   assert.equal(calls.byTitle[0][2], 'series');
 });
+
+const tick = (ms = 5) => new Promise((r) => { setTimeout(r, ms); });
+
+test('concurrency: several locations are resolved at once, never more than the limit', async () => {
+  const db = openDb(); let live = 0; let peak = 0; let k = 0;
+  const { d } = deps({
+    concurrency: 3,
+    omdb: { byTitle: async (t) => { live += 1; peak = Math.max(peak, live); await tick(); live -= 1; k += 1; return { ...INFO, imdbId: `tt${k}`, title: t }; }, search: async () => [] },
+  });
+  const ids = Array.from({ length: 8 }, (_, i) => addLoc(db, { title: `film ${i}` }));
+  const r = await runQueue(db, d);
+  assert.equal(peak, 3);
+  assert.deepEqual([r.processed, r.remaining, r.stoppedBy], [8, 0, null]);
+  assert.ok(ids.every((id) => loc(db, id).status === 'matched'));
+});
+
+test('concurrency: two folders of the same film cost one request', async () => {
+  const db = openDb(); let asked = 0;
+  const { d } = deps({ concurrency: 4, omdb: { byTitle: async () => { asked += 1; await tick(); return INFO; }, search: async () => [] } });
+  const a = addLoc(db, { title: 'batman', year: '2022', serial: 'S1' });
+  const b = addLoc(db, { title: 'Batman', year: '2022', serial: 'S2' });
+  await runQueue(db, d);
+  assert.equal(asked, 1);
+  assert.equal(loc(db, a).title_id, loc(db, b).title_id);
+});
+
+test('concurrency: a network error stops new work; failed and unstarted locations stay pending', async () => {
+  const db = openDb(); let started = 0;
+  const { d } = deps({
+    concurrency: 2,
+    omdb: { byTitle: async (t) => { started += 1; await tick(); if (t === 'film 1') throw new ProviderError('network'); return { ...INFO, imdbId: `tt${t}`, title: t }; }, search: async () => [] },
+  });
+  const ids = Array.from({ length: 10 }, (_, i) => addLoc(db, { title: `film ${i}` }));
+  const r = await runQueue(db, d);
+  assert.equal(r.stoppedBy, 'network');
+  assert.ok(started < 10);
+  assert.equal(loc(db, ids[1]).status, 'pending');
+  assert.equal(r.processed + r.remaining, 10);
+  assert.equal(db.prepare("SELECT COUNT(*) c FROM locations WHERE status = 'pending'").get().c, r.remaining);
+});
+
+test('poster retries run together and stop after the first failure', async () => {
+  const db = openDb(); let live = 0; let peak = 0;
+  for (let i = 0; i < 6; i += 1) upsertTitle(db, { ...INFO, imdbId: `tt${i}`, posterUrl: 'https://x/p.jpg' }, null);
+  const { d } = deps({ concurrency: 3, savePoster: async (u, key) => { live += 1; peak = Math.max(peak, live); await tick(); live -= 1; return `${key}.jpg`; } });
+  await runQueue(db, d);
+  assert.equal(peak, 3);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM titles WHERE poster_file IS NULL').get().c, 0);
+});

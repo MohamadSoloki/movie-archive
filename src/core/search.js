@@ -1,6 +1,6 @@
 'use strict';
 const Fuse = require('fuse.js');
-const { listEntries } = require('./library.js');
+const { listEntries, compareTitles: byName } = require('./library.js');
 
 const num = (v) => { const n = parseFloat(v); return Number.isNaN(n) ? null : n; };
 // numbers descending, entries without a number last
@@ -11,7 +11,6 @@ const byNumberDesc = (get) => (a, b) => {
   if (y == null) return -1;
   return y - x;
 };
-const byName = (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
 const SORTS = {
   name: byName,
   year: byNumberDesc((e) => num(e.year)),
@@ -21,21 +20,28 @@ const SORTS = {
 
 function createSearch(db) {
   let all = null;
+  let byKey = null;
   let fuse = null;
   const build = () => {
     all = listEntries(db);
-    fuse = new Fuse(all, {
+    byKey = new Map(all.map((e) => [e.key, e]));
+    fuse = null;
+  };
+  // the fuzzy index is only built when somebody types something
+  const fuzzy = () => {
+    fuse ??= new Fuse(all, {
       keys: [{ name: 'title', weight: 3 }, { name: 'locations.folderName', weight: 2 },
         { name: 'genres', weight: 1 }, { name: 'actors', weight: 1 }],
       threshold: 0.35,
       ignoreLocation: true,
     });
+    return fuse;
   };
   return {
     query({ query = '', tab = 'all', genres = [], attention = [], sort = 'name' } = {}) {
-      if (!fuse) build();
+      if (!all) build();
       const q = query.trim();
-      let list = q ? fuse.search(q).map((r) => r.item) : [...all];
+      let list = q ? fuzzy().search(q).map((r) => r.item) : [...all];
       if (tab !== 'all') list = list.filter((e) => e.kind === tab);
 
       const wanted = genres.map((g) => g.toLowerCase());
@@ -61,7 +67,11 @@ function createSearch(db) {
       list.sort((a, b) => cmp(a, b) || byName(a, b));
       return { entries: list, genres: genreCounts, attentionCounts };
     },
-    invalidate() { fuse = null; },
+    find(key) {
+      if (!all) build();
+      return byKey.get(key) ?? null;
+    },
+    invalidate() { all = null; byKey = null; fuse = null; },
   };
 }
 

@@ -87,7 +87,7 @@
 
   function toggleGenre(g) {
     state.genres = hasGenre(g) ? state.genres.filter((x) => !sameGenre(x, g)) : [...state.genres, g];
-    return refresh();
+    return refresh(true);
   }
 
   function toggleAttention(a) {
@@ -164,7 +164,7 @@
 
   // A film without a poster gets a colour made from its title, so the wall never has grey holes.
   function posterEl(e) {
-    if (e.posterFile) return h('img', { class: 'poster', src: posterUrl(e.posterFile), alt: '', loading: 'lazy' });
+    if (e.posterFile) return h('img', { class: 'poster', src: posterUrl(e.posterFile), alt: '', loading: 'lazy', decoding: 'async' });
     const el = h('div', { class: 'poster none', dir: 'auto' }, h('span', {}, e.title));
     el.style.setProperty('--h', String(hueOf(e.title)));
     return el;
@@ -177,12 +177,11 @@
   function dotOf(e) {
     if (e.attention === 'guess') return dot('yellow', t('badge_guessed'));
     if (e.attention !== 'problem') return null;
-    const why = flagsOf(e).find((f) => f.cls !== 'guessed' && f.cls !== 'offline');
-    return dot('red', why ? why.text : t('badge_review'));
+    return dot('red', t(`badge_${e.reason || 'review'}`));
   }
 
   function card(e) {
-    const genres = e.genreList.slice(0, 2).map((g) => h('span', {}, genreName(g)));
+    const genres = e.genres.map((g) => h('span', {}, genreName(g)));
     return h('button', {
       class: `card a-${e.attention}${state.selected === e.key ? ' sel' : ''}`,
       type: 'button',
@@ -191,7 +190,7 @@
     },
     frame(e,
       e.rating ? rateChip(e.rating) : null,
-      e.kind === 'collection' ? h('span', { class: 'stack' }, icon('layers'), t('collection_n', { n: e.members.length })) : null),
+      e.kind === 'collection' ? h('span', { class: 'stack' }, icon('layers'), t('collection_n', { n: e.members })) : null),
     h('span', { class: 'info' },
       h('span', { class: 'title-row' }, dotOf(e), h('span', { class: 'name', dir: 'auto' }, e.title)),
       e.year || genres.length ? h('span', { class: 'meta' }, e.year ? h('span', { class: 'year' }, String(e.year)) : null, ...genres) : null));
@@ -232,15 +231,15 @@
       h('button', { type: 'button', class: 'btn primary', onclick: go }, t(label)));
   }
 
-  async function refresh() {
-    const r = await api.getEntries({ query: state.query, tab: state.tab, genres: state.genres, attention: state.attention, sort: state.sort });
+  async function refresh(forceDetail = false) {
+    const r = await api.getEntries({ query: state.query, tab: state.tab, genres: state.genres, attention: state.attention, sort: state.sort, light: true });
     state.entries = r.entries;
     state.genreCounts = r.genres;
     state.attentionCounts = r.attentionCounts;
     renderFilters();
     if (state.selected && !state.entries.some((e) => e.key === state.selected)) state.selected = null;
     renderGrid();
-    renderDetail();
+    await renderDetail(forceDetail);
   }
 
   function select(key) {
@@ -285,7 +284,7 @@
         if (!r.ok) { msg.textContent = errText(r.error); return; }
         state.selected = `t:${r.titleId}`;
         setStatus(t('fix_done'));
-        await refresh();
+        await refresh(true);
       },
     }, input, h('button', { type: 'submit', class: 'btn primary' }, t('fix_apply')));
     return h('details', { class: 'fix', open: e.attention !== 'ok' },
@@ -315,7 +314,7 @@
                 if (!p.ok) { list.append(h('p', { class: 'msg' }, errText(p.error))); return; }
                 state.selected = `t:${p.titleId}`;
                 setStatus(t('fix_done'));
-                await refresh();
+                await refresh(true);
               },
             }, t('candidates_use'))));
         }
@@ -419,10 +418,17 @@
     await resetView();
   }
 
-  function renderDetail() {
+  // The whole entry is fetched only for the open card. Without `force` an already open detail is left alone,
+  // so typing in the search box does not rebuild it (and collapse its seasons).
+  async function renderDetail(force = true) {
     const d = $('detail');
-    const e = state.entries.find((x) => x.key === state.selected);
-    if (!e) { d.hidden = true; d.replaceChildren(); return; }
+    const key = state.selected;
+    if (!key) { d.hidden = true; d.replaceChildren(); delete d.dataset.key; return; }
+    if (!force && d.dataset.key === key && !d.hidden) return;
+    const e = await api.getEntry(key);
+    if (state.selected !== key) return; // another card was chosen while this one loaded
+    if (!e) { d.hidden = true; d.replaceChildren(); delete d.dataset.key; return; }
+    d.dataset.key = key;
     d.hidden = false;
     if (e.kind === 'collection') { d.replaceChildren(...collectionDetail(e)); return; }
     const facts = [[t('runtime'), e.runtime], [t('director'), e.director], [t('actors'), e.actors],
@@ -463,7 +469,7 @@
             if (!window.confirm(t('confirm_remove'))) return;
             await api.removeRoot(r.id);
             await renderRoots();
-            await refresh();
+            await refresh(true);
           },
         }, t('remove'))))
       : [h('li', { class: 'none' }, t('no_folders'))]));
@@ -498,7 +504,7 @@
       const r = await api.scan();
       setStatus(t('scan_done', { n: r.scanned, added: r.added }));
       await renderRoots();
-      await refresh();
+      await refresh(true);
     } catch { setStatus(t('err_unexpected')); } finally { busy(false); }
   });
 
@@ -528,7 +534,7 @@
       else if (r.stoppedBy === 'network') setStatus(t('stop_network'));
       else if (r.stoppedBy === 'bad_key') setStatus(t('err_bad_key'));
       else setStatus(t('fetch_done'));
-      await refresh();
+      await refresh(true);
     } catch { setStatus(t('err_unexpected')); } finally { busy(false); }
   });
 
@@ -570,7 +576,7 @@
     await renderRoots();
     renderGrid();
     renderFilters();
-    renderDetail();
+    renderDetail(true);
   });
 
   $('settings-btn').addEventListener('click', async () => {

@@ -40,7 +40,8 @@ app.whenReady().then(() => {
 
   const win = new BrowserWindow({
     width: 1280, height: 800,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+    // spellcheck off: it would load a dictionary into memory for a window with one search box
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, spellcheck: false },
   });
   win.setMenuBarVisibility(false);
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));

@@ -298,3 +298,22 @@ test('a collection folder with movie files is scanned into one entry per film an
   assert.equal(opened[1], dir);
   assert.deepEqual(await api.openCollection('S1', '../../etc'), { ok: false, error: 'unknown' });
 });
+
+test('light entries carry only what a card needs; getEntry returns the whole entry by key', async () => {
+  const { api, e } = await scanned();
+  const light = (await api.getEntries({ light: true })).entries[0];
+  assert.deepEqual(Object.keys(light).sort(), ['attention', 'genres', 'key', 'kind', 'members', 'posterFile', 'rating', 'reason', 'title', 'year']);
+  assert.deepEqual([light.key, light.title, light.rating, light.attention, light.members], [e.key, e.title, e.rating, e.attention, 0]);
+  assert.ok(JSON.stringify(light).length * 3 < JSON.stringify(e).length);
+  assert.deepEqual(await api.getEntry(e.key), e);
+  assert.equal(await api.getEntry('t:99999'), null);
+  // counts and genres are the same as the full answer
+  assert.deepEqual((await api.getEntries({ light: true })).genres, (await api.getEntries()).genres);
+});
+
+test('getEntry sees changes made after the list was built', async () => {
+  const { api, e, db } = await scanned();
+  db.prepare('UPDATE titles SET plot = ? WHERE id = ?').run('new plot', e.titleId);
+  await api.setSettings({}); // any settings write drops the cached list
+  assert.equal((await api.getEntry(e.key)).plot, 'new plot');
+});

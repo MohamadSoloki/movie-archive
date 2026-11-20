@@ -120,3 +120,14 @@ test('attention: verified is ok, a guess is guess, anything unsure or broken is 
   assert.deepEqual(by, { 'T tt21': 'ok', 'T tt22': 'guess', 'T tt23': 'problem', 'T tt24': 'problem', 'T tt25': 'ok',
     'review me': 'problem', 'not yet': 'problem', 'T tt26': 'problem' });
 });
+
+test('reasonOf names why an entry has a dot, in the order the detail view lists its flags', () => {
+  const { reasonOf } = require('../src/core/library.js');
+  const l = (o = {}) => ({ missing: false, isEmpty: false, ...o });
+  assert.equal(reasonOf({ attention: 'ok', status: 'matched', locations: [l()] }), null);
+  assert.equal(reasonOf({ attention: 'guess', status: 'matched', locations: [l()] }), 'guessed');
+  assert.equal(reasonOf({ attention: 'problem', status: 'matched', locations: [l({ missing: true })] }), 'missing');
+  assert.equal(reasonOf({ attention: 'problem', status: 'review', locations: [l()] }), 'review');
+  assert.equal(reasonOf({ attention: 'problem', status: 'pending', locations: [l()] }), 'pending');
+  assert.equal(reasonOf({ attention: 'problem', status: 'matched', guessed: true, locations: [l({ isEmpty: true })] }), 'empty');
+});

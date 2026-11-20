@@ -3,6 +3,7 @@ const { upsertTitle } = require('./titles.js');
 const { searchCached } = require('./cache.js');
 const { pickConfident } = require('./match.js');
 const { runEpisodes } = require('./episodes.js');
+const { pool, STOP } = require('./pool.js');
 
 const ARABIC = /\p{Script=Arabic}/u;
 const LATIN = /[A-Za-z]/;
@@ -20,11 +21,13 @@ async function animeOrNull(jikan, title, year) {
 // Titles whose poster download failed earlier. Stops at the first failure: the host is probably unreachable.
 async function backfillPosters(db, deps) {
   const rows = db.prepare('SELECT id, imdb_id, mal_id, poster_url FROM titles WHERE poster_file IS NULL AND poster_url IS NOT NULL').all();
-  for (const r of rows) {
+  const save = db.prepare('UPDATE titles SET poster_file = ? WHERE id = ?');
+  await pool(rows, deps.concurrency ?? 1, async (r) => {
     const file = await deps.savePoster(r.poster_url, r.imdb_id ?? `mal${r.mal_id}`);
-    if (!file) return;
-    db.prepare('UPDATE titles SET poster_file = ? WHERE id = ?').run(file, r.id);
-  }
+    if (!file) return STOP;
+    save.run(file, r.id);
+    return undefined;
+  });
 }
 
 async function resolveLocation(db, id, deps) {
@@ -78,12 +81,31 @@ async function runQueue(db, deps, onProgress) {
   const ids = db.prepare("SELECT id FROM locations WHERE status = 'pending' AND missing = 0 ORDER BY id").all().map((r) => r.id);
   let processed = 0;
   let stoppedBy = null;
-  for (const id of ids) {
-    const r = await resolveLocation(db, id, deps);
-    if (STOPS.has(r)) { stoppedBy = r; break; }
+  // two folders of one film running together would ask twice: the second waits for the first, then finds it as a twin
+  const inflight = new Map();
+  const keyOf = (id) => {
+    const l = db.prepare('SELECT parsed_title t, parsed_year y, season s FROM locations WHERE id = ?').get(id);
+    return `${(l.t || '').toLowerCase()}|${l.y ?? ''}|${l.s == null ? '' : 's'}`;
+  };
+  const run = async (id) => {
+    const key = keyOf(id);
+    const prior = inflight.get(key);
+    if (prior) await prior.catch(() => {});
+    const p = resolveLocation(db, id, deps);
+    inflight.set(key, p);
+    try {
+      return await p;
+    } finally {
+      if (inflight.get(key) === p) inflight.delete(key);
+    }
+  };
+  await pool(ids, deps.concurrency ?? 1, async (id) => {
+    const r = await run(id);
+    if (STOPS.has(r)) { stoppedBy ??= r; return STOP; }
     processed += 1;
     if (onProgress) onProgress({ processed, remaining: ids.length - processed });
-  }
+    return undefined;
+  });
   const eps = stoppedBy ? { fetched: 0, stoppedBy } : await runEpisodes(db, deps);
   return { processed, remaining: ids.length - processed, stoppedBy: stoppedBy ?? eps.stoppedBy, episodes: eps.fetched };
 }
