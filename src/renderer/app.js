@@ -2,7 +2,7 @@
 (() => {
   const api = window.api;
   const $ = (id) => document.getElementById(id);
-  const state = { lang: 'fa', entries: [], selected: null, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], tags: [], tagCounts: [], knownTags: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, sort: 'name', rootCount: 0 };
+  const state = { lang: 'fa', entries: [], selected: null, cart: new Map(), copyDest: '', copyPlan: null, copying: false, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], tags: [], tagCounts: [], knownTags: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, sort: 'name', rootCount: 0 };
   const t = (key, vars) => window.i18n.t(state.lang, key, vars);
   const genreName = (g) => window.i18n.genreLabel(state.lang, g);
   const CHUNK = 200;
@@ -27,6 +27,7 @@
     folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
     x: '<path d="M6 6l12 12M18 6 6 18"/>',
+    check: '<path d="m5 12 5 5 9-10"/>',
     tag: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
     link: '<path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
   };
@@ -39,6 +40,7 @@
   }
 
   let statusTimer = null;
+  let planTimer = null;
   function setStatus(text) {
     const el = $('status');
     el.textContent = text;
@@ -194,6 +196,8 @@
     return dot('red', t(`badge_${e.reason || 'review'}`));
   }
 
+  const inCart = (key) => state.cart.has(key);
+
   function card(e) {
     const mine = e.tags.map((g) => h('span', { class: 'mine', dir: 'auto' }, icon('tag'), g));
     const genres = e.genres.map((g) => h('span', {}, genreName(g)));
@@ -205,6 +209,7 @@
     },
     frame(e,
       e.rating ? rateChip(e.rating) : null,
+      inCart(e.key) ? h('span', { class: 'cart-mark' }, icon('check')) : null,
       e.kind === 'collection' ? h('span', { class: 'stack' }, icon('layers'), t('collection_n', { n: e.members })) : null),
     h('span', { class: 'info' },
       h('span', { class: 'title-row' }, dotOf(e), h('span', { class: 'name', dir: 'auto' }, e.title)),
@@ -437,6 +442,97 @@
 
   // The whole entry is fetched only for the open card. Without `force` an already open detail is left alone,
   // so typing in the search box does not rebuild it (and collapse its seasons).
+  // ---- copy list: films picked here are copied (never moved) into a new folder somewhere else ----
+
+  function cartButton(e) {
+    const btn = h('button', { type: 'button', class: 'btn' });
+    const paint = () => {
+      btn.setAttribute('aria-pressed', String(inCart(e.key)));
+      btn.replaceChildren(icon(inCart(e.key) ? 'check' : 'layers'), t(inCart(e.key) ? 'copy_remove' : 'copy_add'));
+    };
+    btn.addEventListener('click', () => { toggleCart(e.key, e.title); paint(); });
+    paint();
+    return btn;
+  }
+
+  function toggleCart(key, title) {
+    if (state.cart.has(key)) state.cart.delete(key); else state.cart.set(key, title);
+    renderCartBadge();
+    const cardEl = [...document.querySelectorAll('.card')].find((c) => c.dataset.key === key);
+    if (cardEl) {
+      cardEl.querySelector('.cart-mark')?.remove();
+      if (inCart(key)) cardEl.querySelector('.frame').append(h('span', { class: 'cart-mark' }, icon('check')));
+    }
+    if ($('copy-dlg').open) renderCopy();
+  }
+
+  function renderCartBadge() {
+    $('copy-badge').hidden = !state.cart.size;
+    $('copy-badge').textContent = String(state.cart.size);
+  }
+
+  const size = (n) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)} GB` : `${Math.max(1, Math.round(n / 1024 ** 2))} MB`);
+  const copyMsg = (text, bad = false) => { $('copy-msg').textContent = text; $('copy-msg').classList.toggle('bad', bad); };
+
+  async function updateCopyPlan() {
+    const name = $('copy-name').value.trim();
+    state.copyPlan = null;
+    $('copy-info').classList.remove('bad');
+    $('copy-skipped').replaceChildren();
+    if (!state.cart.size || !name || !state.copyDest) { $('copy-info').textContent = ''; renderCopy(); return; }
+    const plan = await api.planTransfer({ keys: [...state.cart.keys()], destDir: state.copyDest, name });
+    if ($('copy-name').value.trim() !== name) return; // typing went on while the plan was computed
+    state.copyPlan = plan;
+    if (!plan.ok) {
+      $('copy-info').classList.add('bad');
+      $('copy-info').textContent = t(`copy_err_${plan.error}`, plan.error === 'no_space' ? { needed: size(plan.needed), free: size(plan.free) } : {});
+    } else {
+      $('copy-info').textContent = plan.jobs.length ? t('copy_summary', { n: plan.jobs.length, size: size(plan.bytes) }) : t('copy_err_nothing');
+      $('copy-skipped').replaceChildren(...plan.skipped.map((x) => h('li', { dir: 'auto' }, t('copy_skip', { title: x.title, reason: t(`copy_skip_${x.reason}`) }))));
+    }
+    renderCopy();
+  }
+
+  function renderCopy() {
+    $('copy-items').replaceChildren(...[...state.cart].map(([key, title]) => h('li', {},
+      h('span', { dir: 'auto' }, title),
+      h('button', { type: 'button', class: 'icon-btn x', 'aria-label': t('copy_item_remove', { title }), title: t('copy_item_remove', { title }),
+        onclick: () => { toggleCart(key, title); updateCopyPlan(); } }, icon('x')))));
+    $('copy-empty').hidden = state.cart.size > 0;
+    $('copy-clear').disabled = state.copying || !state.cart.size;
+    $('copy-go').textContent = t(state.copying ? 'copy_cancel' : 'copy_start');
+    $('copy-go').disabled = !state.copying && !(state.copyPlan?.ok && state.copyPlan.jobs.length);
+    $('copy-name').disabled = $('copy-browse').disabled = state.copying;
+  }
+
+  async function runCopy() {
+    if (state.copying) { api.cancelTransfer(); return; }
+    state.copying = true;
+    copyMsg('');
+    $('copy-bar').hidden = false;
+    $('copy-bar').value = 0;
+    renderCopy();
+    api.onProgress((p) => {
+      if (p.type !== 'copy') return;
+      $('copy-bar').value = p.totalBytes ? Math.round((p.doneBytes / p.totalBytes) * 100) : 0;
+      if (p.title) copyMsg(t('copy_progress', { i: p.index + 1, n: p.total, title: p.title, done: size(p.doneBytes), total: size(p.totalBytes) }));
+    });
+    let r;
+    try {
+      r = await api.startTransfer({ keys: [...state.cart.keys()], destDir: state.copyDest, name: $('copy-name').value.trim() });
+    } catch { r = { ok: false, error: 'busy' }; }
+    state.copying = false;
+    $('copy-bar').hidden = true;
+    if (!r.ok) copyMsg(t(`copy_err_${r.error}`), true);
+    else if (r.cancelled) copyMsg(t('copy_cancelled'), true);
+    else if (r.failed.length) copyMsg(t('copy_failed', { titles: r.failed.map((f) => f.title).join(state.lang === 'fa' ? '، ' : ', ') }), true);
+    else {
+      copyMsg(t('copy_done', { n: r.done, size: size(r.bytes) }));
+      for (const key of [...state.cart.keys()]) toggleCart(key, '');
+    }
+    await updateCopyPlan();
+  }
+
   // The owner's own tags: filled accent chips (genres from OMDb stay outlined). Added with Enter or a comma, removed with the x.
   function myTagsSection(e) {
     const box = h('section', { class: 'mytags' });
@@ -488,7 +584,9 @@
         e.rating ? h('span', { class: 'score', dir: 'ltr', title: t('rating') }, icon('star'), String(e.rating), h('small', {}, 'IMDb')) : null),
       h('div', { class: 'detail-body' }, ...[
         flags.length ? h('ul', { class: 'flags' }, flags.map((f) => h('li', { class: f.cls }, f.text))) : null,
-        e.imdbId ? h('div', { class: 'hero-actions' }, h('button', { type: 'button', class: 'btn', onclick: () => api.openImdb(e.titleId) }, icon('link'), t('open_imdb'))) : null,
+        h('div', { class: 'hero-actions' },
+          e.imdbId ? h('button', { type: 'button', class: 'btn', onclick: () => api.openImdb(e.titleId) }, icon('link'), t('open_imdb')) : null,
+          cartButton(e)),
         myTagsSection(e),
         e.genreList.length ? h('div', { class: 'detail-tags', 'aria-label': t('genres') }, e.genreList.map((g) => h('button', {
           type: 'button', class: 'tag', 'aria-pressed': String(hasGenre(g)), onclick: () => { toggleGenre(g); },
@@ -597,8 +695,21 @@
   $('filter-x').addEventListener('click', () => sheet.close());
   $('filter-show').addEventListener('click', () => sheet.close());
   $('filter-clear').addEventListener('click', clearFilters);
-  for (const dlg of document.querySelectorAll('dialog')) dlg.addEventListener('click', (ev) => { if (ev.target === dlg) dlg.close(); }); // the backdrop
+  for (const dlg of document.querySelectorAll('dialog')) dlg.addEventListener('click', (ev) => { if (ev.target === dlg && !(dlg.id === 'copy-dlg' && state.copying)) dlg.close(); }); // the backdrop
 
+  $('copy-btn').addEventListener('click', () => { renderCopy(); $('copy-dlg').showModal(); updateCopyPlan(); });
+  $('copy-x').addEventListener('click', () => { if (!state.copying) $('copy-dlg').close(); });
+  $('copy-dlg').addEventListener('cancel', (ev) => { if (state.copying) ev.preventDefault(); }); // Esc must not hide a running copy
+  $('copy-name').addEventListener('input', () => { clearTimeout(planTimer); planTimer = setTimeout(updateCopyPlan, 300); });
+  $('copy-browse').addEventListener('click', async () => {
+    const p = await api.pickFolder();
+    if (!p) return;
+    state.copyDest = p;
+    $('copy-dest').value = p;
+    updateCopyPlan();
+  });
+  $('copy-go').addEventListener('click', runCopy);
+  $('copy-clear').addEventListener('click', () => { for (const key of [...state.cart.keys()]) toggleCart(key, ''); updateCopyPlan(); });
   $('folders-btn').addEventListener('click', async () => { await renderRoots(); $('folders-dlg').showModal(); });
   $('folders-x').addEventListener('click', () => $('folders-dlg').close());
   $('settings-x').addEventListener('click', () => $('settings-dlg').close());

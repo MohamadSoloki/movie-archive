@@ -27,6 +27,7 @@
       <button id="fetch" type="button" class="btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 13v8"/><path d="m8 17 4 4 4-4"/><path d="M20 16.6A5 5 0 0 0 18 7h-1.3A8 8 0 1 0 4 15.3"/></svg><span data-i18n="fetch_info"></span></button>
       <span class="sep" aria-hidden="true"></span>
       <button id="folders-btn" type="button" class="icon-btn" data-i18n-label="folders"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+      <button id="copy-btn" type="button" class="icon-btn" data-i18n-label="copy_list"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg><span id="copy-badge" class="badge" hidden></span></button>
       <button id="update" type="button" class="icon-btn" data-i18n-label="update_check"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 4-4 4 4"/><path d="M12 16V8"/></svg><span id="update-label" hidden></span></button>
       <button id="settings-btn" type="button" class="icon-btn" data-i18n-label="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg></button>
       <button id="theme" type="button" class="icon-btn" data-i18n-label="theme_toggle">
@@ -94,6 +95,36 @@
         <p id="rail-msg" class="msg" role="alert"></p>
       </form>
     </div>
+  </dialog>
+
+  <dialog id="copy-dlg" class="sheet" aria-labelledby="copy-title">
+    <header class="sheet-head">
+      <h2 id="copy-title" data-i18n="copy_title"></h2>
+      <button id="copy-x" type="button" class="icon-btn" data-i18n-label="close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </header>
+    <div class="sheet-body">
+      <ul id="copy-items" class="plain"></ul>
+      <p id="copy-empty" class="help" data-i18n="copy_empty"></p>
+      <div>
+        <label for="copy-name" data-i18n="copy_folder_name"></label>
+        <input id="copy-name" type="text" maxlength="100" dir="auto" autocomplete="off">
+      </div>
+      <div>
+        <label for="copy-dest" data-i18n="copy_dest"></label>
+        <div class="field-row">
+          <input id="copy-dest" type="text" readonly dir="ltr" data-i18n-placeholder="copy_no_dest">
+          <button id="copy-browse" type="button" class="btn" data-i18n="browse"></button>
+        </div>
+      </div>
+      <p id="copy-info" class="help" role="status"></p>
+      <ul id="copy-skipped" class="plain"></ul>
+      <progress id="copy-bar" max="100" value="0" hidden></progress>
+      <p id="copy-msg" role="status"></p>
+    </div>
+    <footer class="sheet-foot">
+      <button id="copy-clear" type="button" class="btn" data-i18n="copy_clear"></button>
+      <button id="copy-go" type="button" class="btn primary" data-i18n="copy_start"></button>
+    </footer>
   </dialog>
 
   <dialog id="settings-dlg" class="sheet" aria-labelledby="settings-title">
