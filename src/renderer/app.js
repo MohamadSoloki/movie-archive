@@ -2,7 +2,7 @@
 (() => {
   const api = window.api;
   const $ = (id) => document.getElementById(id);
-  const state = { lang: 'fa', entries: [], selected: null, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, sort: 'name' };
+  const state = { lang: 'fa', entries: [], selected: null, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, sort: 'name', rootCount: 0 };
   const t = (key, vars) => window.i18n.t(state.lang, key, vars);
   const genreName = (g) => window.i18n.genreLabel(state.lang, g);
   const CHUNK = 200;
@@ -19,7 +19,32 @@
     return el;
   }
 
-  const setStatus = (text) => { $('status').textContent = text; };
+  // Icons are built from fixed path data, never from web text.
+  const ICONS = {
+    star: '<path d="m12 2.8 2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.3 6.4 20.2l1.1-6.3L2.9 9.5l6.3-.9z"/>',
+    layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
+    film: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
+    folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    x: '<path d="M6 6l12 12M18 6 6 18"/>',
+    link: '<path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  };
+  function icon(name) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.innerHTML = ICONS[name];
+    return svg;
+  }
+
+  let statusTimer = null;
+  function setStatus(text) {
+    const el = $('status');
+    el.textContent = text;
+    el.classList.toggle('on', !!text);
+    clearTimeout(statusTimer);
+    if (text) statusTimer = setTimeout(() => el.classList.remove('on'), 6000);
+  }
 
   function errText(code) {
     switch (code) {
@@ -43,11 +68,14 @@
     document.documentElement.dir = state.lang === 'fa' ? 'rtl' : 'ltr';
     document.title = t('app_title');
     for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
-    if ($('update').dataset.v) $('update').textContent = t('update_install', { v: $('update').dataset.v });
+    if ($('update').dataset.v) $('update-label').textContent = t('update_install', { v: $('update').dataset.v });
     for (const el of document.querySelectorAll('[data-i18n-placeholder]')) el.placeholder = t(el.dataset.i18nPlaceholder);
-    $('lang').textContent = t('lang_toggle');
+    $('lang-label').textContent = t('lang_toggle');
     for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === state.tab));
-    for (const el of document.querySelectorAll('[data-i18n-label]')) el.setAttribute('aria-label', t(el.dataset.i18nLabel));
+    for (const el of document.querySelectorAll('[data-i18n-label]')) {
+      el.setAttribute('aria-label', t(el.dataset.i18nLabel));
+      el.title = t(el.dataset.i18nLabel);
+    }
   }
 
   // ---- tabs, filter sheet ------------------------------------------------
@@ -132,11 +160,18 @@
 
   const posterUrl = (file) => `poster://x/${encodeURIComponent(file)}`;
 
+  const hueOf = (text) => { let n = 0; for (const c of text) n = (n * 31 + c.codePointAt(0)) % 360; return n; };
+
+  // A film without a poster gets a colour made from its title, so the wall never has grey holes.
   function posterEl(e) {
-    return e.posterFile
-      ? h('img', { class: 'poster', src: posterUrl(e.posterFile), alt: '', loading: 'lazy' })
-      : h('div', { class: 'poster none' }, h('span', {}, e.title));
+    if (e.posterFile) return h('img', { class: 'poster', src: posterUrl(e.posterFile), alt: '', loading: 'lazy' });
+    const el = h('div', { class: 'poster none', dir: 'auto' }, h('span', {}, e.title));
+    el.style.setProperty('--h', String(hueOf(e.title)));
+    return el;
   }
+
+  const frame = (e, ...over) => h('span', { class: 'frame' }, posterEl(e), ...over);
+  const rateChip = (r) => h('span', { class: 'rate', dir: 'ltr' }, icon('star'), String(r));
 
   // The dot beside a name: none when the film is verified, yellow when it was guessed, red when it needs attention.
   function dotOf(e) {
@@ -147,18 +182,19 @@
   }
 
   function card(e) {
-    const meta = [e.year, e.rating ? `⭐ ${e.rating}` : null].filter(Boolean).join(' · ');
+    const genres = e.genreList.slice(0, 2).map((g) => h('span', {}, genreName(g)));
     return h('button', {
       class: `card a-${e.attention}${state.selected === e.key ? ' sel' : ''}`,
       type: 'button',
       'data-key': e.key,
       onclick: () => select(e.key),
     },
-    posterEl(e),
-    h('span', { class: 'title-row' }, dotOf(e), h('span', { class: 'name' }, e.title)),
-    meta ? h('span', { class: 'year', dir: 'ltr' }, meta) : null,
-    e.kind === 'collection' ? h('span', { class: 'flag' }, t('collection_n', { n: e.members.length })) : null,
-    e.genreList.length ? h('span', { class: 'tags' }, e.genreList.slice(0, 3).map((g) => h('span', { class: 'tag' }, genreName(g)))) : null);
+    frame(e,
+      e.rating ? rateChip(e.rating) : null,
+      e.kind === 'collection' ? h('span', { class: 'stack' }, icon('layers'), t('collection_n', { n: e.members.length })) : null),
+    h('span', { class: 'info' },
+      h('span', { class: 'title-row' }, dotOf(e), h('span', { class: 'name', dir: 'auto' }, e.title)),
+      e.year || genres.length ? h('span', { class: 'meta' }, e.year ? h('span', { class: 'year' }, String(e.year)) : null, ...genres) : null));
   }
 
   function appendChunk() {
@@ -172,8 +208,28 @@
     state.shown = 0;
     appendChunk();
     $('count').textContent = t('count', { n: state.entries.length });
+    renderEmpty();
+  }
+
+  function resetView() {
+    state.tab = 'all'; state.genres = []; state.attention = []; state.query = ''; $('q').value = '';
+    for (const x of document.querySelectorAll('#tabs button')) x.setAttribute('aria-selected', String(x.dataset.tab === 'all'));
+    return refresh();
+  }
+
+  // Nothing to show: say why, and offer the one next step.
+  function renderEmpty() {
+    const box = $('empty');
+    box.hidden = state.entries.length > 0;
+    if (box.hidden) { box.replaceChildren(); return; }
     const filtered = state.query || state.genres.length || state.attention.length || state.tab !== 'all';
-    $('empty').textContent = state.entries.length ? '' : (filtered ? t('no_results') : t('empty_archive'));
+    const [art, title, text, label, go] = filtered
+      ? ['search', 'no_results', 'no_results_hint', 'reset_view', resetView]
+      : !state.rootCount
+        ? ['film', 'empty_title', 'empty_add_text', 'empty_add_btn', () => $('folders-btn').click()]
+        : ['film', 'empty_title', 'empty_scan_text', 'scan', () => $('scan').click()];
+    box.replaceChildren(h('span', { class: 'art' }, icon(art)), h('h2', {}, t(title)), h('p', {}, t(text)),
+      h('button', { type: 'button', class: 'btn primary', onclick: go }, t(label)));
   }
 
   async function refresh() {
@@ -207,14 +263,14 @@
     return h('li', { class: 'loc' },
       h('span', { class: `led ${l.online ? 'on' : 'off'}` }),
       h('span', { class: 'where' }, `${l.driveLabel || l.driveSerial} `, h('span', { class: 'path' }, l.relPath)),
-      notes.length ? h('span', { class: 'note' }, notes.join('، ')) : null,
+      notes.length ? h('span', { class: 'note' }, notes.join(state.lang === 'fa' ? '، ' : ', ')) : null,
       h('button', {
-        type: 'button', class: 'open', disabled: !!blocked, title: blocked, 'aria-label': `${t('open_folder')}: ${l.relPath}`,
+        type: 'button', class: 'btn open', disabled: !!blocked, title: blocked, 'aria-label': `${t('open_folder')}: ${l.relPath}`,
         onclick: async () => {
           const r = await api.openLocation(l.id);
           if (!r.ok) setStatus(errText(r.error));
         },
-      }, t('open_folder')));
+      }, icon('folder'), t('open_folder')));
   }
 
   function fixSection(e) {
@@ -231,9 +287,9 @@
         setStatus(t('fix_done'));
         await refresh();
       },
-    }, input, h('button', { type: 'submit', class: 'primary' }, t('fix_apply')));
-    return h('section', { class: 'fix' },
-      h('h3', {}, t('online_info_fix')), h('p', { class: 'help' }, t('fix_help')), form, msg);
+    }, input, h('button', { type: 'submit', class: 'btn primary' }, t('fix_apply')));
+    return h('details', { class: 'fix', open: e.attention !== 'ok' },
+      h('summary', {}, t('online_info_fix')), h('p', { class: 'help' }, t('fix_help')), form, msg);
   }
 
   function candidatesSection(e) {
@@ -242,7 +298,7 @@
     const list = h('div', {});
     const box = h('section', { class: 'cands' }, h('h3', {}, t('candidates_title')),
       h('form', { onsubmit: (ev) => { ev.preventDefault(); load(input.value); } },
-        input, h('button', { type: 'submit' }, t('candidates_search'))), list);
+        input, h('button', { type: 'submit', class: 'btn' }, t('candidates_search'))), list);
     function load(query) {
       api.getCandidates(e.locationId, query).then((r) => {
         if (state.selected !== e.key) return;
@@ -253,7 +309,7 @@
           list.append(h('div', { class: 'cand' },
             h('span', {}, `${c.title} ${c.year}`),
             h('button', {
-              type: 'button',
+              type: 'button', class: 'btn',
               onclick: async () => {
                 const p = await api.pickCandidate(e.locationId, c.imdbId);
                 if (!p.ok) { list.append(h('p', { class: 'msg' }, errText(p.error))); return; }
@@ -300,7 +356,7 @@
         h('span', { class: 'ep-name', dir: 'auto' }, ep.name || ''),
         h('span', { class: 'ep-meta' },
           ep.released ? h('span', { class: 'ep-date', dir: 'ltr' }, ep.released) : null,
-          ep.rating ? h('span', { class: 'ep-rate' }, ` ⭐ ${ep.rating}`) : null),
+          ep.rating ? h('span', { class: 'ep-rate', dir: 'ltr' }, icon('star'), String(ep.rating)) : null),
         plot),
     };
   }
@@ -332,31 +388,35 @@
     return box;
   }
 
+  function hero(e, ...text) {
+    const el = h('div', { class: 'hero' },
+      h('button', { class: 'icon-btn close', type: 'button', 'aria-label': t('close'), title: t('close'), onclick: () => select(null) }, icon('x')),
+      h('div', { class: 'hero-main' }, frame(e), h('div', { class: 'card-text' }, ...text)));
+    el.style.setProperty('--hero-bg', e.posterFile ? `url("${posterUrl(e.posterFile)}")` : 'none');
+    return el;
+  }
+
   // A folder that groups several titles: its folder button and the titles inside it.
   function collectionDetail(e) {
     const c = e.collection;
     const blocked = !c.online ? t('open_offline') : (c.missing ? t('open_missing') : null);
     return [
-      h('button', { class: 'close', type: 'button', 'aria-label': t('close'), onclick: () => select(null) }, '×'),
-      posterEl(e),
-      h('h2', { dir: 'auto' }, e.title),
-      h('p', { class: 'sub' }, t('collection_n', { n: e.members.length })),
-      h('button', {
-        type: 'button', class: 'open', disabled: !!blocked, title: blocked,
-        onclick: async () => { const r = await api.openCollection(c.driveSerial, c.relPath); if (!r.ok) setStatus(errText(r.error)); },
-      }, t('open_folder')),
-      h('h3', {}, t('collection_members')),
-      h('ul', { class: 'plain members' }, e.members.map((m) => h('li', {}, h('button', { type: 'button', class: 'member', onclick: () => openMember(m.key) },
-        h('span', { dir: 'auto' }, m.title), m.year ? h('span', { class: 'year' }, ` ${m.year}`) : null)))),
+      hero(e, h('h2', { dir: 'auto' }, e.title), h('p', { class: 'sub' }, t('collection_n', { n: e.members.length }))),
+      h('div', { class: 'detail-body' },
+        h('div', { class: 'hero-actions' }, h('button', {
+          type: 'button', class: 'btn open', disabled: !!blocked, title: blocked,
+          onclick: async () => { const r = await api.openCollection(c.driveSerial, c.relPath); if (!r.ok) setStatus(errText(r.error)); },
+        }, icon('folder'), t('open_folder'))),
+        h('section', {}, h('h3', {}, t('collection_members')),
+          h('ul', { class: 'plain members' }, e.members.map((m) => h('li', {}, h('button', { type: 'button', class: 'member', onclick: () => openMember(m.key) },
+            h('span', { dir: 'auto' }, m.title), m.year ? h('span', { class: 'year' }, String(m.year)) : null)))))),
     ];
   }
 
   // the member may be hidden by the current tab, genre filter or search, so these are reset first
   async function openMember(key) {
-    state.tab = 'all'; state.genres = []; state.attention = []; state.query = ''; $('q').value = '';
-    for (const x of document.querySelectorAll('#tabs button')) x.setAttribute('aria-selected', String(x.dataset.tab === 'all'));
     state.selected = key;
-    await refresh();
+    await resetView();
   }
 
   function renderDetail() {
@@ -365,54 +425,49 @@
     if (!e) { d.hidden = true; d.replaceChildren(); return; }
     d.hidden = false;
     if (e.kind === 'collection') { d.replaceChildren(...collectionDetail(e)); return; }
-    const facts = [[t('rating'), e.rating], [t('runtime'), e.runtime], [t('director'), e.director], [t('actors'), e.actors],
+    const facts = [[t('runtime'), e.runtime], [t('director'), e.director], [t('actors'), e.actors],
       [t('country'), e.country], [t('rated'), e.rated], [t('awards'), e.awards]].filter(([, v]) => v);
+    const flags = flagsOf(e);
     // dir="auto": English titles and plots from OMDb stay left-to-right inside the right-to-left Persian UI
-    d.replaceChildren(...[
-      h('button', { class: 'close', type: 'button', 'aria-label': t('close'), onclick: () => select(null) }, '×'),
-      posterEl(e),
-      h('h2', { dir: 'auto' }, e.title),
-      h('p', { class: 'sub', dir: 'auto' }, [e.year, e.type].filter(Boolean).join(' ')),
-      h('ul', { class: 'flags' }, flagsOf(e).map((f) => h('li', {}, f.text))),
-      e.imdbId ? h('button', { type: 'button', class: 'imdb', onclick: () => api.openImdb(e.titleId) }, t('open_imdb')) : null,
-      e.genreList.length ? h('div', { class: 'detail-tags', 'aria-label': t('genres') }, e.genreList.map((g) => h('button', {
-        type: 'button', class: 'tag', 'aria-pressed': String(hasGenre(g)), onclick: () => toggleGenre(g),
-      }, genreName(g)))) : null,
-      h('dl', { class: 'facts' }, facts.flatMap(([k, v]) => [h('dt', {}, k), h('dd', { dir: 'auto' }, v)])),
-      h('h3', {}, t('plot')),
-      ...plotBlock(e),
-      e.titleId != null && e.kind !== 'movie' ? episodesSection(e) : null,
-      h('h3', {}, t('locations')),
-      h('ul', { class: 'plain' }, e.locations.map(locationRow)),
-      e.titleId == null && e.status === 'review' ? candidatesSection(e) : null,
-      fixSection(e),
-    ].filter(Boolean));
+    d.replaceChildren(
+      hero(e,
+        h('h2', { dir: 'auto' }, e.title),
+        h('p', { class: 'sub', dir: 'auto' }, [e.year, e.type].filter(Boolean).join(' · ')),
+        e.rating ? h('span', { class: 'score', dir: 'ltr', title: t('rating') }, icon('star'), String(e.rating), h('small', {}, 'IMDb')) : null),
+      h('div', { class: 'detail-body' }, ...[
+        flags.length ? h('ul', { class: 'flags' }, flags.map((f) => h('li', { class: f.cls }, f.text))) : null,
+        e.imdbId ? h('div', { class: 'hero-actions' }, h('button', { type: 'button', class: 'btn', onclick: () => api.openImdb(e.titleId) }, icon('link'), t('open_imdb'))) : null,
+        e.genreList.length ? h('div', { class: 'detail-tags', 'aria-label': t('genres') }, e.genreList.map((g) => h('button', {
+          type: 'button', class: 'tag', 'aria-pressed': String(hasGenre(g)), onclick: () => { toggleGenre(g); },
+        }, genreName(g)))) : null,
+        facts.length ? h('dl', { class: 'facts' }, facts.flatMap(([k, v]) => [h('dt', {}, k), h('dd', { dir: 'auto' }, v)])) : null,
+        h('section', {}, h('h3', {}, t('plot')), ...plotBlock(e)),
+        e.titleId != null && e.kind !== 'movie' ? episodesSection(e) : null,
+        h('section', {}, h('h3', {}, t('locations')), h('ul', { class: 'plain' }, e.locations.map(locationRow))),
+        e.titleId == null && e.status === 'review' ? candidatesSection(e) : null,
+        fixSection(e),
+      ].filter(Boolean)));
   }
 
-  // ---- drives and folders ----------------------------------------------
+  // ---- archive folders (the drives themselves are not listed) ------------
 
-  async function renderRail() {
-    const [drives, roots] = await Promise.all([api.getDrives(), api.getRoots()]);
-    $('drives').replaceChildren(...(drives.length
-      ? drives.map((d) => h('li', { class: 'drive' },
-        h('span', { class: `led ${d.online ? 'on' : 'off'}` }),
-        h('span', {}, d.label || d.serial),
-        h('span', { class: 'dstate' }, d.online ? t('drive_online') : t('drive_offline')),
-        h('span', { class: 'droot', dir: 'ltr' }, d.root)))
-      : [h('li', { class: 'none' }, t('no_drives'))]));
+  async function renderRoots() {
+    const roots = await api.getRoots();
+    state.rootCount = roots.length;
     $('roots').replaceChildren(...(roots.length
       ? roots.map((r) => h('li', { class: 'root' },
         h('span', { class: 'rpath' }, `${r.driveLabel} `, h('span', { class: 'path', dir: 'ltr' }, `/${r.relPath}`), r.single ? h('span', { class: 'tag' }, t('single_tag')) : null),
         h('button', {
-          type: 'button',
+          type: 'button', class: 'btn',
           onclick: async () => {
             if (!window.confirm(t('confirm_remove'))) return;
             await api.removeRoot(r.id);
-            await renderRail();
+            await renderRoots();
             await refresh();
           },
         }, t('remove'))))
       : [h('li', { class: 'none' }, t('no_folders'))]));
+    renderEmpty();
   }
 
   // ---- actions ---------------------------------------------------------
@@ -427,7 +482,7 @@
     if (!p) return;
     const r = await api.addRoot(p, single);
     $('rail-msg').textContent = r.ok ? '' : errText(r.error);
-    if (r.ok) { $('root-path').value = ''; await renderRail(); }
+    if (r.ok) { $('root-path').value = ''; await renderRoots(); }
   }
   $('add-root').addEventListener('submit', (ev) => { ev.preventDefault(); addRoot(false); });
   $('add-single').addEventListener('click', () => addRoot(true));
@@ -442,7 +497,7 @@
     try {
       const r = await api.scan();
       setStatus(t('scan_done', { n: r.scanned, added: r.added }));
-      await renderRail();
+      await renderRoots();
       await refresh();
     } catch { setStatus(t('err_unexpected')); } finally { busy(false); }
   });
@@ -456,8 +511,9 @@
       const r = await api.checkUpdate();
       if (r.state === 'ready') {
         $('update').dataset.v = r.version;
-        $('update').textContent = t('update_install', { v: r.version });
-        $('update').classList.add('primary');
+        $('update-label').textContent = t('update_install', { v: r.version });
+        $('update-label').hidden = false;
+        $('update').classList.add('ready');
         setStatus(t('update_ready', { v: r.version }));
       } else setStatus(t(`update_${r.state}`));
     } catch { setStatus(t('err_unexpected')); } finally { $('update').disabled = false; }
@@ -488,7 +544,18 @@
   $('filter-x').addEventListener('click', () => sheet.close());
   $('filter-show').addEventListener('click', () => sheet.close());
   $('filter-clear').addEventListener('click', clearFilters);
-  sheet.addEventListener('click', (ev) => { if (ev.target === sheet) sheet.close(); }); // the backdrop
+  for (const dlg of document.querySelectorAll('dialog')) dlg.addEventListener('click', (ev) => { if (ev.target === dlg) dlg.close(); }); // the backdrop
+
+  $('folders-btn').addEventListener('click', async () => { await renderRoots(); $('folders-dlg').showModal(); });
+  $('folders-x').addEventListener('click', () => $('folders-dlg').close());
+  $('settings-x').addEventListener('click', () => $('settings-dlg').close());
+  $('theme').addEventListener('click', () => window.theme.toggle());
+
+  document.addEventListener('keydown', (ev) => {
+    const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName);
+    if (ev.key === '/' && !typing && !document.querySelector('dialog[open]')) { ev.preventDefault(); $('q').focus(); }
+    else if (ev.key === 'Escape' && !document.querySelector('dialog[open]') && state.selected) select(null);
+  });
 
   let timer = null;
   $('q').addEventListener('input', () => {
@@ -500,7 +567,7 @@
     state.lang = state.lang === 'fa' ? 'en' : 'fa';
     await api.setSettings({ language: state.lang });
     applyLang();
-    await renderRail();
+    await renderRoots();
     renderGrid();
     renderFilters();
     renderDetail();
@@ -538,7 +605,7 @@
     const s = await api.getSettings();
     state.lang = s.language === 'en' ? 'en' : 'fa';
     applyLang();
-    await renderRail();
+    await renderRoots();
     await refresh();
   })();
 })();
