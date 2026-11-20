@@ -1,6 +1,6 @@
 {
   "name": "movie-archive",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Movie, series and anime archive across several hard drives",
   "main": "src/main.js",
   "scripts": {
