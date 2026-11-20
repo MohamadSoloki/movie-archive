@@ -353,3 +353,14 @@ dialog[open] { animation: pop 0.18s ease-out; }
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
+
+/* manual tags: filled accent, with a tag icon, so they never look like the outlined genres from OMDb */
+.mine, .tag.mine, .pill.mine { display: inline-flex; align-items: center; gap: 0.3rem; background: var(--accent-soft); color: var(--accent); border: 1px solid transparent; font-weight: 600; }
+.mine svg { width: 0.85em; height: 0.85em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.meta .mine { padding: 0 0.45rem; border-radius: 999px; font-size: 0.76rem; height: 1.2rem; }
+.tag.mine { padding-inline-end: 0.25rem; }
+.tag .x { display: inline-grid; place-items: center; width: 1.2rem; height: 1.2rem; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.tag .x:hover { background: var(--accent); color: var(--accent-ink); }
+.tag .x svg { width: 0.7rem; height: 0.7rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+.mytags .tag-input { margin-block-start: 0.5rem; width: 100%; }
+.chip svg { width: 0.9rem; height: 0.9rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

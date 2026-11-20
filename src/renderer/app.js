@@ -2,7 +2,7 @@
 (() => {
   const api = window.api;
   const $ = (id) => document.getElementById(id);
-  const state = { lang: 'fa', entries: [], selected: null, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, sort: 'name', rootCount: 0 };
+  const state = { lang: 'fa', entries: [], selected: null, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], tags: [], tagCounts: [], knownTags: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, sort: 'name', rootCount: 0 };
   const t = (key, vars) => window.i18n.t(state.lang, key, vars);
   const genreName = (g) => window.i18n.genreLabel(state.lang, g);
   const CHUNK = 200;
@@ -27,6 +27,7 @@
     folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
     x: '<path d="M6 6l12 12M18 6 6 18"/>',
+    tag: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
     link: '<path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
   };
   function icon(name) {
@@ -90,13 +91,20 @@
     return refresh(true);
   }
 
+  const hasTag = (g) => state.tags.some((x) => sameGenre(x, g));
+
+  function toggleTag(g) {
+    state.tags = hasTag(g) ? state.tags.filter((x) => !sameGenre(x, g)) : [...state.tags, g];
+    return refresh(true);
+  }
+
   function toggleAttention(a) {
     state.attention = state.attention.includes(a) ? state.attention.filter((x) => x !== a) : [...state.attention, a];
     return refresh();
   }
 
   function clearFilters() {
-    state.genres = []; state.attention = [];
+    state.genres = []; state.attention = []; state.tags = [];
     return refresh();
   }
 
@@ -113,9 +121,10 @@
     const pills = [
       ...state.attention.map((a) => h('button', { type: 'button', class: 'pill', onclick: () => toggleAttention(a) },
         dot(DOT_CLASS[a], t(STATES.find((s) => s[0] === a)[1])), t(STATES.find((s) => s[0] === a)[1]), ' ×')),
+      ...state.tags.map((g) => h('button', { type: 'button', class: 'pill mine', onclick: () => toggleTag(g) }, icon('tag'), `${g} ×`)),
       ...state.genres.map((g) => h('button', { type: 'button', class: 'pill', onclick: () => toggleGenre(g) }, `${genreName(g)} ×`)),
     ];
-    const n = state.genres.length + state.attention.length;
+    const n = state.genres.length + state.attention.length + state.tags.length;
     $('filter-badge').hidden = !n;
     $('filter-badge').textContent = String(n);
     $('active').replaceChildren(...pills);
@@ -131,11 +140,16 @@
     $('f-genres').replaceChildren(...(shown.length
       ? shown.map((c) => chip(genreName(c.name), c.count, hasGenre(c.name), () => toggleGenre(c.name)))
       : [h('p', { class: 'help' }, t('filter_no_genres'))]));
+    const mine = [...state.tagCounts];
+    for (const g of state.tags) if (!mine.some((c) => sameGenre(c.name, g))) mine.push({ name: g, count: 0 });
+    $('f-tags').replaceChildren(...(mine.length
+      ? mine.map((c) => chip(c.name, c.count, hasTag(c.name), () => toggleTag(c.name), icon('tag')))
+      : [h('p', { class: 'help' }, t('filter_no_tags'))]));
     $('f-sort').replaceChildren(...SORTS.map((s) => h('button', {
       type: 'button', 'aria-pressed': String(state.sort === s), onclick: () => { state.sort = s; refresh(); },
     }, t(`sort_${s}`))));
     $('filter-show').textContent = t('filter_show', { n: state.entries.length });
-    $('filter-clear').disabled = !(state.genres.length || state.attention.length);
+    $('filter-clear').disabled = !(state.genres.length || state.attention.length || state.tags.length);
   }
 
   function renderFilters() {
@@ -181,6 +195,7 @@
   }
 
   function card(e) {
+    const mine = e.tags.map((g) => h('span', { class: 'mine', dir: 'auto' }, icon('tag'), g));
     const genres = e.genres.map((g) => h('span', {}, genreName(g)));
     return h('button', {
       class: `card a-${e.attention}${state.selected === e.key ? ' sel' : ''}`,
@@ -193,7 +208,7 @@
       e.kind === 'collection' ? h('span', { class: 'stack' }, icon('layers'), t('collection_n', { n: e.members })) : null),
     h('span', { class: 'info' },
       h('span', { class: 'title-row' }, dotOf(e), h('span', { class: 'name', dir: 'auto' }, e.title)),
-      e.year || genres.length ? h('span', { class: 'meta' }, e.year ? h('span', { class: 'year' }, String(e.year)) : null, ...genres) : null));
+      e.year || genres.length || mine.length ? h('span', { class: 'meta' }, e.year ? h('span', { class: 'year' }, String(e.year)) : null, ...mine, ...genres) : null));
   }
 
   function appendChunk() {
@@ -211,7 +226,7 @@
   }
 
   function resetView() {
-    state.tab = 'all'; state.genres = []; state.attention = []; state.query = ''; $('q').value = '';
+    state.tab = 'all'; state.genres = []; state.tags = []; state.attention = []; state.query = ''; $('q').value = '';
     for (const x of document.querySelectorAll('#tabs button')) x.setAttribute('aria-selected', String(x.dataset.tab === 'all'));
     return refresh();
   }
@@ -221,7 +236,7 @@
     const box = $('empty');
     box.hidden = state.entries.length > 0;
     if (box.hidden) { box.replaceChildren(); return; }
-    const filtered = state.query || state.genres.length || state.attention.length || state.tab !== 'all';
+    const filtered = state.query || state.genres.length || state.tags.length || state.attention.length || state.tab !== 'all';
     const [art, title, text, label, go] = filtered
       ? ['search', 'no_results', 'no_results_hint', 'reset_view', resetView]
       : !state.rootCount
@@ -232,9 +247,11 @@
   }
 
   async function refresh(forceDetail = false) {
-    const r = await api.getEntries({ query: state.query, tab: state.tab, genres: state.genres, attention: state.attention, sort: state.sort, light: true });
+    const r = await api.getEntries({ query: state.query, tab: state.tab, genres: state.genres, tags: state.tags, attention: state.attention, sort: state.sort, light: true });
     state.entries = r.entries;
     state.genreCounts = r.genres;
+    state.tagCounts = r.tagCounts;
+    state.knownTags = await api.getTags();
     state.attentionCounts = r.attentionCounts;
     renderFilters();
     if (state.selected && !state.entries.some((e) => e.key === state.selected)) state.selected = null;
@@ -420,6 +437,35 @@
 
   // The whole entry is fetched only for the open card. Without `force` an already open detail is left alone,
   // so typing in the search box does not rebuild it (and collapse its seasons).
+  // The owner's own tags: filled accent chips (genres from OMDb stay outlined). Added with Enter or a comma, removed with the x.
+  function myTagsSection(e) {
+    const box = h('section', { class: 'mytags' });
+    const note = h('p', { class: 'msg', role: 'alert' });
+    const change = async (call, text) => {
+      const r = await call(e.key, text);
+      if (!r.ok) { note.textContent = t(`tag_${r.error}`); return; }
+      await refresh(true);
+      document.querySelector('.tag-input')?.focus();
+    };
+    const input = h('input', { type: 'text', class: 'tag-input', list: 'tag-suggest', maxlength: '30', 'aria-label': t('my_tags'), placeholder: t('tag_placeholder') });
+    const add = () => {
+      const text = input.value.replace(/[,،]+$/, '').trim();
+      input.value = '';
+      if (text) change(api.addTag, text);
+    };
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ',' || ev.key === '،') { ev.preventDefault(); add(); }
+    });
+    const have = e.userTags.map((x) => x.toLowerCase());
+    $('tag-suggest').replaceChildren(...state.knownTags.filter((c) => !have.includes(c.name.toLowerCase())).map((c) => h('option', { value: c.name })));
+    box.append(h('h3', {}, t('my_tags')),
+      h('div', { class: 'detail-tags' }, e.userTags.map((g) => h('span', { class: 'tag mine', dir: 'auto' }, icon('tag'), g,
+        h('button', { type: 'button', class: 'x', 'aria-label': t('tag_remove', { tag: g }), title: t('tag_remove', { tag: g }), onclick: () => change(api.removeTag, g) }, icon('x')))),
+      input),
+      note);
+    return box;
+  }
+
   async function renderDetail(force = true) {
     const d = $('detail');
     const key = state.selected;
@@ -443,6 +489,7 @@
       h('div', { class: 'detail-body' }, ...[
         flags.length ? h('ul', { class: 'flags' }, flags.map((f) => h('li', { class: f.cls }, f.text))) : null,
         e.imdbId ? h('div', { class: 'hero-actions' }, h('button', { type: 'button', class: 'btn', onclick: () => api.openImdb(e.titleId) }, icon('link'), t('open_imdb'))) : null,
+        myTagsSection(e),
         e.genreList.length ? h('div', { class: 'detail-tags', 'aria-label': t('genres') }, e.genreList.map((g) => h('button', {
           type: 'button', class: 'tag', 'aria-pressed': String(hasGenre(g)), onclick: () => { toggleGenre(g); },
         }, genreName(g)))) : null,
