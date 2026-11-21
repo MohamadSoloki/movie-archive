@@ -452,8 +452,9 @@ test('startTransfer copies the films into the new folder, reports progress and n
   assert.equal(fs.statSync(path.join(dest, 'claude', 'batman 2022', 'movie.mkv')).size, 3000);
   assert.equal(fs.statSync(path.join(dest, 'claude', 'dune 2021', 'Subs', 'en.srt')).size, 10);
   assert.equal(snapshot(media), before);
-  assert.ok(events.length >= 2 && events.every((e) => e.type === 'copy'));
-  assert.deepEqual([events.at(-1).doneBytes, events.at(-1).totalBytes], [5020, 5020]);
+  const copyEvents = events.filter((e) => e.type === 'copy'); // the check after the copy reports as 'verify'
+  assert.ok(copyEvents.length >= 2 && events.every((e) => e.type === 'copy' || e.type === 'verify'));
+  assert.deepEqual([copyEvents.at(-1).doneBytes, copyEvents.at(-1).totalBytes], [5020, 5020]);
 });
 
 test('startTransfer does nothing when the plan is refused, and refuses a second run at the same time', async () => {
@@ -644,4 +645,87 @@ test('getAiring: a running series can be added, an ended one and a film cannot; 
   assert.deepEqual([air.reminder.title, air.reminder.episode], [e.title, 3]); // title defaults to the entry's
   assert.equal((await api.calendarAdd({ key: e.key, weekday: 2, time: '22:00' })).error, 'exists');
   assert.equal((await api.getAiring('t:99999')).canAir, false);
+});
+
+// ---- copies: checked after copying, verified later, repaired from the source ----
+
+async function copied(opts) {
+  const ctx = await withFilms(opts);
+  const events = [];
+  const r = await ctx.api.startTransfer({ keys: ctx.keys, destDir: ctx.dest, name: 'claude' }, (p) => events.push(p));
+  const target = path.join(ctx.dest, 'claude');
+  const [c] = await ctx.api.getCopies();
+  return { ...ctx, r, events, target, id: c?.id, c };
+}
+const mkv = (target, dir) => path.join(target, dir, 'movie.mkv');
+
+test('a finished copy is checked at once, recorded under the folder name and listed', async () => {
+  const { r, events, c, target } = await copied();
+  assert.equal(r.ok, true);
+  assert.deepEqual([r.verify.state, r.verify.checked, r.verify.problems, r.verify.repaired], ['ok', 4, [], 0]);
+  assert.deepEqual([c.name, c.target, c.files, c.bytes, c.state], ['claude', target, 4, 5020, 'ok']);
+  assert.ok(events.some((p) => p.type === 'verify'));
+});
+
+test('verifyCopy: quick sees a missing file, deep also sees changed bytes; the verdict is stored', async () => {
+  const { api, id, target } = await copied();
+  fs.rmSync(path.join(target, 'batman 2022', 'Subs', 'en.srt'));
+  fs.writeFileSync(mkv(target, 'dune 2021'), Buffer.alloc(2000, 2)); // same size, other bytes
+  const quick = await api.verifyCopy(id, { deep: false });
+  assert.deepEqual([quick.state, quick.problems.map((p) => p.files.map((f) => f.reason))], ['problem', [['missing']]]);
+  const deep = await api.verifyCopy(id, { deep: true });
+  assert.deepEqual(deep.problems.flatMap((p) => p.files.map((f) => f.reason)).sort(), ['hash', 'missing']);
+  assert.equal((await api.getCopies())[0].state, 'problem');
+});
+
+test('repairCopy copies broken files again from the source, checks them, and never touches the media folders', async () => {
+  const { api, id, target, media } = await copied();
+  const before = snapshot(media);
+  fs.rmSync(path.join(target, 'batman 2022', 'Subs', 'en.srt'));
+  fs.writeFileSync(mkv(target, 'dune 2021'), Buffer.alloc(2000, 2));
+  const r = await api.repairCopy(id);
+  assert.deepEqual([r.ok, r.repaired, r.verify.state, r.verify.problems], [true, 2, 'ok', []]);
+  assert.deepEqual(fs.readFileSync(mkv(target, 'dune 2021')), Buffer.alloc(2000, 1));
+  assert.equal(fs.existsSync(path.join(target, 'batman 2022', 'Subs', 'en.srt')), true);
+  assert.equal(snapshot(media), before);
+  assert.equal((await api.getCopies())[0].state, 'ok');
+});
+
+test('repairCopy with the source drive unplugged reports the film, keeps the damaged file and leaves the copy marked as a problem', async () => {
+  const { api, id, target, state } = await copied();
+  fs.writeFileSync(mkv(target, 'dune 2021'), Buffer.alloc(2000, 2));
+  state.online = false;
+  const r = await api.repairCopy(id);
+  assert.deepEqual([r.repaired, r.failed.map((f) => f.reason), r.verify.state], [0, ['offline'], 'problem']);
+  assert.equal(fs.existsSync(mkv(target, 'dune 2021')), true);
+  assert.equal(r.verify.problems.length, 1);
+});
+
+test('copying again into the same folder repairs what an earlier run left damaged', async () => {
+  const { api, keys, dest, target } = await copied();
+  fs.writeFileSync(mkv(target, 'dune 2021'), Buffer.alloc(2000, 2));
+  const r = await api.startTransfer({ keys, destDir: dest, name: 'claude' });
+  assert.deepEqual([r.verify.state, r.verify.repaired], ['ok', 1]);
+  assert.deepEqual(fs.readFileSync(mkv(target, 'dune 2021')), Buffer.alloc(2000, 1));
+  assert.equal((await api.getCopies()).length, 1);
+});
+
+test('repairCopy refuses a recorded path that leads out of the copy folder', async () => {
+  const { api, db, id, dest } = await copied();
+  db.prepare("UPDATE copy_files SET rel = '../evil.mkv' WHERE copy_id = ? AND rel LIKE 'dune%movie.mkv'").run(id);
+  const r = await api.repairCopy(id);
+  assert.ok(r.failed.some((f) => f.reason === 'bad_path'));
+  assert.equal(fs.existsSync(path.join(dest, 'evil.mkv')), false);
+});
+
+test('removeCopy forgets the record and leaves the files; verify and repair are refused while a copy runs', async () => {
+  const { api, id, target, keys, dest } = await copied();
+  const running = api.startTransfer({ keys, destDir: dest, name: 'other' });
+  assert.deepEqual(await api.verifyCopy(id, { deep: true }), { ok: false, error: 'busy' });
+  assert.deepEqual(await api.repairCopy(id), { ok: false, error: 'busy' });
+  await running;
+  assert.deepEqual(await api.removeCopy(id), { ok: true });
+  assert.deepEqual((await api.getCopies()).map((c) => c.name), ['other']);
+  assert.equal(fs.existsSync(mkv(target, 'dune 2021')), true);
+  assert.deepEqual(await api.verifyCopy(id, { deep: true }), { ok: false, error: 'unknown' });
 });

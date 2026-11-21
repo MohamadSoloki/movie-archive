@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS tags(location_id INTEGER NOT NULL, tag TEXT NOT NULL 
 CREATE TABLE IF NOT EXISTS reminders(
   id INTEGER PRIMARY KEY, title TEXT NOT NULL, key TEXT UNIQUE, weekday INTEGER NOT NULL, time TEXT NOT NULL,
   episode INTEGER, due INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1);
+-- copies the app made (name = destination folder name); the hash is of the source bytes read at copy time, null when unknown
+CREATE TABLE IF NOT EXISTS copies(
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, target TEXT NOT NULL UNIQUE, created INTEGER NOT NULL, checked INTEGER, state TEXT);
+CREATE TABLE IF NOT EXISTS copy_files(
+  copy_id INTEGER NOT NULL, rel TEXT NOT NULL, size INTEGER NOT NULL, sha TEXT, title TEXT, drive_serial TEXT, src_rel TEXT,
+  PRIMARY KEY(copy_id, rel));
 `;
 
 // the queue looks a film up by lower-cased name for every folder, and the detail view joins by title

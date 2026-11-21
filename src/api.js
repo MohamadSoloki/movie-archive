@@ -17,6 +17,8 @@ const { lightOf } = require('./core/library.js');
 const tags = require('./core/tags.js');
 const transfer = require('./core/transfer.js');
 const { createCalendar, isEnded } = require('./core/calendar.js');
+const copies = require('./core/copies.js');
+const { verifyFiles } = require('./core/verify.js');
 
 const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate'];
 
@@ -102,7 +104,7 @@ function createApi({
         let rel = path.basename(c.relPath);
         for (let n = 2; used.has(rel.toLowerCase()); n += 1) rel = `${rel.replace(/ \(\d+\)$/, '')} (${n})`;
         used.add(rel.toLowerCase());
-        jobs.push({ key, title: e.title, locationId: null, driveSerial: c.driveSerial, src, dest: path.join(target, rel), bytes: transfer.treeSize(src) });
+        jobs.push({ key, title: e.title, locationId: null, driveSerial: c.driveSerial, srcRoot: rootOf.get(c.driveSerial), src, dest: path.join(target, rel), bytes: transfer.treeSize(src) });
         continue;
       }
       const { picks, reason } = transfer.pickLocations(e.locations, destDrive);
@@ -114,7 +116,7 @@ function createApi({
         let rel = l.season == null ? path.basename(l.relPath) : path.join(sanitize(e.title), path.basename(l.relPath));
         for (let n = 2; used.has(rel.toLowerCase()); n += 1) rel = `${rel.replace(/ \(\d+\)$/, '')} (${n})`;
         used.add(rel.toLowerCase());
-        jobs.push({ key, title: e.title, locationId: l.id, driveSerial: l.driveSerial, src, dest: path.join(target, rel), bytes: transfer.treeSize(src) });
+        jobs.push({ key, title: e.title, locationId: l.id, driveSerial: l.driveSerial, srcRoot: rootOf.get(l.driveSerial), src, dest: path.join(target, rel), bytes: transfer.treeSize(src) });
       }
     }
     if (!jobs.length && !skipped.length) return { ok: false, error: 'nothing' };
@@ -129,22 +131,26 @@ function createApi({
     return { ok: true, target, jobs, skipped, bytes, free };
   }
 
-  async function startTransfer(request, onProgress = () => {}) {
+  // Copy, verify and repair share one slot: only one of them runs at a time, and cancelTransfer stops whichever it is.
+  async function exclusive(run) {
     if (transferAbort) return { ok: false, error: 'busy' };
     const ac = new AbortController();
     transferAbort = ac; // taken before the first await, so a second call sees it
     try {
-      return await runTransfer(request, onProgress, ac);
+      return await run(ac);
     } finally {
       transferAbort = null;
     }
   }
+
+  const startTransfer = (request, onProgress = () => {}) => exclusive((ac) => runTransfer(request, onProgress, ac));
 
   async function runTransfer(request, onProgress, ac) {
     const plan = await planTransfer(request);
     if (!plan.ok) return plan;
     if (!plan.jobs.length) return { ok: false, error: 'nothing' };
     const result = { ok: true, done: 0, failed: [], skipped: plan.skipped, cancelled: false, bytes: 0 };
+    const manifest = [];
     let doneBytes = 0;
     let last = 0;
     const emit = (index, title, force) => {
@@ -159,6 +165,10 @@ function createApi({
       emit(i, j.title, true);
       try {
         const r = await transfer.copyTree(j.src, j.dest, { signal: ac.signal, onBytes: (n) => { doneBytes += n; emit(i, j.title, false); } });
+        for (const f of r.files) {
+          manifest.push({ rel: path.relative(plan.target, f.dest).split(path.sep).join('/'), size: f.size, sha: f.sha, title: j.title,
+            driveSerial: j.driveSerial, srcRel: path.relative(j.srcRoot, f.src).split(path.sep).join('/') });
+        }
         if (r.cancelled) break;
         result.done += 1;
       } catch (e) {
@@ -168,8 +178,93 @@ function createApi({
     result.cancelled = ac.signal.aborted;
     result.bytes = doneBytes;
     onProgress({ type: 'copy', index: plan.jobs.length, total: plan.jobs.length, title: '', doneBytes, totalBytes: plan.bytes });
+    if (manifest.length) {
+      const id = copies.saveCopy(db, { name: path.basename(plan.target), target: plan.target, files: manifest }, now());
+      if (!result.cancelled) result.verify = await checkAndFix(id, ac, onProgress);
+    }
     return result;
   }
+
+  // ---- checking copies ----
+
+  const copyRow = (id) => copies.listCopies(db).find((c) => c.id === id);
+  const itemsOf = (c, files) => files.map((f) => ({ ...f, dest: copies.destOf(c.target, f.rel) }));
+
+  function progressFor(onProgress, phase, total) {
+    let last = 0;
+    let doneBytes = 0;
+    return {
+      onFile: (index, n, f) => { last = 0; onProgress({ type: 'verify', phase, index, total: n, title: f.title, doneBytes, totalBytes: total }); },
+      onBytes: (n) => {
+        doneBytes += n;
+        const t = Date.now();
+        if (t - last >= 250) { last = t; onProgress({ type: 'verify', phase, index: -1, total: 0, title: '', doneBytes, totalBytes: total }); }
+      },
+    };
+  }
+
+  // Checks the copy and stores the verdict. Returns the raw problems too so a repair can start from them.
+  async function checkCopy(c, { deep, signal, onProgress }) {
+    const files = copies.copyFiles(db, c.id);
+    const items = itemsOf(c, files);
+    const r = await verifyFiles(items, { deep, signal, ...progressFor(onProgress, 'check', deep ? c.bytes : 0) });
+    return { files, items, problems: r.problems, cancelled: r.cancelled };
+  }
+
+  // Copies each broken file again from its source. A damaged file is replaced only once its source is known to be readable.
+  async function repairFiles(c, files, problems, { signal, onProgress }) {
+    const drives = await getDrives();
+    const rootOf = new Map(drives.filter((d) => d.online).map((d) => [d.serial, d.root]));
+    const bad = new Set(problems.map((p) => p.dest));
+    const failed = [];
+    const fixed = [];
+    const todo = files.filter((f) => bad.has(copies.destOf(c.target, f.rel)));
+    const total = todo.reduce((n, f) => n + f.size, 0);
+    const prog = progressFor(onProgress, 'repair', total);
+    for (const [i, f] of todo.entries()) {
+      if (signal.aborted) break;
+      const dest = copies.destOf(c.target, f.rel);
+      if (f.rel.split('/').includes('..') || !transfer.isInside(c.target, dest) || path.resolve(dest) === path.resolve(c.target)) { failed.push({ title: f.title, rel: f.rel, reason: 'bad_path' }); continue; }
+      const root = rootOf.get(f.driveSerial);
+      if (!root) { failed.push({ title: f.title, rel: f.rel, reason: 'offline' }); continue; }
+      const src = path.join(root, ...f.srcRel.split('/'));
+      if (!fs.existsSync(src)) { failed.push({ title: f.title, rel: f.rel, reason: 'source_missing' }); continue; }
+      prog.onFile(i, todo.length, f);
+      fs.rmSync(dest, { force: true });
+      try {
+        const r = await transfer.copyTree(src, dest, { signal, onBytes: prog.onBytes });
+        if (r.cancelled) break;
+        const got = r.files[0];
+        db.prepare('UPDATE copy_files SET size = ?, sha = ? WHERE copy_id = ? AND rel = ?').run(got.size, got.sha, c.id, f.rel);
+        fixed.push({ ...f, size: got.size, sha: got.sha });
+      } catch (e) {
+        failed.push({ title: f.title, rel: f.rel, reason: e.code || 'error' });
+      }
+    }
+    return { fixed, failed };
+  }
+
+  // Deep check; whatever is wrong is copied again once, and only the repaired files are read again.
+  async function checkAndFix(id, ac, onProgress) {
+    const c = copyRow(id);
+    const first = await checkCopy(c, { deep: true, signal: ac.signal, onProgress });
+    if (first.cancelled) return { state: null, cancelled: true, checked: 0, problems: [], repaired: 0, failed: [] };
+    let remaining = first.problems.map((p) => ({ ...p }));
+    let repaired = 0;
+    let failed = [];
+    if (first.problems.length) {
+      const fx = await repairFiles(c, first.files, first.problems, { signal: ac.signal, onProgress });
+      failed = fx.failed;
+      const again = await verifyFiles(itemsOf(c, fx.fixed), { deep: true, signal: ac.signal });
+      repaired = fx.fixed.length - again.problems.length;
+      const stillBad = new Set([...again.problems.map((p) => p.dest), ...first.files.filter((f) => failed.some((x) => x.rel === f.rel)).map((f) => copies.destOf(c.target, f.rel))]);
+      remaining = first.problems.filter((p) => stillBad.has(p.dest)).map((p) => (again.problems.find((a) => a.dest === p.dest) || p));
+    }
+    const state = remaining.length ? 'problem' : 'ok';
+    copies.markChecked(db, id, state, now());
+    return { state, cancelled: ac.signal.aborted, checked: first.files.length, problems: copies.problemsByTitle(first.files, c.target, remaining), repaired, failed };
+  }
+
 
   // the folders a tag lands on: the entry's own, or every film's of a collection
   const tagTargets = (e) => (e.kind === 'collection'
@@ -316,6 +411,33 @@ function createApi({
     },
     planTransfer,
     startTransfer,
+    async getCopies() {
+      return copies.listCopies(db);
+    },
+    // read-only check of a finished copy; `deep` re-reads every file and compares its SHA-256
+    verifyCopy(id, { deep = true } = {}, onProgress = () => {}) {
+      return exclusive(async (ac) => {
+        const c = copyRow(id);
+        if (!c) return { ok: false, error: 'unknown' };
+        const r = await checkCopy(c, { deep, signal: ac.signal, onProgress });
+        if (r.cancelled) return { ok: true, cancelled: true };
+        const state = r.problems.length ? 'problem' : 'ok';
+        copies.markChecked(db, id, state, now());
+        return { ok: true, cancelled: false, state, checked: r.files.length, problems: copies.problemsByTitle(r.files, c.target, r.problems) };
+      });
+    },
+    // check deeply, copy broken or missing files again from their sources, check those again
+    repairCopy(id, onProgress = () => {}) {
+      return exclusive(async (ac) => {
+        if (!copyRow(id)) return { ok: false, error: 'unknown' };
+        const v = await checkAndFix(id, ac, onProgress);
+        return { ok: true, repaired: v.repaired, failed: v.failed, cancelled: v.cancelled, verify: v };
+      });
+    },
+    async removeCopy(id) {
+      copies.removeCopy(db, id);
+      return { ok: true };
+    },
     async cancelTransfer() {
       transferAbort?.abort();
     },

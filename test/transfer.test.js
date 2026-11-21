@@ -94,3 +94,19 @@ test('cancelling mid copy stops and removes the partial file it was writing', as
   assert.equal(r.cancelled, true);
   assert.equal(fs.existsSync(path.join(dst, 'big.mkv')), false);
 });
+
+test('copyTree lists every file it handled with size and the SHA-256 of what it read; a skipped file has no hash', async () => {
+  const crypto = require('node:crypto');
+  const src = path.join(tmp(), 'F');
+  fs.mkdirSync(src, { recursive: true });
+  fs.writeFileSync(path.join(src, 'a.mkv'), 'hello world');
+  fs.writeFileSync(path.join(src, 'b.srt'), 'sub');
+  const dst = path.join(tmp(), 'F');
+  fs.mkdirSync(dst, { recursive: true });
+  fs.writeFileSync(path.join(dst, 'b.srt'), 'old'); // already there: skipped
+  const r = await copyTree(src, dst, {});
+  const by = Object.fromEntries(r.files.map((f) => [path.basename(f.dest), f]));
+  assert.deepEqual([by['a.mkv'].size, by['a.mkv'].sha], [11, crypto.createHash('sha256').update('hello world').digest('hex')]);
+  assert.equal(by['a.mkv'].src, path.join(src, 'a.mkv'));
+  assert.deepEqual([by['b.srt'].size, by['b.srt'].sha], [3, null]); // size of the source, hash unknown
+});

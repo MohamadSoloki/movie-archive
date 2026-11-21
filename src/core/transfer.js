@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { pipeline } = require('node:stream/promises');
 
 // Copy-only transfer of films out of the archive. Sources are only read; the destination is always outside every archive folder.
@@ -50,7 +51,8 @@ function treeSize(p) {
 async function copyFile(src, dst, st, { onBytes, signal }) {
   const out = fs.createWriteStream(dst, { flags: 'wx' });
   const input = fs.createReadStream(src, { highWaterMark: 4 * 1024 * 1024 });
-  input.on('data', (c) => onBytes?.(c.length));
+  const hash = crypto.createHash('sha256');
+  input.on('data', (c) => { hash.update(c); onBytes?.(c.length); });
   try {
     await pipeline(input, out, signal ? { signal } : {});
   } catch (e) {
@@ -58,20 +60,23 @@ async function copyFile(src, dst, st, { onBytes, signal }) {
     throw e;
   }
   fs.utimesSync(dst, st.atime, st.mtime);
+  return hash.digest('hex');
 }
 
 // Copies a file or folder tree to dst. Never overwrites: a file already in dst is skipped. Symlinks are not followed.
+// `files` lists what was handled: the source size and the SHA-256 of the bytes read (null for a skipped file, whose content was not read).
 async function copyTree(src, dst, opts = {}) {
-  const r = { copied: 0, skipped: 0, bytes: 0, cancelled: false };
+  const r = { copied: 0, skipped: 0, bytes: 0, cancelled: false, files: [] };
   const walk = async (from, to) => {
     const st = fs.lstatSync(from);
     if (st.isDirectory()) {
       fs.mkdirSync(to, { recursive: true });
       for (const d of fs.readdirSync(from)) await walk(path.join(from, d), path.join(to, d));
     } else if (st.isFile()) {
-      if (fs.existsSync(to)) { r.skipped += 1; return; }
+      if (fs.existsSync(to)) { r.skipped += 1; r.files.push({ src: from, dest: to, size: st.size, sha: null }); return; }
       fs.mkdirSync(path.dirname(to), { recursive: true });
-      await copyFile(from, to, st, opts);
+      const sha = await copyFile(from, to, st, opts);
+      r.files.push({ src: from, dest: to, size: st.size, sha });
       r.copied += 1;
       r.bytes += st.size;
     }
