@@ -127,12 +127,12 @@ h1, h2, h3, p { margin: 0; }
 #scan:disabled svg, #fetch:disabled svg { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-input[type="text"], input[type="search"], input[type="password"], textarea {
+input[type="text"], input[type="search"], input[type="password"], input[type="time"], input[type="number"], select, textarea {
   width: 100%; padding: 0.55rem 0.8rem; border: 1px solid var(--line-strong); border-radius: 0.7rem;
   background: var(--raised);
 }
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.8; }
-input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
 textarea { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.88rem; resize: vertical; }
 
 /* ---- header ---- */
@@ -397,3 +397,16 @@ body.selecting main { padding-block-end: 6rem; }
 .check { display: flex; align-items: center; gap: 0.6rem; margin-block-start: 1.2rem; }
 .check input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
 #translate-now { align-self: flex-start; margin-block-start: 0.5rem; }
+
+.cal-item { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.8rem 0; border-block-end: 1px solid var(--line); }
+.cal-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem; }
+.cal-when { color: var(--muted); font-size: 0.88rem; margin-inline-start: auto; }
+.cal-item.out .cal-when { color: var(--accent); font-weight: 700; }
+.cal-item.paused { opacity: 0.6; }
+.cal-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.cal-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.cal-form input[type="text"] { flex: 1 1 12rem; }
+.cal-form select, .cal-form input[type="time"] { width: auto; }
+.cal-form .cal-ep { width: 8rem; }
+.cal-form .msg { flex-basis: 100%; }
+.airing .btn { margin-block-start: 0.4rem; }

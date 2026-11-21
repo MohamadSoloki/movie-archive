@@ -29,6 +29,7 @@
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
     x: '<path d="M6 6l12 12M18 6 6 18"/>',
     check: '<path d="m5 12 5 5 9-10"/>',
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
     tag: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
     link: '<path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
   };
@@ -678,6 +679,7 @@
         }, genreName(g)))) : null,
         facts.length ? h('dl', { class: 'facts' }, facts.flatMap(([k, v]) => [h('dt', {}, k), h('dd', { dir: 'auto' }, v)])) : null,
         h('section', {}, h('h3', {}, t('plot')), ...plotBlock(e)),
+        e.titleId != null && e.kind !== 'movie' ? airingSection(e) : null,
         e.titleId != null && e.kind !== 'movie' ? episodesSection(e) : null,
         h('section', {}, h('h3', {}, t('locations')), h('ul', { class: 'plain' }, e.locations.map(locationRow))),
         e.titleId == null && e.status === 'review' ? candidatesSection(e) : null,
@@ -858,6 +860,137 @@
     renderDetail(true);
   });
 
+  // ---- series calendar ----------------------------------------------------
+
+  const DAY_ORDER = { fa: [6, 0, 1, 2, 3, 4, 5], en: [1, 2, 3, 4, 5, 6, 0] }; // Saturday first in Persian, Monday first in English
+  const dayName = (d) => t(`cal_day_${d}`);
+  const notified = new Set(); // "id:due" of reminders already announced, so each episode is announced once
+  let calEditing = null;
+
+  function whenText(r) {
+    if (r.state === 'out') return t('cal_state_out');
+    if (r.state === 'paused') return t('cal_state_paused');
+    if (r.state === 'today') return t('cal_state_today', { time: r.time });
+    const date = new Date(r.due).toLocaleDateString(state.lang === 'fa' ? 'fa-IR' : 'en-GB', { weekday: 'long', month: 'short', day: 'numeric' });
+    return t('cal_state_soon', { date, time: r.time });
+  }
+
+  // One form for adding, editing and the series detail; `onSubmit` gets the fields and returns the api answer.
+  function reminderForm(init, label, onSubmit, { withTitle = true } = {}) {
+    const name = h('input', { type: 'text', maxlength: '100', dir: 'auto', value: init.title ?? '', 'aria-label': t('cal_name'), placeholder: t('cal_name') });
+    const day = h('select', { 'aria-label': t('cal_day') }, DAY_ORDER[state.lang].map((d) => h('option', { value: String(d), selected: d === (init.weekday ?? 1) }, dayName(d))));
+    const time = h('input', { type: 'time', value: init.time ?? '20:00', 'aria-label': t('cal_time') });
+    const ep = h('input', { type: 'number', min: '1', step: '1', class: 'cal-ep', value: init.episode ?? '', 'aria-label': t('cal_episode'), placeholder: t('cal_episode') });
+    const msg = h('p', { class: 'msg', role: 'alert' });
+    const form = h('form', { class: 'cal-form' }, withTitle ? name : null, day, time, ep, h('button', { type: 'submit', class: 'btn primary' }, label), msg);
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const r = await onSubmit({ title: name.value, weekday: Number(day.value), time: time.value, episode: ep.value === '' ? null : Number(ep.value) });
+      msg.textContent = r && !r.ok ? t(`cal_err_${r.error}`) : '';
+    });
+    return form;
+  }
+
+  async function loadCalendar() {
+    state.reminders = await api.calendarList();
+    const live = state.reminders.filter((r) => r.state === 'out' || r.state === 'today').length;
+    $('cal-badge').hidden = !live;
+    $('cal-badge').textContent = String(live);
+    if ($('cal-dlg').open) renderCal();
+  }
+
+  // `inForm`: a form shows its own error and must not be rebuilt (that would wipe the message and the typed text)
+  async function calDo(call, inForm = false) {
+    const r = await call();
+    $('cal-note').hidden = !(r && !r.ok) || inForm;
+    if (r && !r.ok) {
+      if (!inForm) $('cal-note').textContent = t(`cal_err_${r.error}`);
+      return r;
+    }
+    await loadCalendar();
+    if (state.selected) renderDetail(true); // the open series shows its own reminder
+    return r;
+  }
+
+  function renderCal() {
+    $('cal-empty').hidden = state.reminders.length > 0;
+    $('cal-items').replaceChildren(...state.reminders.map((r) => h('li', { class: `cal-item ${r.state}` },
+      calEditing === r.id
+        ? reminderForm(r, t('cal_save'), async (f) => { const x = await calDo(() => api.calendarUpdate(r.id, f), true); if (x.ok) { calEditing = null; renderCal(); } return x; })
+        : [
+          h('div', { class: 'cal-main' },
+            h('strong', { dir: 'auto' }, r.title),
+            r.episode ? h('span', { class: 'tag' }, t('cal_ep', { n: r.episode })) : null,
+            h('span', { class: 'cal-when' }, whenText(r))),
+          h('div', { class: 'cal-actions' },
+            r.state === 'out' ? h('button', { type: 'button', class: 'btn primary', onclick: () => calDo(() => api.calendarTick(r.id)) }, icon('check'), t('cal_done')) : null,
+            r.enabled ? h('button', { type: 'button', class: 'btn', onclick: () => calDo(() => api.calendarSkip(r.id)) }, t('cal_skip')) : null,
+            h('button', { type: 'button', class: 'btn', onclick: () => { calEditing = r.id; renderCal(); } }, t('cal_edit')),
+            h('button', { type: 'button', class: 'btn', onclick: () => calDo(() => api.calendarUpdate(r.id, { enabled: !r.enabled })) }, r.enabled ? t('cal_pause') : t('cal_resume')),
+            h('button', { type: 'button', class: 'btn', onclick: () => { if (window.confirm(t('cal_confirm_delete'))) calDo(() => api.calendarRemove(r.id)); } }, t('cal_delete'))),
+        ])));
+    $('cal-new').replaceChildren(reminderForm({}, t('cal_add'), async (f) => {
+      const x = await calDo(() => api.calendarAdd(f), true);
+      if (x.ok) renderCal();
+      return x;
+    }));
+  }
+
+  function openCal(note) {
+    calEditing = null;
+    renderCal();
+    $('cal-note').hidden = !note;
+    $('cal-note').textContent = note || '';
+    if (!$('cal-dlg').open) $('cal-dlg').showModal();
+  }
+
+  // "Airing" on a series card: the weekly day and time, which become a reminder named after the series.
+  function airingSection(e) {
+    const box = h('section', { class: 'airing' });
+    api.getAiring(e.key).then((a) => {
+      if (state.selected !== e.key) return;
+      if (!a.canAir && !a.reminder) {
+        if (a.ended) box.append(h('h3', {}, t('airing_title')), h('p', { class: 'help' }, t('airing_ended')));
+        else box.remove();
+        return;
+      }
+      box.append(h('h3', {}, t('airing_title')));
+      if (a.reminder) {
+        const r = a.reminder;
+        box.append(h('p', {}, icon('calendar'), ' ', r.episode
+          ? t('airing_on', { day: dayName(r.weekday), time: r.time, n: r.episode })
+          : t('airing_on_noep', { day: dayName(r.weekday), time: r.time })),
+        h('button', { type: 'button', class: 'btn', onclick: () => openCal() }, t('airing_open')));
+        return;
+      }
+      box.append(h('p', { class: 'help' }, t('airing_hint')),
+        reminderForm({}, t('airing_enable'), (f) => calDo(() => api.calendarAdd({ ...f, key: e.key, title: e.title }), true), { withTitle: false }));
+    });
+    return box;
+  }
+
+  function announce(r) {
+    const text = r.episode ? t('cal_out_ep', { title: r.title, n: r.episode }) : t('cal_out', { title: r.title });
+    setStatus(text);
+    try { new Notification(t('cal_title'), { body: text }); } catch { /* notifications can be blocked by the system */ }
+  }
+
+  // Looks at the clock every 20 s. `first` is the check at launch: what is already out goes in the summary, not in a pop-up.
+  async function pollCalendar(first) {
+    await loadCalendar();
+    for (const r of state.reminders) {
+      if (r.state !== 'out') continue;
+      const k = `${r.id}:${r.due}`;
+      if (notified.has(k)) continue;
+      notified.add(k);
+      if (!first) announce(r);
+    }
+    if (first && state.reminders.some((r) => r.state === 'out' || r.state === 'today')) openCal(t('cal_today_note'));
+  }
+
+  $('cal-btn').addEventListener('click', () => openCal());
+  $('cal-x').addEventListener('click', () => $('cal-dlg').close());
+
   // ---- background translation of plots ----
 
   let translating = false;
@@ -915,6 +1048,8 @@
     await renderRoots();
     await refresh();
     // a few seconds after launch, so the first screen is not competing with it
+    await pollCalendar(true);
+    setInterval(() => pollCalendar(false), 20000);
     if (state.lang === 'fa' && s.autoTranslate !== false) setTimeout(() => backgroundTranslate(false), 4000);
   })();
 })();
