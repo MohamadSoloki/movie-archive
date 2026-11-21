@@ -50,6 +50,14 @@ function createJikan({ fetch = globalThis.fetch, sleep = defaultSleep, minGap = 
       const hit = (year && list.find((a) => String(a.year) === String(year))) || list[0];
       return hit ? toInfo(hit) : null;
     },
+    // Anime that MyAnimeList users recommend after this one, the most voted first
+    async recommendations(malId, limit = 12) {
+      const body = await get(`${BASE}/${malId}/recommendations`);
+      return (body.data || [])
+        .map((r) => ({ malId: r.entry.mal_id, title: r.entry.title, posterUrl: r.entry.images?.jpg?.large_image_url ?? r.entry.images?.jpg?.image_url ?? null, votes: r.votes ?? 0 }))
+        .sort((a, b) => b.votes - a.votes)
+        .slice(0, limit);
+    },
     async episodes(malId) {
       const out = [];
       for (let page = 1; page <= 20; page += 1) {

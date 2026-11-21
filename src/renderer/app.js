@@ -817,6 +817,7 @@
         facts.length ? h('dl', { class: 'facts' }, facts.flatMap(([k, v]) => [h('dt', {}, k), h('dd', { dir: 'auto' }, v)])) : null,
         h('section', {}, h('h3', {}, t('plot')), ...plotBlock(e)),
         e.titleId != null && e.kind !== 'collection' ? similarSection(e) : null,
+        e.titleId != null && e.kind !== 'collection' ? recommendSection(e) : null,
         e.titleId != null && e.kind !== 'movie' ? airingSection(e) : null,
         e.titleId != null && e.kind !== 'movie' ? episodesSection(e) : null,
         h('section', {}, h('h3', {}, t('locations')), h('ul', { class: 'plain' }, e.locations.map(locationRow))),
@@ -1142,6 +1143,29 @@
         frame(x, x.rating ? rateChip(x.rating) : null),
         h('span', { class: 'info' }, h('span', { class: 'name', dir: 'auto' }, x.title), x.year ? h('span', { class: 'year' }, String(x.year)) : null),
         h('span', { class: 'why', dir: 'auto' }, why(x))))));
+    });
+    return box;
+  }
+
+  // Anime only: what MyAnimeList users recommend, split into what the archive has and what it does not.
+  function recommendSection(e) {
+    if (!(e.type === 'anime' || e.genreList.includes('Animation'))) return null;
+    const box = h('section', { class: 'similar' });
+    api.getRecommendations(e.key).then((r) => {
+      if (state.selected !== e.key) return;
+      if (!r.ok) {
+        if (r.error === 'network') box.append(h('h3', {}, t('rec_title')), h('p', { class: 'help' }, t('rec_network')));
+        return;
+      }
+      if (!r.inArchive.length && !r.outside.length) return;
+      const tile = (x, why, onclick, tip) => h('button', { type: 'button', class: 'card sim', title: tip || '', onclick },
+        frame(x, x.rating ? rateChip(x.rating) : null),
+        h('span', { class: 'info' }, h('span', { class: 'name', dir: 'auto' }, x.title)),
+        h('span', { class: 'why' }, why));
+      box.append(h('h3', {}, t('rec_title')),
+        h('div', { class: 'sim-list' },
+          r.inArchive.map((x) => tile(x, `${t('rec_have')} · ${t('rec_votes', { n: x.votes })}`, () => select(x.key))),
+          r.outside.map((x) => tile(x, `${t('rec_outside')} · ${t('rec_votes', { n: x.votes })}`, () => api.openMal(x.malId), t('rec_open_mal')))));
     });
     return box;
   }

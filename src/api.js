@@ -11,7 +11,7 @@ const { runQueue } = require('./core/pipeline.js');
 const fs = require('node:fs');
 const fix = require('./core/fix.js');
 const { createTranslator, translateCached, pretranslate } = require('./core/translate.js');
-const { forgetSeasons } = require('./core/cache.js');
+const { forgetSeasons, getCache, putCache, cached } = require('./core/cache.js');
 const { createSearch } = require('./core/search.js');
 const { lightOf } = require('./core/library.js');
 const tags = require('./core/tags.js');
@@ -21,6 +21,9 @@ const copies = require('./core/copies.js');
 const { verifyFiles } = require('./core/verify.js');
 const { createRate } = require('./core/rate.js');
 const { similarTo } = require('./core/similar.js');
+const { ProviderError } = require('./core/errors.js');
+// "The Batman!" and "the batman" are the same name
+const nameKey = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
 const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate'];
 
@@ -34,10 +37,11 @@ function createApi({
   const search = createSearch(db);
   const calendar = createCalendar(db);
   const postersDir = path.join(userDataDir, 'posters');
+  const jikan = createJikan({ fetch, minGap: 350 });
   const key = () => getSetting(db, 'omdbKey');
   const deps = () => ({
     omdb: createOmdb({ apiKey: key(), fetch }),
-    jikan: createJikan({ fetch, minGap: 350 }),
+    jikan,
     savePoster: (url, k) => savePoster(url, postersDir, k, fetch),
     concurrency,
   });
@@ -411,6 +415,49 @@ function createApi({
       if (!base) return { ok: false, error: 'unknown' };
       const { entries } = search.query({});
       return { ok: true, items: similarTo(base, entries, { limit }).map((r) => ({ ...lightOf(r.entry), score: r.score, reasons: r.reasons })) };
+    },
+    // Anime that MyAnimeList users recommend after this one (Jikan). Those already in the archive come back as card entries,
+    // the others with a poster saved next to the archive posters. Answers are stored, so a title is asked for once.
+    async getRecommendations(key, limit = 12) {
+      const e = search.find(key);
+      if (!e || e.titleId == null) return { ok: false, error: 'unknown' };
+      let malId = db.prepare('SELECT mal_id FROM titles WHERE id = ?').get(e.titleId)?.mal_id ?? null;
+      if (!malId && !(e.type === 'anime' || e.genreList.includes('Animation'))) return { ok: false, error: 'not_anime' };
+      try {
+        if (!malId) {
+          // an OMDb animation: use the MyAnimeList entry only when its name is exactly this title's name
+          malId = getCache(db, `mal-of:${e.titleId}`) ?? null;
+          if (!malId) {
+            const hit = await jikan.searchAnime(e.title, e.year ? String(e.year).slice(0, 4) : null);
+            if (!hit || nameKey(hit.title) !== nameKey(e.title)) return { ok: false, error: 'not_found' };
+            malId = hit.malId;
+            putCache(db, `mal-of:${e.titleId}`, malId);
+          }
+        }
+        const recs = await cached(db, `mal-rec:${malId}`, () => jikan.recommendations(malId, 25));
+        const keyOfMal = new Map(db.prepare('SELECT id, mal_id FROM titles WHERE mal_id IS NOT NULL').all().map((r) => [r.mal_id, `t:${r.id}`]));
+        const byName = new Map(search.query({}).entries.filter((x) => x.status === 'matched' && x.kind !== 'collection').map((x) => [nameKey(x.title), x]));
+        const inArchive = [];
+        const outside = [];
+        for (const r of recs) {
+          const mine = search.find(keyOfMal.get(r.malId)) ?? byName.get(nameKey(r.title));
+          if (mine) { if (mine.key !== e.key && inArchive.length < limit) inArchive.push({ ...lightOf(mine), votes: r.votes }); } else if (outside.length < limit) outside.push(r);
+        }
+        const withPoster = await Promise.all(outside.map(async (r) => {
+          const name = `mal${r.malId}`;
+          const posterFile = fs.existsSync(path.join(postersDir, `${name}.jpg`)) ? `${name}.jpg` : await savePoster(r.posterUrl, postersDir, name, fetch);
+          return { malId: r.malId, title: r.title, votes: r.votes, posterFile };
+        }));
+        return { ok: true, inArchive, outside: withPoster };
+      } catch (err) {
+        if (err instanceof ProviderError) return { ok: false, error: err.kind };
+        throw err;
+      }
+    },
+    async openMal(malId) {
+      if (!Number.isInteger(malId) || malId < 1) return { ok: false };
+      await openExternal(`https://myanimelist.net/anime/${malId}`);
+      return { ok: true };
     },
     // manual tags belong to the folders of an entry, so they survive rescans and online fixes
     async addTag(key, text) {

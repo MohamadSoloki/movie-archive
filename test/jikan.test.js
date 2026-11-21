@@ -84,3 +84,21 @@ test('minGap spaces requests that are started together; the default never waits'
   await Promise.all([j2.searchAnime('a'), j2.searchAnime('b')]);
   assert.deepEqual(none, []);
 });
+
+const REC = (id, title, votes) => ({ entry: { mal_id: id, title, images: { jpg: { image_url: `https://x/${id}.jpg`, large_image_url: `https://x/${id}L.jpg` } } }, votes });
+
+test('recommendations: what MyAnimeList users recommend, most votes first, capped', async () => {
+  const urls = [];
+  const jikan = createJikan({ fetch: async (u) => { urls.push(String(u)); return resp([REC(2, 'B', 5), REC(3, 'C', 50), REC(4, 'D', 20)]); }, sleep: noSleep });
+  const r = await jikan.recommendations(16498, 2);
+  assert.deepEqual(r, [
+    { malId: 3, title: 'C', posterUrl: 'https://x/3L.jpg', votes: 50 },
+    { malId: 4, title: 'D', posterUrl: 'https://x/4L.jpg', votes: 20 },
+  ]);
+  assert.match(urls[0], /\/anime\/16498\/recommendations$/);
+});
+
+test('recommendations: an unknown anime gives an empty list, a network failure is a ProviderError', async () => {
+  assert.deepEqual(await createJikan({ fetch: async () => resp(null, 404), sleep: noSleep }).recommendations(1), []);
+  await assert.rejects(createJikan({ fetch: async () => { throw new Error('offline'); }, sleep: noSleep }).recommendations(1), { kind: 'network' });
+});

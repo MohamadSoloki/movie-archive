@@ -12,7 +12,7 @@ const OMDB_BODY = {
   imdbRating: '7.8', Runtime: '176 min', Actors: 'Robert Pattinson', Poster: 'https://img.example/p.jpg',
 };
 
-function setup({ updater, key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause, now, clock, version } = {}) {
+function setup({ jikan, updater, key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause, now, clock, version } = {}) {
   const media = fs.mkdtempSync(path.join(os.tmpdir(), 'media-'));
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'ud-'));
   const fetchCalls = [];
@@ -23,6 +23,11 @@ function setup({ updater, key = 'K', openPath, openExternal, mymemory, freeSpace
       // any title other than "batman" gets its own imdb id, so tests can have two distinct titles
       const body = t && t !== 'batman' ? { ...OMDB_BODY, imdbID: `tt${1000000 + [...t].reduce((a, c) => a + c.charCodeAt(0), 0)}`, Title: t, Poster: 'N/A' } : OMDB_BODY;
       return { ok: true, status: 200, json: async () => body };
+    }
+    if (String(url).includes('jikan.moe')) {
+      const data = jikan ? jikan(String(url)) : [];
+      if (data === 'offline') throw new TypeError('offline');
+      return { ok: true, status: 200, json: async () => ({ data }) };
     }
     if (String(url).includes('mymemory')) return { ok: true, status: 200, json: async () => (mymemory ? mymemory(url) : { responseStatus: 200, responseData: { translatedText: 'سلام' } }) };
     return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([9, 9]).buffer };
@@ -787,4 +792,66 @@ test('getSimilar lists the other films that share genre or people, as card-sized
   assert.ok(r.items[0].score > 0 && r.items[0].reasons.some((x) => x.type === 'genre'));
   assert.equal('plot' in r.items[0], false); // card fields only, like the grid
   assert.deepEqual(await api.getSimilar('t:99999'), { ok: false, error: 'unknown' });
+});
+
+// two matched titles; the first is anime 100 on MyAnimeList, the second anime 200
+async function withAnime(opts = {}) {
+  const ctx = await withFilms(opts);
+  await ctx.api.setSettings({ omdbKey: 'K' });
+  await ctx.api.startQueue(() => {});
+  // the queue runs in parallel, so ids are not in folder order: 'The Batman' first, 'dune' second
+  const titles = ctx.db.prepare('SELECT id, title FROM titles').all().sort((a, b) => (a.title === 'dune') - (b.title === 'dune'));
+  ctx.db.prepare('UPDATE titles SET mal_id = 100 WHERE id = ?').run(titles[0].id);
+  ctx.db.prepare('UPDATE titles SET mal_id = 200 WHERE id = ?').run(titles[1].id);
+  ctx.api.getEntries(); // keep the search cache honest
+  return { ...ctx, titles, keys: titles.map((t) => `t:${t.id}`) };
+}
+const REC = (id, title, votes) => ({ entry: { mal_id: id, title, images: { jpg: { large_image_url: `https://x/${id}.jpg` } } }, votes });
+
+test('getRecommendations splits MyAnimeList recommendations into films in the archive and films outside it', async () => {
+  const { api, keys, fetchCalls, userData } = await withAnime({ jikan: () => [REC(300, 'Outside Few', 3), REC(200, 'In Archive', 90), REC(400, 'Outside Many', 40)] });
+  await api.scan(); // a rescan must not matter
+  const r = await api.getRecommendations(keys[0]);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.inArchive.map((x) => [x.key, x.votes]), [[keys[1], 90]]);
+  assert.deepEqual(r.outside.map((x) => [x.malId, x.title, x.votes, x.posterFile]), [[400, 'Outside Many', 40, 'mal400.jpg'], [300, 'Outside Few', 3, 'mal300.jpg']]);
+  assert.equal(fs.existsSync(path.join(userData, 'posters', 'mal400.jpg')), true);
+  const calls = fetchCalls.filter((u) => u.includes('jikan.moe')).length;
+  await api.getRecommendations(keys[0]);
+  assert.equal(fetchCalls.filter((u) => u.includes('jikan.moe')).length, calls); // the second time comes from the stored answer
+});
+
+test('getRecommendations matches an archive film by its name when it has no MyAnimeList id', async () => {
+  const { api, db, keys, titles } = await withAnime({ jikan: () => [REC(999, 'dune', 10)] });
+  db.prepare('UPDATE titles SET mal_id = NULL WHERE id = ?').run(titles[1].id);
+  await api.scan(); // forgets the cached entries
+  const r = await api.getRecommendations(keys[0]);
+  assert.deepEqual([r.inArchive.map((x) => x.key), r.outside.length], [[keys[1]], 0]);
+});
+
+test('getRecommendations says not_anime for a film, and unknown for a key it does not have', async () => {
+  const { api, db, keys, titles } = await withAnime();
+  db.prepare('UPDATE titles SET mal_id = NULL WHERE id = ?').run(titles[0].id); // an OMDb film with genre Action
+  await api.scan();
+  assert.deepEqual(await api.getRecommendations(keys[0]), { ok: false, error: 'not_anime' });
+  assert.deepEqual(await api.getRecommendations('t:99999'), { ok: false, error: 'unknown' });
+});
+
+test('getRecommendations finds the MyAnimeList entry of an OMDb animation by its exact name, and refuses a different one', async () => {
+  const anime = (title) => [{ mal_id: 100, title, title_english: title, images: {} }];
+  for (const [found, ok] of [['The Batman', true], ['Batman Ninja', false]]) {
+    const { api, db, keys, titles } = await withAnime({ jikan: (u) => (u.includes('recommendations') ? [REC(300, 'Other', 5)] : anime(found)) });
+    db.prepare("UPDATE titles SET mal_id = NULL, genres = 'Animation' WHERE id = ?").run(titles[0].id);
+    await api.scan();
+    const r = await api.getRecommendations(keys[0]);
+    assert.deepEqual(ok ? [r.ok, r.outside.length] : [r.ok, r.error], ok ? [true, 1] : [false, 'not_found']);
+  }
+});
+
+test('getRecommendations answers network when MyAnimeList cannot be reached, and stores nothing', async () => {
+  const { api, keys, fetchCalls } = await withAnime({ jikan: () => 'offline' });
+  assert.deepEqual(await api.getRecommendations(keys[0]), { ok: false, error: 'network' });
+  const before = fetchCalls.length;
+  await api.getRecommendations(keys[0]);
+  assert.ok(fetchCalls.length > before); // asked again, an error is not remembered
 });
