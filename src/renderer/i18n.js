@@ -139,6 +139,11 @@
       copy_delete_list: 'حذف لیست',
       copy_list_default: 'لیست {n}',
       copy_confirm_delete_list: 'این لیست حذف بشه؟ فقط خود لیست پاک می‌شه، به فایل‌ها کاری نداره.',
+      copy_speed: '{speed} در ثانیه · حدود {eta} مونده',
+      copy_speed_wait: 'در حال اندازه‌گیری سرعت…',
+      dur_h: '{n} ساعت',
+      dur_m: '{n} دقیقه',
+      dur_s: '{n} ثانیه',
       copy_verifying: 'بررسی فایل‌های کپی‌شده: {i} از {n}: {title}',
       copy_repairing: 'کپی دوبارهٔ {i} از {n}: {title}',
       copy_verify_ok: 'کپی تموم شد: {n} مورد ({size}). هر {files} فایل بررسی شد و سالمه.',
@@ -412,6 +417,11 @@
       copy_delete_list: 'Delete list',
       copy_list_default: 'List {n}',
       copy_confirm_delete_list: 'Delete this list? Only the list is removed; no files are touched.',
+      copy_speed: '{speed}/s · about {eta} left',
+      copy_speed_wait: 'Measuring speed…',
+      dur_h: '{n} h',
+      dur_m: '{n} min',
+      dur_s: '{n} s',
       copy_verifying: 'Checking copied files: {i} of {n}: {title}',
       copy_repairing: 'Copying again {i} of {n}: {title}',
       copy_verify_ok: 'Copy finished: {n} ({size}). All {files} files were checked and are intact.',
@@ -576,6 +586,13 @@
     return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m)) : s;
   }
 
-  if (typeof module === 'object' && module.exports) module.exports = { STRINGS, t, GENRES_FA, genreLabel, COUNTRIES_FA, countryLabel };
-  else root.i18n = { STRINGS, t, GENRES_FA, genreLabel, COUNTRIES_FA, countryLabel };
+  // 75 -> "1 min 15 s": the two biggest units are enough for a time left
+  function formatDuration(lang, sec) {
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    const parts = h ? [t(lang, 'dur_h', { n: h }), m && t(lang, 'dur_m', { n: m })] : m ? [t(lang, 'dur_m', { n: m }), s && t(lang, 'dur_s', { n: s })] : [t(lang, 'dur_s', { n: s })];
+    return parts.filter(Boolean).join(lang === 'fa' ? ' و ' : ' ');
+  }
+
+  if (typeof module === 'object' && module.exports) module.exports = { STRINGS, t, GENRES_FA, genreLabel, COUNTRIES_FA, countryLabel, formatDuration };
+  else root.i18n = { STRINGS, t, GENRES_FA, genreLabel, COUNTRIES_FA, countryLabel, formatDuration };
 })(typeof window !== 'undefined' ? window : globalThis);

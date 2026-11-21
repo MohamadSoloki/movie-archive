@@ -557,6 +557,8 @@
     $('copy-badge').textContent = String(state.cart.size);
   }
 
+  const rateOf = (n) => (n >= 1024 ** 2 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
+  const duration = (sec) => window.i18n.formatDuration(state.lang, sec);
   const size = (n) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)} GB` : `${Math.max(1, Math.round(n / 1024 ** 2))} MB`);
   const copyMsg = (text, bad = false) => { $('copy-msg').textContent = text; $('copy-msg').classList.toggle('bad', bad); };
 
@@ -602,6 +604,8 @@
     progressHandlers.copy = (p) => {
       $('copy-bar').value = p.totalBytes ? Math.round((p.doneBytes / p.totalBytes) * 100) : 0;
       if (p.title) copyMsg(t('copy_progress', { i: p.index + 1, n: p.total, title: p.title, done: size(p.doneBytes), total: size(p.totalBytes) }));
+      $('copy-speed').hidden = !p.title;
+      $('copy-speed').textContent = p.bytesPerSec && p.etaSec !== null ? t('copy_speed', { speed: rateOf(p.bytesPerSec), eta: duration(p.etaSec) }) : t('copy_speed_wait');
     };
     let r;
     try {
@@ -609,6 +613,7 @@
     } catch { r = { ok: false, error: 'busy' }; }
     state.copying = false;
     $('copy-bar').hidden = true;
+    $('copy-speed').hidden = true;
     await loadCopies();
     const v = r.verify;
     if (!r.ok) copyMsg(t(`copy_err_${r.error}`), true);
@@ -1156,6 +1161,7 @@
     else if (manual && r.stoppedBy !== 'cancelled') setStatus(t('translate_bg_done', { n: r.translated }));
     if (r.translated) renderDetail(true);
   }
+  api.getVersion().then((v) => { if (v) $('app-version').textContent = `v${v}`; });
   $('translate-now').addEventListener('click', () => backgroundTranslate(true));
 
   $('settings-btn').addEventListener('click', async () => {

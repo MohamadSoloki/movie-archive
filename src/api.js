@@ -19,6 +19,7 @@ const transfer = require('./core/transfer.js');
 const { createCalendar, isEnded } = require('./core/calendar.js');
 const copies = require('./core/copies.js');
 const { verifyFiles } = require('./core/verify.js');
+const { createRate } = require('./core/rate.js');
 
 const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate'];
 
@@ -26,7 +27,7 @@ function createApi({
   db, userDataDir, fetch = globalThis.fetch, listDrives = defaultListDrives,
   openPath = async () => '', openExternal = async () => {},
   updater = { check: async () => ({ state: 'dev' }), install() {} },
-  concurrency = 5, translatePause = 700, now = () => Date.now(),
+  concurrency = 5, translatePause = 700, now = () => Date.now(), clock = () => Date.now(), version = '',
   freeSpace = (dir) => { try { const s = fs.statfsSync(dir); return s.bavail * s.bsize; } catch { return Infinity; } },
 }) {
   const search = createSearch(db);
@@ -153,11 +154,12 @@ function createApi({
     const manifest = [];
     let doneBytes = 0;
     let last = 0;
+    const rate = createRate();
     const emit = (index, title, force) => {
-      const now = Date.now();
-      if (!force && now - last < 250) return;
-      last = now;
-      onProgress({ type: 'copy', index, total: plan.jobs.length, title, doneBytes, totalBytes: plan.bytes });
+      const at = clock();
+      if (!force && at - last < 250) return;
+      last = at;
+      onProgress({ type: 'copy', index, total: plan.jobs.length, title, doneBytes, totalBytes: plan.bytes, ...rate.sample(at, doneBytes, plan.bytes) });
     };
     fs.mkdirSync(plan.target, { recursive: true });
     for (const [i, j] of plan.jobs.entries()) {
@@ -177,7 +179,7 @@ function createApi({
     }
     result.cancelled = ac.signal.aborted;
     result.bytes = doneBytes;
-    onProgress({ type: 'copy', index: plan.jobs.length, total: plan.jobs.length, title: '', doneBytes, totalBytes: plan.bytes });
+    onProgress({ type: 'copy', index: plan.jobs.length, total: plan.jobs.length, title: '', doneBytes, totalBytes: plan.bytes, ...rate.sample(clock(), doneBytes, plan.bytes) });
     if (manifest.length) {
       const id = copies.saveCopy(db, { name: path.basename(plan.target), target: plan.target, files: manifest }, now());
       if (!result.cancelled) result.verify = await checkAndFix(id, ac, onProgress);
@@ -469,6 +471,9 @@ function createApi({
       return search.tagList();
     },
     // ---- series calendar ----
+    async getVersion() {
+      return version;
+    },
     async calendarList() {
       return calendar.list(now());
     },

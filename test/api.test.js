@@ -12,7 +12,7 @@ const OMDB_BODY = {
   imdbRating: '7.8', Runtime: '176 min', Actors: 'Robert Pattinson', Poster: 'https://img.example/p.jpg',
 };
 
-function setup({ key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause, now } = {}) {
+function setup({ key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause, now, clock, version } = {}) {
   const media = fs.mkdtempSync(path.join(os.tmpdir(), 'media-'));
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'ud-'));
   const fetchCalls = [];
@@ -30,7 +30,7 @@ function setup({ key = 'K', openPath, openExternal, mymemory, freeSpace, transla
   const db = openDb();
   const state = { online: true };
   const api = createApi({
-    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace, translatePause, now,
+    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace, translatePause, now, clock, version,
     listDrives: async () => (state.online ? [{ serial: 'S1', label: 'Test', root: media + path.sep }] : []),
   });
   return { api, db, media, userData, fetchCalls, key, state };
@@ -457,6 +457,18 @@ test('startTransfer copies the films into the new folder, reports progress and n
   assert.deepEqual([copyEvents.at(-1).doneBytes, copyEvents.at(-1).totalBytes], [5020, 5020]);
 });
 
+test('copy progress carries the current speed and the time left', async () => {
+  let t = 0;
+  const { api, keys, dest } = await withFilms({ clock: () => (t += 1000) });
+  const events = [];
+  await api.startTransfer({ keys, destDir: dest, name: 'claude' }, (p) => events.push(p));
+  const copyEvents = events.filter((e) => e.type === 'copy');
+  assert.deepEqual([copyEvents[0].bytesPerSec, copyEvents[0].etaSec], [null, null]); // nothing to measure yet
+  const mid = copyEvents.find((e) => e.bytesPerSec > 0);
+  assert.ok(mid && Number.isInteger(mid.etaSec) && mid.etaSec >= 0);
+  assert.equal(copyEvents.at(-1).etaSec, 0); // the closing event: all bytes are there
+});
+
 test('startTransfer does nothing when the plan is refused, and refuses a second run at the same time', async () => {
   const { api, keys, dest } = await withFilms();
   assert.deepEqual(await api.startTransfer({ keys, destDir: dest, name: '..' }, () => {}), { ok: false, error: 'bad_name' });
@@ -740,4 +752,9 @@ test('copy lists are saved and come back; junk in them is dropped, not stored', 
   const saved = await api.getCopyLists();
   assert.deepEqual(saved.map((l) => l.id), ['a1', 'c3']);
   assert.deepEqual([saved[1].dest, saved[1].items], ['', [['t:2', 'A']]]);
+});
+
+test('getVersion returns the version the app was started with', async () => {
+  const { api } = setup({ version: '1.2.3' });
+  assert.equal(await api.getVersion(), '1.2.3');
 });

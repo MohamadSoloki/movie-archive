@@ -62,3 +62,13 @@ test('interface keys for tabs, sorting, opening and translation exist in both la
     }
   }
 });
+
+test('formatDuration shows the two biggest units in both languages', () => {
+  const { formatDuration } = require('../src/renderer/i18n.js');
+  assert.equal(formatDuration('en', 8), '8 s');
+  assert.equal(formatDuration('en', 75), '1 min 15 s');
+  assert.equal(formatDuration('en', 120), '2 min');
+  assert.equal(formatDuration('en', 3725), '1 h 2 min');
+  assert.equal(formatDuration('fa', 75), '1 دقیقه و 15 ثانیه');
+  assert.equal(formatDuration('fa', 7200), '2 ساعت');
+});

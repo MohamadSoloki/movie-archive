@@ -11,13 +11,25 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'poster', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
+// A second launch must not open a second window: it quits at once and the first window comes forward.
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
+app.on('second-instance', () => {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+});
+
 app.whenReady().then(() => {
+  if (!primary) return;
   const userData = app.getPath('userData');
   fs.mkdirSync(userData, { recursive: true });
   const api = createApi({
     db: openDb(path.join(userData, 'archive.db')), userDataDir: userData,
     openPath: (p) => shell.openPath(p), openExternal: (u) => shell.openExternal(u),
-    updater: createUpdater({ isPackaged: app.isPackaged }),
+    updater: createUpdater({ isPackaged: app.isPackaged }), version: require('../package.json').version,
   });
 
   // poster://x/<file>: serves only files inside <userData>/posters (api.posterPath keeps the base name)
