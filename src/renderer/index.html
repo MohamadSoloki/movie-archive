@@ -46,6 +46,7 @@
         <button type="button" role="tab" data-tab="series" data-i18n="tab_series"></button>
       </div>
       <button id="filter-open" type="button" class="btn filter-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg><span data-i18n="filters"></span><span id="filter-badge" class="badge" hidden></span></button>
+      <button id="select-btn" type="button" class="btn" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/></svg><span data-i18n="select_mode"></span></button>
       <div id="active" class="chips"></div>
       <p id="count" class="count"></p>
     </div>
@@ -159,6 +160,16 @@
   </dialog>
 
   <datalist id="tag-suggest"></datalist>
+
+  <div id="selbar" class="selbar" hidden>
+    <span id="sel-count" class="sel-count"></span>
+    <button id="sel-all" type="button" class="btn ghost"></button>
+    <input id="sel-tag" type="text" maxlength="30" list="tag-suggest" autocomplete="off" data-i18n-placeholder="sel_tag_placeholder" aria-label="tag">
+    <button id="sel-tag-add" type="button" class="btn" data-i18n="sel_tag_add"></button>
+    <button id="sel-tag-remove" type="button" class="btn" data-i18n="sel_tag_remove"></button>
+    <button id="sel-copy" type="button" class="btn primary" data-i18n="sel_to_copy"></button>
+    <button id="sel-done" type="button" class="btn ghost" data-i18n="sel_done"></button>
+  </div>
 
   <script src="i18n.js"></script>
   <script src="app.js"></script>

@@ -2,7 +2,7 @@
 (() => {
   const api = window.api;
   const $ = (id) => document.getElementById(id);
-  const state = { lang: 'fa', entries: [], selected: null, cart: new Map(), copyDest: '', copyPlan: null, copying: false, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], tags: [], tagCounts: [], countries: [], countryCounts: [], knownTags: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, sort: 'name', rootCount: 0 };
+  const state = { lang: 'fa', entries: [], selected: null, cart: new Map(), selecting: false, picked: new Set(), copyDest: '', copyPlan: null, copying: false, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], tags: [], tagCounts: [], countries: [], countryCounts: [], knownTags: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, sort: 'name', rootCount: 0 };
   const t = (key, vars) => window.i18n.t(state.lang, key, vars);
   const genreName = (g) => window.i18n.genreLabel(state.lang, g);
   const countryName = (g) => window.i18n.countryLabel(state.lang, g);
@@ -216,14 +216,15 @@
     const mine = e.tags.map((g) => h('span', { class: 'mine', dir: 'auto' }, icon('tag'), g));
     const genres = e.genres.map((g) => h('span', {}, genreName(g)));
     return h('button', {
-      class: `card a-${e.attention}${state.selected === e.key ? ' sel' : ''}`,
+      class: `card a-${e.attention}${state.selected === e.key ? ' sel' : ''}${state.picked.has(e.key) ? ' picked' : ''}`,
       type: 'button',
       'data-key': e.key,
-      onclick: () => select(e.key),
+      onclick: () => (state.selecting ? togglePick(e.key) : select(e.key)),
     },
     frame(e,
       e.rating ? rateChip(e.rating) : null,
       inCart(e.key) ? h('span', { class: 'cart-mark' }, icon('check')) : null,
+      state.picked.has(e.key) ? h('span', { class: 'pick-mark' }, icon('check')) : null,
       e.kind === 'collection' ? h('span', { class: 'stack' }, icon('layers'), t('collection_n', { n: e.members })) : null),
     h('span', { class: 'info' },
       h('span', { class: 'title-row' }, dotOf(e), h('span', { class: 'name', dir: 'auto' }, e.title)),
@@ -274,6 +275,8 @@
     state.knownTags = await api.getTags();
     state.attentionCounts = r.attentionCounts;
     renderFilters();
+    for (const key of [...state.picked]) if (!state.entries.some((e) => e.key === key)) state.picked.delete(key); // filtered out of view
+    renderSelbar();
     if (state.selected && !state.entries.some((e) => e.key === state.selected)) state.selected = null;
     renderGrid();
     await renderDetail(forceDetail);
@@ -442,7 +445,8 @@
         h('div', { class: 'hero-actions' }, h('button', {
           type: 'button', class: 'btn open', disabled: !!blocked, title: blocked,
           onclick: async () => { const r = await api.openCollection(c.driveSerial, c.relPath); if (!r.ok) setStatus(errText(r.error)); },
-        }, icon('folder'), t('open_folder'))),
+        }, icon('folder'), t('open_folder')), cartButton(e)),
+        myTagsSection(e),
         h('section', {}, h('h3', {}, t('collection_members')),
           h('ul', { class: 'plain members' }, e.members.map((m) => h('li', {}, h('button', { type: 'button', class: 'member', onclick: () => openMember(m.key) },
             h('span', { dir: 'auto' }, m.title), m.year ? h('span', { class: 'year' }, String(m.year)) : null)))))),
@@ -455,8 +459,69 @@
     await resetView();
   }
 
-  // The whole entry is fetched only for the open card. Without `force` an already open detail is left alone,
-  // so typing in the search box does not rebuild it (and collapse its seasons).
+  // ---- selecting several films: tag them or put them in the copy list in one go ----
+
+  function cardOf(key) { return [...document.querySelectorAll('.card')].find((c) => c.dataset.key === key); }
+
+  function togglePick(key) {
+    if (state.picked.has(key)) state.picked.delete(key); else state.picked.add(key);
+    const el = cardOf(key);
+    if (el) {
+      el.classList.toggle('picked', state.picked.has(key));
+      el.querySelector('.pick-mark')?.remove();
+      if (state.picked.has(key)) el.querySelector('.frame').append(h('span', { class: 'pick-mark' }, icon('check')));
+    }
+    renderSelbar();
+  }
+
+  function renderSelbar() {
+    $('selbar').hidden = !state.selecting;
+    $('select-btn').setAttribute('aria-pressed', String(state.selecting));
+    document.body.classList.toggle('selecting', state.selecting);
+    if (!state.selecting) return;
+    $('sel-count').textContent = t('select_n', { n: state.picked.size });
+    const all = state.picked.size > 0 && state.picked.size === state.entries.length;
+    $('sel-all').textContent = all ? t('select_none') : t('select_all', { n: state.entries.length });
+    for (const id of ['sel-tag-add', 'sel-tag-remove', 'sel-copy']) $(id).disabled = !state.picked.size;
+  }
+
+  function setSelecting(on) {
+    state.selecting = on;
+    if (!on) state.picked.clear();
+    if (on) select(null);
+    for (const el of document.querySelectorAll('.card.picked')) { el.classList.remove('picked'); el.querySelector('.pick-mark')?.remove(); }
+    renderSelbar();
+  }
+
+  function pickAll() {
+    const all = state.picked.size === state.entries.length;
+    state.picked = new Set(all ? [] : state.entries.map((e) => e.key));
+    for (const el of document.querySelectorAll('.card')) {
+      const on = state.picked.has(el.dataset.key);
+      el.classList.toggle('picked', on);
+      el.querySelector('.pick-mark')?.remove();
+      if (on) el.querySelector('.frame').append(h('span', { class: 'pick-mark' }, icon('check')));
+    }
+    renderSelbar();
+  }
+
+  async function tagPicked(remove) {
+    const text = $('sel-tag').value.trim();
+    if (!text || !state.picked.size) return;
+    const r = await (remove ? api.removeTags : api.addTags)([...state.picked], text);
+    if (!r.ok) { setStatus(t(`tag_${r.error}`)); return; }
+    $('sel-tag').value = '';
+    setStatus(t(remove ? 'sel_untagged' : 'sel_tagged', { tag: text, n: r.count }));
+    await refresh(true);
+  }
+
+  function copyPicked() {
+    const titles = new Map(state.entries.map((e) => [e.key, e.title]));
+    let n = 0;
+    for (const key of state.picked) if (!inCart(key)) { toggleCart(key, titles.get(key) ?? ''); n += 1; }
+    setStatus(t('sel_copied', { n }));
+  }
+
   // ---- copy list: films picked here are copied (never moved) into a new folder somewhere else ----
 
   function cartButton(e) {
@@ -577,6 +642,8 @@
     return box;
   }
 
+  // The whole entry is fetched only for the open card. Without `force` an already open detail is left alone,
+  // so typing in the search box does not rebuild it (and collapse its seasons).
   async function renderDetail(force = true) {
     const d = $('detail');
     const key = state.selected;
@@ -712,6 +779,13 @@
   $('filter-clear').addEventListener('click', clearFilters);
   for (const dlg of document.querySelectorAll('dialog')) dlg.addEventListener('click', (ev) => { if (ev.target === dlg && !(dlg.id === 'copy-dlg' && state.copying)) dlg.close(); }); // the backdrop
 
+  $('select-btn').addEventListener('click', () => setSelecting(!state.selecting));
+  $('sel-done').addEventListener('click', () => setSelecting(false));
+  $('sel-all').addEventListener('click', pickAll);
+  $('sel-tag-add').addEventListener('click', () => tagPicked(false));
+  $('sel-tag-remove').addEventListener('click', () => tagPicked(true));
+  $('sel-tag').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); tagPicked(false); } });
+  $('sel-copy').addEventListener('click', copyPicked);
   $('copy-btn').addEventListener('click', () => { renderCopy(); $('copy-dlg').showModal(); updateCopyPlan(); });
   $('copy-x').addEventListener('click', () => { if (!state.copying) $('copy-dlg').close(); });
   $('copy-dlg').addEventListener('cancel', (ev) => { if (state.copying) ev.preventDefault(); }); // Esc must not hide a running copy
@@ -733,6 +807,7 @@
   document.addEventListener('keydown', (ev) => {
     const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName);
     if (ev.key === '/' && !typing && !document.querySelector('dialog[open]')) { ev.preventDefault(); $('q').focus(); }
+    else if (ev.key === 'Escape' && !document.querySelector('dialog[open]') && state.selecting) setSelecting(false);
     else if (ev.key === 'Escape' && !document.querySelector('dialog[open]') && state.selected) select(null);
   });
 

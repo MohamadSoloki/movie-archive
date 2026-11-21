@@ -89,7 +89,19 @@ function createApi({
     const used = new Set();
     for (const key of keys) {
       const e = search.find(key);
-      if (!e || e.kind === 'collection') continue;
+      if (!e) continue;
+      if (e.kind === 'collection') { // the whole folder, as one item
+        const c = e.collection;
+        const src = rootOf.has(c.driveSerial) ? path.join(rootOf.get(c.driveSerial), c.relPath) : null;
+        if (!c.online || !src) { skipped.push({ key, title: e.title, reason: 'offline' }); continue; }
+        if (c.missing || !fs.existsSync(src)) { skipped.push({ key, title: e.title, reason: 'missing' }); continue; }
+        if (transfer.isInside(src, target)) { skipped.push({ key, title: e.title, reason: 'dest_inside_source' }); continue; }
+        let rel = path.basename(c.relPath);
+        for (let n = 2; used.has(rel.toLowerCase()); n += 1) rel = `${rel.replace(/ \(\d+\)$/, '')} (${n})`;
+        used.add(rel.toLowerCase());
+        jobs.push({ key, title: e.title, locationId: null, driveSerial: c.driveSerial, src, dest: path.join(target, rel), bytes: transfer.treeSize(src) });
+        continue;
+      }
       const { picks, reason } = transfer.pickLocations(e.locations, destDrive);
       if (!picks.length) { skipped.push({ key, title: e.title, reason }); continue; }
       for (const l of picks) {
@@ -103,6 +115,10 @@ function createApi({
       }
     }
     if (!jobs.length && !skipped.length) return { ok: false, error: 'nothing' };
+    // a film that lies inside a collection folder in the same list is already part of that copy
+    for (let i = jobs.length - 1; i >= 0; i -= 1) {
+      if (jobs.some((o, j) => j !== i && o.src !== jobs[i].src && transfer.isInside(o.src, jobs[i].src))) jobs.splice(i, 1);
+    }
     jobs.sort((a, b) => a.driveSerial.localeCompare(b.driveSerial)); // read one disk at a time, front to back
     const bytes = jobs.reduce((n, j) => n + j.bytes, 0);
     const free = freeSpace(destDir);
@@ -152,16 +168,32 @@ function createApi({
     return result;
   }
 
-  function changeTag(key, text, apply) {
+  // the folders a tag lands on: the entry's own, or every film's of a collection
+  const tagTargets = (e) => (e.kind === 'collection'
+    ? e.members.flatMap((m) => search.find(m.key)?.locations ?? []).map((l) => l.id)
+    : e.locations.map((l) => l.id));
+
+  function changeTags(keys, text, apply) {
     const tag = tags.normalizeTag(text);
     if (tag === null) return { ok: false, error: 'empty' };
     if (tag === 'too_long') return { ok: false, error: 'too_long' };
-    const e = search.find(key);
-    if (!e || e.kind === 'collection') return { ok: false, error: 'unknown' };
-    apply(db, e.locations.map((l) => l.id), tag);
+    let count = 0;
+    for (const key of keys) {
+      const e = search.find(key);
+      if (!e) continue;
+      apply(db, tagTargets(e), tag);
+      count += 1;
+    }
     search.invalidate();
-    return { ok: true };
+    return { ok: true, count };
   }
+
+  function changeTag(key, text, apply) {
+    const r = changeTags([key], text, apply);
+    return !r.ok ? r : r.count ? { ok: true } : { ok: false, error: 'unknown' };
+  }
+
+  const manyTags = (keys, text, apply) => (keys.length ? changeTags(keys, text, apply) : { ok: false, error: 'nothing' });
 
   return {
     async getSettings() {
@@ -258,6 +290,12 @@ function createApi({
     startTransfer,
     async cancelTransfer() {
       transferAbort?.abort();
+    },
+    async addTags(keys, text) {
+      return manyTags(keys, text, tags.addTag);
+    },
+    async removeTags(keys, text) {
+      return manyTags(keys, text, tags.removeTag);
     },
     async getTags() {
       return search.tagList();

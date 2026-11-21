@@ -83,11 +83,13 @@ function collectionEntries(entries) {
   }
   return [...groups.values()].filter((g) => g.members.size >= 2).map(({ l, members, locs }) => {
     const list = [...members.values()].sort(compareTitles);
+    // the tags every film of the pack has, so tagging the pack and filtering by that tag both work
+    const shared = list[0].userTags.filter((g) => list.every((m) => m.userTags.some((x) => x.toLowerCase() === g.toLowerCase())));
     return {
       key: `c:${l.driveSerial}|${l.collection}`, kind: 'collection', titleId: null, locationId: null,
       title: l.collection.split('/').pop(), year: null, type: 'collection', plot: null, genres: null, rating: null, runtime: null,
       actors: null, posterFile: list.find((m) => m.posterFile)?.posterFile ?? null, status: 'matched', guessed: false, locations: [],
-      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, countryList: [], totalSeasons: null, attention: 'ok', userTags: [],
+      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, countryList: [], totalSeasons: null, attention: 'ok', userTags: shared,
       addedOrder: Math.min(...locs.map((x) => x.id)),
       collection: { driveSerial: l.driveSerial, relPath: l.collection, online: l.online, missing: locs.every((x) => x.missing) },
       members: list.map((m) => ({ key: m.key, title: m.title, year: m.year, posterFile: m.posterFile, status: m.status, kind: m.kind })),

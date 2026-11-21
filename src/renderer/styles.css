@@ -378,3 +378,13 @@ dialog[open] { animation: pop 0.18s ease-out; }
 #copy-msg.bad { color: var(--red); }
 #copy-info.bad { color: var(--red); }
 #copy-dest { flex: 1; }
+
+/* selecting several */
+.card.picked .frame { box-shadow: 0 0 0 3px var(--accent), var(--shadow); }
+.pick-mark { position: absolute; inset-block-start: 0.5rem; inset-inline-end: 0.5rem; display: grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--accent); color: var(--accent-ink); }
+.pick-mark svg { width: 1rem; height: 1rem; stroke-width: 2.6; }
+.selbar { position: fixed; inset-inline: 1rem; inset-block-end: 1rem; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; padding: 0.7rem 0.9rem; margin-inline: auto; max-width: 62rem; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: var(--shadow-up); }
+.selbar[hidden] { display: none; }
+.sel-count { font-weight: 600; margin-inline-end: auto; }
+.selbar input { width: 15rem; }
+body.selecting main { padding-block-end: 6rem; }

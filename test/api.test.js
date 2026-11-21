@@ -471,3 +471,58 @@ test('cancelTransfer stops the run and reports it', async () => {
   const r = await run;
   assert.equal(r.cancelled, true);
 });
+
+// ---- selections and collections ----
+
+async function withPack() {
+  const ctx = setup();
+  const { media, api } = ctx;
+  const dir = path.join(media, 'Movies', 'Batman Trilogy');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const f of ['batman begins 2005.mkv', 'the dark knight 2008.mkv']) fs.writeFileSync(path.join(dir, f), Buffer.alloc(100, 1));
+  fs.mkdirSync(path.join(media, 'Movies', 'dune 2021'));
+  fs.writeFileSync(path.join(media, 'Movies', 'dune 2021', 'movie.mkv'), Buffer.alloc(50, 1));
+  await api.addRoot(path.join(media, 'Movies'));
+  await api.scan();
+  const entries = (await api.getEntries()).entries;
+  return { ...ctx, dir, entries, pack: entries.find((e) => e.kind === 'collection'), dune: entries.find((e) => e.title.startsWith('dune')) };
+}
+
+test('tagging a collection tags every film in it, and its tag list shows what all of them share', async () => {
+  const { api, pack, entries } = await withPack();
+  assert.deepEqual(await api.addTag(pack.key, 'Iranian'), { ok: true });
+  assert.deepEqual((await api.getEntry(pack.key)).userTags, ['Iranian']);
+  for (const m of pack.members) assert.deepEqual((await api.getEntry(m.key)).userTags, ['Iranian']);
+  assert.deepEqual((await api.getEntry(entries.find((e) => e.title.startsWith('dune')).key)).userTags, []);
+  assert.deepEqual(await api.removeTag(pack.key, 'iranian'), { ok: true });
+  for (const m of pack.members) assert.deepEqual((await api.getEntry(m.key)).userTags, []);
+});
+
+test('addTags and removeTags change several entries at once and report how many', async () => {
+  const { api, pack, dune } = await withPack();
+  assert.deepEqual(await api.addTags([pack.key, dune.key, 't:99999'], 'ایرانی'), { ok: true, count: 2 });
+  assert.equal((await api.getEntries({ tags: ['ایرانی'] })).entries.length, 4); // two films, the pack, dune
+  assert.deepEqual(await api.removeTags([dune.key], 'ایرانی'), { ok: true, count: 1 });
+  assert.equal((await api.getEntries({ tags: ['ایرانی'] })).entries.length, 3);
+  assert.deepEqual(await api.addTags([], 'x'), { ok: false, error: 'nothing' });
+  assert.deepEqual(await api.addTags([dune.key], ' '), { ok: false, error: 'empty' });
+  assert.deepEqual(await api.addTags([dune.key], 'x'.repeat(31)), { ok: false, error: 'too_long' });
+});
+
+test('a collection in the copy list copies its whole folder as one item', async () => {
+  const { api, pack, dune, dir } = await withPack();
+  const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'dest-'));
+  const plan = await api.planTransfer({ keys: [pack.key, dune.key], destDir: dest, name: 'claude' });
+  assert.deepEqual(plan.jobs.map((j) => path.basename(j.dest)).sort(), ['Batman Trilogy', 'dune 2021']);
+  assert.equal(plan.jobs.find((j) => j.src === dir).bytes, 200);
+  const r = await api.startTransfer({ keys: [pack.key, dune.key], destDir: dest, name: 'claude' }, () => {});
+  assert.equal(r.done, 2);
+  assert.deepEqual(fs.readdirSync(path.join(dest, 'claude', 'Batman Trilogy')).sort(), ['batman begins 2005.mkv', 'the dark knight 2008.mkv']);
+});
+
+test('a film and the collection that holds it are copied once, not twice', async () => {
+  const { api, pack } = await withPack();
+  const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'dest-'));
+  const plan = await api.planTransfer({ keys: [pack.key, pack.members[0].key], destDir: dest, name: 'claude' });
+  assert.equal(plan.jobs.length, 1);
+});

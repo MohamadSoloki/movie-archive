@@ -167,3 +167,13 @@ test('countryList splits the OMDb country text; unmatched entries have none', ()
   assert.deepEqual(e.find((x) => x.title === 'Taxi').countryList, ['Iran', 'France']);
   assert.deepEqual(e.find((x) => x.title === 'بتمن').countryList, []);
 });
+
+test('a collection carries the tags that every one of its films has', () => {
+  const db = openDb();
+  const t1 = upsertTitle(db, info('tt1', 'A'), null); const t2 = upsertTitle(db, info('tt2', 'B'), null);
+  const a = addLoc(db, { titleId: t1, status: 'matched' }); const b = addLoc(db, { titleId: t2, status: 'matched' });
+  db.prepare("UPDATE locations SET collection = 'Movies/Pack'").run();
+  for (const id of [a, b]) db.prepare("INSERT INTO tags(location_id, tag) VALUES(?, 'Iranian')").run(id);
+  db.prepare("INSERT INTO tags(location_id, tag) VALUES(?, 'Classic')").run(a);
+  assert.deepEqual(listEntries(db).find((e) => e.kind === 'collection').userTags, ['Iranian']);
+});
