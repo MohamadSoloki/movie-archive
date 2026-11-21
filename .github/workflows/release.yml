@@ -5,6 +5,8 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
+  # Actions tab -> CI and release -> Run workflow: releases the version in package.json, no tag needed
+  workflow_dispatch:
 
 jobs:
   test:
@@ -18,10 +20,10 @@ jobs:
       - run: npm ci
       - run: npm test
 
-  # A tag like v0.2.0 builds the Windows installer and publishes it as a GitHub Release.
-  # The installed app finds that release and updates itself.
+  # A tag like v0.2.0, or a hand-started run, builds the Windows installer and publishes it as a GitHub Release.
+  # The installed app finds that release and updates itself. GitHub creates the tag v<version> itself when a hand-started run publishes.
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     needs: test
     runs-on: windows-latest
     # a second run for the same tag would race the first and create a second release
@@ -37,8 +39,20 @@ jobs:
           node-version: 22
           cache: npm
       - name: Tag must match package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - name: Version must be new
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists. Raise version in package.json and push first."
+            exit 1
+          fi
       - run: npm ci
       - run: npx electron-builder --win --publish always
         env:

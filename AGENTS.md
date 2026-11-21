@@ -63,7 +63,7 @@ Plans: `docs/superpowers/plans/2026-11-17-movie-archive.md`, `docs/superpowers/p
 ## Release (how the owner updates the app)
 
 1. Bump `version` in `package.json` (for example 0.1.0 → 0.2.0) and commit to `main`.
-2. `git tag v0.2.0 && git push origin main --tags`.
+2. Either start it by hand (GitHub → Actions → CI and release → Run workflow, no tag; GitHub creates tag `v<version>` when the release is published, and a `gh release view` step refuses a version that already has a release), or `git tag v0.2.0 && git push origin main --tags`.
 3. GitHub Actions (`.github/workflows/release.yml`) runs the tests, builds the installer on Windows and publishes a
    GitHub Release. Installed copies check for it on start and install it when the app closes.
    The tag must equal `v` + the `package.json` version, or the job fails on purpose.
