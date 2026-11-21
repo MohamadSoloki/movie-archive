@@ -80,4 +80,32 @@ async function translateCached(db, translator, text) {
   return out.join(' ');
 }
 
-module.exports = { splitForTranslation, createTranslator, translateCached };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Translates the stored plots nobody has opened yet, newest first, so opening a film later shows the Persian text at once.
+// Stops by itself when the free quota is used up (or the network fails) and picks up from there the next time.
+async function pretranslate(db, translator, { pause = 700, onProgress, signal } = {}) {
+  const missing = (plot) => !(ARABIC.test(plot) && !LATIN.test(plot)) && splitForTranslation(plot).some((chunk) => {
+    const hash = crypto.createHash('sha1').update(chunk).digest('hex');
+    return !db.prepare('SELECT 1 FROM translations WHERE hash = ?').get(hash);
+  });
+  const todo = db.prepare("SELECT plot FROM titles WHERE plot IS NOT NULL AND plot != '' ORDER BY id DESC").all().map((r) => r.plot).filter(missing);
+  const r = { translated: 0, remaining: todo.length, stoppedBy: null };
+  for (const plot of todo) {
+    if (signal?.aborted) { r.stoppedBy = 'cancelled'; break; }
+    try {
+      await translateCached(db, translator, plot);
+    } catch (e) {
+      if (!(e instanceof ProviderError)) throw e;
+      r.stoppedBy = e.kind;
+      break;
+    }
+    r.translated += 1;
+    r.remaining -= 1;
+    onProgress?.({ done: r.translated, total: todo.length });
+    if (pause && r.remaining) await sleep(pause);
+  }
+  return r;
+}
+
+module.exports = { splitForTranslation, createTranslator, translateCached, pretranslate };

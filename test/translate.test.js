@@ -93,3 +93,43 @@ test('translate: HTTP 429 is quota whatever the body says, and a padded warning 
   assert.equal(await kind(async () => ({ ok: false, status: 429, json: async () => { throw new Error('html'); } })), 'quota');
   assert.equal(await kind(reply(ok(`  ${WARN.toLowerCase()}`))), 'quota');
 });
+
+// ---- background translation of stored plots ----
+
+const { pretranslate } = require('../src/core/translate.js');
+const { upsertTitle } = require('../src/core/titles.js');
+
+function plotsDb(plots) {
+  const db = openDb();
+  plots.forEach((plot, i) => upsertTitle(db, { source: 'omdb', imdbId: `tt${i + 1}`, malId: null, title: `T${i + 1}`, year: '2020', type: 'movie', plot,
+    genres: 'Drama', rating: '7', runtime: '1', actors: 'x', posterUrl: null }, null));
+  return db;
+}
+const fake = (log, fail) => ({ async translate(text) { log.push(text); if (fail && log.length >= fail.at) throw fail.err; return `FA(${text})`; } });
+
+test('pretranslate stores a translation for every English plot, newest first, and skips Persian, empty and already stored ones', async () => {
+  const db = plotsDb(['First plot.', 'سلام این فارسیه', null, 'Third plot.']);
+  const log = [];
+  await translateCached(db, fake([]), 'Third plot.'); // already stored
+  const r = await pretranslate(db, fake(log), { pause: 0 });
+  assert.deepEqual(log, ['First plot.']);
+  assert.deepEqual([r.translated, r.remaining, r.stoppedBy], [1, 0, null]);
+});
+
+test('pretranslate stops when the free quota is used up, keeps what it already stored and counts what is left', async () => {
+  const db = plotsDb(['One.', 'Two.', 'Three.']);
+  const log = [];
+  const r = await pretranslate(db, fake(log, { at: 2, err: new (require('../src/core/errors.js').ProviderError)('quota') }), { pause: 0 });
+  assert.deepEqual([r.translated, r.remaining, r.stoppedBy], [1, 2, 'quota']);
+  const again = await pretranslate(db, fake([]), { pause: 0 });
+  assert.deepEqual([again.translated, again.remaining], [2, 0]); // picks up where it stopped
+});
+
+test('pretranslate reports progress and can be cancelled', async () => {
+  const db = plotsDb(['One.', 'Two.', 'Three.']);
+  const seen = [];
+  const ac = new AbortController();
+  const r = await pretranslate(db, fake([]), { pause: 0, signal: ac.signal, onProgress: (p) => { seen.push(p); if (p.done === 2) ac.abort(); } });
+  assert.deepEqual(seen.map((p) => [p.done, p.total]), [[1, 3], [2, 3]]);
+  assert.deepEqual([r.translated, r.remaining, r.stoppedBy], [2, 1, 'cancelled']);
+});

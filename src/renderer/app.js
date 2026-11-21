@@ -41,6 +41,9 @@
   }
 
   let statusTimer = null;
+  // one listener for everything the main process reports while it works; each run sets its own handler by event type
+  const progressHandlers = {};
+  api.onProgress((p) => progressHandlers[p.type || 'queue']?.(p));
   let planTimer = null;
   function setStatus(text) {
     const el = $('status');
@@ -593,11 +596,10 @@
     $('copy-bar').hidden = false;
     $('copy-bar').value = 0;
     renderCopy();
-    api.onProgress((p) => {
-      if (p.type !== 'copy') return;
+    progressHandlers.copy = (p) => {
       $('copy-bar').value = p.totalBytes ? Math.round((p.doneBytes / p.totalBytes) * 100) : 0;
       if (p.title) copyMsg(t('copy_progress', { i: p.index + 1, n: p.total, title: p.title, done: size(p.doneBytes), total: size(p.totalBytes) }));
-    });
+    };
     let r;
     try {
       r = await api.startTransfer({ keys: [...state.cart.keys()], destDir: state.copyDest, name: $('copy-name').value.trim() });
@@ -783,7 +785,7 @@
 
   $('fetch').addEventListener('click', async () => {
     busy(true);
-    api.onProgress((p) => setStatus(t('progress', { done: p.processed, left: p.remaining })));
+    progressHandlers.queue = (p) => setStatus(t('progress', { done: p.processed, left: p.remaining }));
     try {
       const r = await api.startQueue();
       if (r.stoppedBy === 'quota') setStatus(t('stop_quota'));
@@ -856,6 +858,26 @@
     renderDetail(true);
   });
 
+  // ---- background translation of plots ----
+
+  let translating = false;
+  async function backgroundTranslate(manual) {
+    if (translating) { api.stopPretranslate(); return; }
+    translating = true;
+    $('translate-now').textContent = t('translate_stop');
+    progressHandlers.translate = (p) => { if (manual) setStatus(t('translate_progress', { done: p.done, total: p.total })); };
+    let r;
+    try { r = await api.startPretranslate(); } catch { r = null; }
+    translating = false;
+    $('translate-now').textContent = t('translate_now');
+    if (!r?.ok) return;
+    if (r.stoppedBy === 'quota') { if (manual || r.translated) setStatus(t('translate_bg_quota', { n: r.translated, left: r.remaining })); }
+    else if (r.stoppedBy === 'network') { if (manual) setStatus(t('translate_bg_network')); }
+    else if (manual && r.stoppedBy !== 'cancelled') setStatus(t('translate_bg_done', { n: r.translated }));
+    if (r.translated) renderDetail(true);
+  }
+  $('translate-now').addEventListener('click', () => backgroundTranslate(true));
+
   $('settings-btn').addEventListener('click', async () => {
     const s = await api.getSettings();
     $('set-key').value = s.omdbKey;
@@ -863,6 +885,7 @@
     $('set-ignore').value = s.ignore.join('\n');
     $('set-collections').value = s.collections.join('\n');
     $('set-email').value = s.translateEmail || '';
+    $('set-auto-translate').checked = s.autoTranslate !== false;
     $('settings-dlg').showModal();
   });
   $('settings-cancel').addEventListener('click', () => $('settings-dlg').close());
@@ -875,6 +898,7 @@
       ignore: lines('set-ignore'),
       collections: lines('set-collections'),
       translateEmail: $('set-email').value.trim(),
+      autoTranslate: $('set-auto-translate').checked,
     });
     $('settings-dlg').close();
     setStatus(t('saved'));
@@ -890,5 +914,7 @@
     applyLang();
     await renderRoots();
     await refresh();
+    // a few seconds after launch, so the first screen is not competing with it
+    if (state.lang === 'fa' && s.autoTranslate !== false) setTimeout(() => backgroundTranslate(false), 4000);
   })();
 })();

@@ -8,6 +8,7 @@ const DEFAULTS = {
   language: 'fa',
   omdbKey: '',
   translateEmail: '',
+  autoTranslate: true,
 };
 
 const SCHEMA = `

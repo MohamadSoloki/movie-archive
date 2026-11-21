@@ -393,3 +393,7 @@ body.selecting main { padding-block-end: 6rem; }
 .drop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: var(--scrim); pointer-events: none; }
 .drop[hidden] { display: none; }
 .drop p { padding: 2rem 3rem; border: 2px dashed var(--accent); border-radius: var(--radius); background: var(--surface); font-size: 1.2rem; font-weight: 600; box-shadow: var(--shadow-up); }
+
+.check { display: flex; align-items: center; gap: 0.6rem; margin-block-start: 1.2rem; }
+.check input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
+#translate-now { align-self: flex-start; margin-block-start: 0.5rem; }

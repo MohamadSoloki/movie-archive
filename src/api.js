@@ -10,20 +10,20 @@ const { savePoster } = require('./core/posters.js');
 const { runQueue } = require('./core/pipeline.js');
 const fs = require('node:fs');
 const fix = require('./core/fix.js');
-const { createTranslator, translateCached } = require('./core/translate.js');
+const { createTranslator, translateCached, pretranslate } = require('./core/translate.js');
 const { forgetSeasons } = require('./core/cache.js');
 const { createSearch } = require('./core/search.js');
 const { lightOf } = require('./core/library.js');
 const tags = require('./core/tags.js');
 const transfer = require('./core/transfer.js');
 
-const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail'];
+const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate'];
 
 function createApi({
   db, userDataDir, fetch = globalThis.fetch, listDrives = defaultListDrives,
   openPath = async () => '', openExternal = async () => {},
   updater = { check: async () => ({ state: 'dev' }), install() {} },
-  concurrency = 5,
+  concurrency = 5, translatePause = 700,
   freeSpace = (dir) => { try { const s = fs.statfsSync(dir); return s.bavail * s.bsize; } catch { return Infinity; } },
 }) {
   const search = createSearch(db);
@@ -69,6 +69,7 @@ function createApi({
   // ---- copy list: copy-only, sources are read, the target is always outside the archive folders ----
 
   let transferAbort = null;
+  let translating = null;
   const sanitize = (text) => String(text).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/[. ]+$/, '') || '_';
 
   async function planTransfer({ keys = [], destDir, name }) {
@@ -332,6 +333,23 @@ function createApi({
         seasons.get(e.season).episodes.push({ number: e.number, name: e.name, released: e.released, rating: e.rating, plot: e.plot || null });
       }
       return [...seasons.values()];
+    },
+    // translates stored plots in the background; the renderer starts it on launch and from the settings
+    async startPretranslate(onProgress = () => {}) {
+      if (translating) return { ok: false, error: 'busy' };
+      translating = new AbortController();
+      try {
+        const translator = createTranslator({ fetch, email: getSetting(db, 'translateEmail') });
+        const r = await pretranslate(db, translator, {
+          pause: translatePause, signal: translating.signal, onProgress: (p) => onProgress({ type: 'translate', ...p }),
+        });
+        return { ok: true, ...r };
+      } finally {
+        translating = null;
+      }
+    },
+    async stopPretranslate() {
+      translating?.abort();
     },
     async translate(text) {
       try {

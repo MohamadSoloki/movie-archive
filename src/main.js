@@ -27,7 +27,7 @@ app.whenReady().then(() => {
   });
 
   for (const name of Object.keys(api)) {
-    if (name === 'startQueue' || name === 'startTransfer') {
+    if (name === 'startQueue' || name === 'startTransfer' || name === 'startPretranslate') {
       // long runs: progress goes back on api:progress, the callback is always the last argument
       ipcMain.handle(`api:${name}`, (e, ...args) => api[name](...args, (p) => e.sender.send('api:progress', p)));
     } else {

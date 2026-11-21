@@ -12,7 +12,7 @@ const OMDB_BODY = {
   imdbRating: '7.8', Runtime: '176 min', Actors: 'Robert Pattinson', Poster: 'https://img.example/p.jpg',
 };
 
-function setup({ key = 'K', openPath, openExternal, mymemory, freeSpace } = {}) {
+function setup({ key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause } = {}) {
   const media = fs.mkdtempSync(path.join(os.tmpdir(), 'media-'));
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'ud-'));
   const fetchCalls = [];
@@ -30,7 +30,7 @@ function setup({ key = 'K', openPath, openExternal, mymemory, freeSpace } = {}) 
   const db = openDb();
   const state = { online: true };
   const api = createApi({
-    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace,
+    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace, translatePause,
     listDrives: async () => (state.online ? [{ serial: 'S1', label: 'Test', root: media + path.sep }] : []),
   });
   return { api, db, media, userData, fetchCalls, key, state };
@@ -569,4 +569,31 @@ test('dropping a non-video file, a missing path or a path outside every drive is
   assert.deepEqual(r.failed.map((f) => f.error), ['not_media', 'not_found', 'no_drive', 'drive_root']);
   assert.equal(r.added, 0);
   assert.deepEqual(await api.getRoots(), []);
+});
+
+// ---- background translation ----
+
+test('startPretranslate translates stored plots with the saved e-mail, reports progress and refuses a second run', async () => {
+  const urls = [];
+  const { api, db } = setup({ mymemory: (url) => { urls.push(String(url)); return { responseStatus: 200, responseData: { translatedText: 'خلاصه' } }; }, translatePause: 0 });
+  await api.setSettings({ translateEmail: 'me@example.com' });
+  for (const [i, plot] of ['A first plot.', 'A second plot.'].entries()) {
+    db.prepare("INSERT INTO titles(imdb_id, source, title, plot) VALUES(?, 'omdb', ?, ?)").run(`tt${i}`, `T${i}`, plot);
+  }
+  const seen = [];
+  const run = api.startPretranslate((p) => seen.push(p));
+  assert.deepEqual(await api.startPretranslate(() => {}), { ok: false, error: 'busy' });
+  const r = await run;
+  assert.deepEqual([r.ok, r.translated, r.remaining, r.stoppedBy], [true, 2, 0, null]);
+  assert.ok(seen.length === 2 && seen.every((p) => p.type === 'translate' && p.total === 2));
+  assert.ok(urls.every((u) => u.includes('de=me%40example.com')));
+  assert.equal((await api.translate('A first plot.')).text, 'خلاصه'); // now answered from the stored translation
+  assert.equal(urls.length, 2);
+});
+
+test('autoTranslate is a setting that is on by default', async () => {
+  const { api } = setup();
+  assert.equal((await api.getSettings()).autoTranslate, true);
+  await api.setSettings({ autoTranslate: false });
+  assert.equal((await api.getSettings()).autoTranslate, false);
 });
