@@ -2,7 +2,7 @@
 const path = require('node:path');
 const { getSetting, setSetting } = require('./core/db.js');
 const { listDrives: defaultListDrives, refreshDrives, toDriveRel } = require('./core/drives.js');
-const { scanFolder } = require('./core/scanner.js');
+const { scanFolder, VIDEO } = require('./core/scanner.js');
 const { syncScan } = require('./core/sync.js');
 const { createOmdb } = require('./core/omdb.js');
 const { createJikan } = require('./core/jikan.js');
@@ -216,6 +216,31 @@ function createApi({
       }
       db.prepare('INSERT OR IGNORE INTO roots(drive_serial, rel_path, single) VALUES(?, ?, ?)').run(hit.serial, hit.relPath, single ? 1 : 0);
       return { ok: true };
+    },
+    // Files or folders dropped on the window. A folder becomes a single archive folder; a video file brings its own folder.
+    async addDropped(paths) {
+      const res = { added: 0, already: 0, failed: [] };
+      const online = (await getDrives()).filter((d) => d.online);
+      const roots = db.prepare('SELECT drive_serial, rel_path, single FROM roots').all();
+      for (const p of paths) {
+        let st;
+        try { st = fs.statSync(p); } catch { res.failed.push({ path: p, error: 'not_found' }); continue; }
+        if (st.isFile() && !VIDEO.has(path.extname(p).slice(1).toLowerCase())) { res.failed.push({ path: p, error: 'not_media' }); continue; }
+        if (!st.isFile() && !st.isDirectory()) { res.failed.push({ path: p, error: 'not_found' }); continue; }
+        const dir = st.isFile() ? path.dirname(p) : p;
+        const hit = toDriveRel(online, dir);
+        if (!hit) { res.failed.push({ path: p, error: 'no_drive' }); continue; }
+        const low = hit.relPath.toLowerCase();
+        const covered = roots.some((r) => r.drive_serial === hit.serial && (r.single
+          ? r.rel_path.toLowerCase() === low
+          : !r.rel_path || low === r.rel_path.toLowerCase() || low.startsWith(`${r.rel_path.toLowerCase()}/`)));
+        if (covered) { res.already += 1; continue; }
+        const r = await this.addRoot(dir, true);
+        if (!r.ok) { res.failed.push({ path: p, error: r.error }); continue; }
+        roots.push({ drive_serial: hit.serial, rel_path: hit.relPath, single: 1 });
+        res.added += 1;
+      }
+      return res;
     },
     async removeRoot(id) {
       const root = db.prepare('SELECT drive_serial, rel_path, single FROM roots WHERE id = ?').get(id);

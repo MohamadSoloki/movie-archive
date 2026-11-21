@@ -60,6 +60,7 @@
       case 'no_drive': return t('err_no_drive');
       case 'drive_root': return t('err_drive_root');
       case 'not_folder': return t('err_not_folder');
+      case 'not_media': return t('err_not_media');
       case 'offline': return t('err_open_offline');
       case 'missing': return t('err_open_missing');
       case 'unknown': return t('err_open_unknown');
@@ -725,14 +726,42 @@
     if (p) $('root-path').value = p;
   });
 
-  $('scan').addEventListener('click', async () => {
+  async function runScan() {
     busy(true);
     try {
       const r = await api.scan();
-      setStatus(t('scan_done', { n: r.scanned, added: r.added }));
       await renderRoots();
       await refresh(true);
-    } catch { setStatus(t('err_unexpected')); } finally { busy(false); }
+      return r;
+    } catch { setStatus(t('err_unexpected')); return null; } finally { busy(false); }
+  }
+
+  $('scan').addEventListener('click', async () => {
+    const r = await runScan();
+    if (r) setStatus(t('scan_done', { n: r.scanned, added: r.added }));
+  });
+
+  // ---- drag and drop: folders become single archive folders, a video brings its own folder ----
+
+  let dragDepth = 0;
+  const carriesFiles = (ev) => [...(ev.dataTransfer?.types ?? [])].includes('Files');
+  window.addEventListener('dragenter', (ev) => { if (carriesFiles(ev)) { dragDepth += 1; $('drop').hidden = false; } });
+  window.addEventListener('dragover', (ev) => { if (carriesFiles(ev)) ev.preventDefault(); });
+  window.addEventListener('dragleave', (ev) => { if (carriesFiles(ev) && (dragDepth -= 1) <= 0) { dragDepth = 0; $('drop').hidden = true; } });
+  window.addEventListener('drop', async (ev) => {
+    if (!carriesFiles(ev)) return;
+    ev.preventDefault();
+    dragDepth = 0;
+    $('drop').hidden = true;
+    const paths = [...ev.dataTransfer.files].map((f) => api.pathOf(f)).filter(Boolean);
+    if (!paths.length) return;
+    const r = await api.addDropped(paths);
+    if (r.added || r.already) await runScan();
+    const parts = [];
+    if (r.added) parts.push(t('drop_done', { added: r.added }));
+    else if (r.already) parts.push(t('drop_already'));
+    if (r.failed.length) parts.push(t('drop_failed', { error: errText(r.failed[0].error) }));
+    setStatus(parts.join(' '));
   });
 
   // first press checks (and downloads); once an update is ready the same button installs it

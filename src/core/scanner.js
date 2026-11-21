@@ -91,4 +91,4 @@ function scanFolder(absPath, relPath, { ignore = [], collections = [], fsApi = n
   return { ok: true, entries, unreadable };
 }
 
-module.exports = { scanFolder };
+module.exports = { scanFolder, VIDEO };

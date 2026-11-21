@@ -526,3 +526,47 @@ test('a film and the collection that holds it are copied once, not twice', async
   const plan = await api.planTransfer({ keys: [pack.key, pack.members[0].key], destDir: dest, name: 'claude' });
   assert.equal(plan.jobs.length, 1);
 });
+
+// ---- drag and drop ----
+
+test('dropping a folder adds it as one single folder and the scan finds it', async () => {
+  const { api, media } = setup();
+  fs.mkdirSync(path.join(media, 'Downloads', 'dune 2021'), { recursive: true });
+  fs.writeFileSync(path.join(media, 'Downloads', 'dune 2021', 'movie.mkv'), 'x');
+  const r = await api.addDropped([path.join(media, 'Downloads', 'dune 2021')]);
+  assert.deepEqual(r, { added: 1, already: 0, failed: [] });
+  const [root] = await api.getRoots();
+  assert.deepEqual([root.relPath, root.single], ['Downloads/dune 2021', true]);
+  assert.deepEqual(await api.scan(), { scanned: 1, added: 1 });
+});
+
+test('dropping a video file adds the folder that holds it', async () => {
+  const { api, media } = setup();
+  fs.mkdirSync(path.join(media, 'Downloads', 'dune 2021'), { recursive: true });
+  fs.writeFileSync(path.join(media, 'Downloads', 'dune 2021', 'movie.mkv'), 'x');
+  const r = await api.addDropped([path.join(media, 'Downloads', 'dune 2021', 'movie.mkv')]);
+  assert.deepEqual([r.added, (await api.getRoots())[0].relPath], [1, 'Downloads/dune 2021']);
+});
+
+test('dropping something an archive folder already covers adds nothing; dropping it twice adds it once', async () => {
+  const { api, media } = setup();
+  fs.mkdirSync(path.join(media, 'Movies', 'dune 2021'), { recursive: true });
+  fs.mkdirSync(path.join(media, 'Other', 'alien 1979'), { recursive: true });
+  await api.addRoot(path.join(media, 'Movies'));
+  assert.deepEqual(await api.addDropped([path.join(media, 'Movies', 'dune 2021')]), { added: 0, already: 1, failed: [] });
+  const twice = path.join(media, 'Other', 'alien 1979');
+  assert.deepEqual(await api.addDropped([twice, twice]), { added: 1, already: 1, failed: [] });
+  assert.equal((await api.getRoots()).length, 2);
+});
+
+test('dropping a non-video file, a missing path or a path outside every drive is reported, not added', async () => {
+  const { api, media } = setup();
+  fs.writeFileSync(path.join(media, 'note.txt'), 'x');
+  fs.mkdirSync(path.join(media, 'D'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'elsewhere-'));
+  fs.writeFileSync(path.join(media, 'movie.mkv'), 'x');
+  const r = await api.addDropped([path.join(media, 'note.txt'), path.join(media, 'nope'), outside, path.join(media, 'movie.mkv')]);
+  assert.deepEqual(r.failed.map((f) => f.error), ['not_media', 'not_found', 'no_drive', 'drive_root']);
+  assert.equal(r.added, 0);
+  assert.deepEqual(await api.getRoots(), []);
+});
