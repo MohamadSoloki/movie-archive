@@ -411,6 +411,24 @@ function createApi({
     },
     planTransfer,
     startTransfer,
+    // the owner's named copy lists (what is in each and where it goes); the renderer keeps them in memory and saves on change
+    async getCopyLists() {
+      return getSetting(db, 'copyLists') ?? [];
+    },
+    async saveCopyLists(lists) {
+      const str = (v, max) => (typeof v === 'string' && v.length <= max ? v : null);
+      const clean = (Array.isArray(lists) ? lists : []).slice(0, 30).flatMap((l) => {
+        const id = str(l?.id, 40);
+        const name = str(l?.name, 100);
+        if (!id || name === null) return [];
+        const items = (Array.isArray(l.items) ? l.items : []).slice(0, 5000)
+          .filter((x) => Array.isArray(x) && str(x[0], 300) && typeof x[1] === 'string')
+          .map((x) => [x[0], x[1].slice(0, 200)]);
+        return [{ id, name, dest: str(l.dest, 500) ?? '', items }];
+      });
+      setSetting(db, 'copyLists', clean);
+      return { ok: true };
+    },
     async getCopies() {
       return copies.listCopies(db);
     },

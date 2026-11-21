@@ -729,3 +729,15 @@ test('removeCopy forgets the record and leaves the files; verify and repair are 
   assert.equal(fs.existsSync(mkv(target, 'dune 2021')), true);
   assert.deepEqual(await api.verifyCopy(id, { deep: true }), { ok: false, error: 'unknown' });
 });
+
+test('copy lists are saved and come back; junk in them is dropped, not stored', async () => {
+  const { api } = setup();
+  assert.deepEqual(await api.getCopyLists(), []);
+  const good = { id: 'a1', name: 'claude', dest: 'E:\\Out', items: [['t:1', 'Dune'], ['c:S|Trilogy', 'Trilogy']] };
+  await api.saveCopyLists([good, { id: 'b2', name: 'فلش علی', dest: '', items: [] }]);
+  assert.deepEqual((await api.getCopyLists()).map((l) => [l.id, l.name, l.dest, l.items.length]), [['a1', 'claude', 'E:\\Out', 2], ['b2', 'فلش علی', '', 0]]);
+  await api.saveCopyLists([good, 'x', null, { id: 5, name: 'bad' }, { id: 'c3', name: 'ok', dest: 7, items: [['t:2', 'A'], 'junk', [1, 2], ['t:3']] }]);
+  const saved = await api.getCopyLists();
+  assert.deepEqual(saved.map((l) => l.id), ['a1', 'c3']);
+  assert.deepEqual([saved[1].dest, saved[1].items], ['', [['t:2', 'A']]]);
+});

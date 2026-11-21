@@ -2,7 +2,7 @@
 (() => {
   const api = window.api;
   const $ = (id) => document.getElementById(id);
-  const state = { lang: 'fa', entries: [], selected: null, cart: new Map(), selecting: false, picked: new Set(), copyDest: '', copyPlan: null, copying: false, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], tags: [], tagCounts: [], countries: [], countryCounts: [], knownTags: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, sort: 'name', rootCount: 0 };
+  const state = { lang: 'fa', entries: [], selected: null, cart: new Map(), lists: [], listId: null, copies: [], reports: {}, selecting: false, picked: new Set(), copyDest: '', copyPlan: null, copying: false, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], tags: [], tagCounts: [], countries: [], countryCounts: [], knownTags: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, sort: 'name', rootCount: 0 };
   const t = (key, vars) => window.i18n.t(state.lang, key, vars);
   const genreName = (g) => window.i18n.genreLabel(state.lang, g);
   const countryName = (g) => window.i18n.countryLabel(state.lang, g);
@@ -543,6 +543,7 @@
   function toggleCart(key, title) {
     if (state.cart.has(key)) state.cart.delete(key); else state.cart.set(key, title);
     renderCartBadge();
+    saveLists();
     const cardEl = [...document.querySelectorAll('.card')].find((c) => c.dataset.key === key);
     if (cardEl) {
       cardEl.querySelector('.cart-mark')?.remove();
@@ -579,6 +580,7 @@
   }
 
   function renderCopy() {
+    renderListSelect();
     $('copy-items').replaceChildren(...[...state.cart].map(([key, title]) => h('li', {},
       h('span', { dir: 'auto' }, title),
       h('button', { type: 'button', class: 'icon-btn x', 'aria-label': t('copy_item_remove', { title }), title: t('copy_item_remove', { title }),
@@ -607,14 +609,145 @@
     } catch { r = { ok: false, error: 'busy' }; }
     state.copying = false;
     $('copy-bar').hidden = true;
+    await loadCopies();
+    const v = r.verify;
     if (!r.ok) copyMsg(t(`copy_err_${r.error}`), true);
-    else if (r.cancelled) copyMsg(t('copy_cancelled'), true);
-    else if (r.failed.length) copyMsg(t('copy_failed', { titles: r.failed.map((f) => f.title).join(state.lang === 'fa' ? '، ' : ', ') }), true);
-    else {
-      copyMsg(t('copy_done', { n: r.done, size: size(r.bytes) }));
+    else if (r.cancelled || v?.cancelled) copyMsg(t('copy_cancelled'), true);
+    else if (r.failed.length) copyMsg(t('copy_failed', { titles: joinList(r.failed.map((f) => f.title)) }), true);
+    else if (v?.problems.length) {
+      state.reports[state.copies.find((c) => c.state === 'problem')?.id] = reportOf(v.problems, v.failed);
+      copyMsg(t('copy_verify_bad', { titles: joinList(v.problems.map((p) => p.title)) }), true);
+      renderDone();
+    } else {
+      copyMsg(t(v?.repaired ? 'copy_verify_fixed' : 'copy_verify_ok', { n: r.done, size: size(r.bytes), files: v?.checked ?? 0, r: v?.repaired ?? 0 }));
       for (const key of [...state.cart.keys()]) toggleCart(key, '');
     }
     await updateCopyPlan();
+  }
+
+  // ---- named copy lists -----------------------------------------------------
+  // Each list has a name (also the new folder's name), a destination and its films. `state.cart` and `state.copyDest`
+  // always mirror the list on screen, so the rest of the copy code works on one list at a time.
+
+  const newId = () => Math.random().toString(36).slice(2, 10);
+  const currentList = () => state.lists.find((l) => l.id === state.listId);
+  let saveTimer = null;
+
+  function saveLists() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => api.saveCopyLists(state.lists.map((l) => ({ id: l.id, name: l.name, dest: l.dest, items: [...l.cart] }))), 400);
+  }
+
+  function makeList(name) {
+    const l = { id: newId(), name: name || t('copy_list_default', { n: state.lists.length + 1 }), dest: '', cart: new Map() };
+    state.lists.push(l);
+    return l;
+  }
+
+  function renderListSelect() {
+    $('copy-list').replaceChildren(...state.lists.map((l) => h('option', { value: l.id, selected: l.id === state.listId }, `${l.name} (${l.cart.size})`)));
+    $('copy-del').disabled = state.copying || state.lists.length < 2;
+    $('copy-new').disabled = state.copying;
+    $('copy-list').disabled = state.copying;
+  }
+
+  function selectList(id) {
+    const l = state.lists.find((x) => x.id === id) || state.lists[0];
+    state.listId = l.id;
+    state.cart = l.cart;
+    state.copyDest = l.dest;
+    $('copy-name').value = l.name;
+    $('copy-dest').value = l.dest;
+    renderCartBadge();
+    renderGrid(); // the check marks on the cards belong to the list on screen
+    renderCopy();
+    updateCopyPlan();
+  }
+
+  async function loadLists() {
+    for (const x of await api.getCopyLists()) state.lists.push({ id: x.id, name: x.name, dest: x.dest, cart: new Map(x.items) });
+    if (!state.lists.length) makeList();
+    selectList(state.lists[0].id);
+  }
+
+  // ---- finished copies: check and repair -----------------------------------------
+
+  const reasonText = (f) => t(`copy_reason_${f.reason}`);
+  const joinList = (arr) => arr.join(state.lang === 'fa' ? '، ' : ', ');
+
+  async function loadCopies() {
+    state.copies = await api.getCopies();
+    renderDone();
+  }
+
+  // A check, a repair and a copy share one slot in the app; the same progress bar and cancel button serve all three.
+  async function withBusy(run) {
+    state.copying = true;
+    copyMsg('');
+    $('copy-bar').hidden = false;
+    $('copy-bar').value = 0;
+    renderCopy();
+    renderDone();
+    progressHandlers.verify = (p) => {
+      $('copy-bar').value = p.totalBytes ? Math.min(100, Math.round((p.doneBytes / p.totalBytes) * 100)) : 0;
+      if (p.title) copyMsg(t(p.phase === 'repair' ? 'copy_repairing' : 'copy_verifying', { i: p.index + 1, n: p.total, title: p.title }));
+    };
+    let r;
+    try { r = await run(); } catch { r = { ok: false, error: 'busy' }; }
+    state.copying = false;
+    $('copy-bar').hidden = true;
+    await loadCopies();
+    renderCopy();
+    return r;
+  }
+
+  // the details shown under a copy: what is wrong, per film
+  function reportOf(problems, failed = []) {
+    const why = new Map(failed.map((f) => [f.rel, t(`copy_fail_${f.reason}`)]));
+    return problems.map((p) => ({
+      title: p.title,
+      text: joinList(p.files.slice(0, 3).map((f) => t('copies_file', { rel: f.rel, reason: why.get(f.rel) || reasonText(f) }))) + (p.files.length > 3 ? ` +${p.files.length - 3}` : ''),
+    }));
+  }
+
+  async function checkCopy(c, deep) {
+    const r = await withBusy(() => api.verifyCopy(c.id, { deep }));
+    if (!r.ok) { copyMsg(t(`copy_err_${r.error}`), true); return; }
+    if (r.cancelled) { copyMsg(t('copies_cancelled'), true); return; }
+    state.reports[c.id] = reportOf(r.problems);
+    copyMsg(r.problems.length ? t('copy_verify_bad', { titles: joinList(r.problems.map((p) => p.title)) }) : t('copies_ok', { n: r.checked }), r.problems.length > 0);
+    renderDone();
+  }
+
+  async function repairCopy(c) {
+    const r = await withBusy(() => api.repairCopy(c.id));
+    if (!r.ok) { copyMsg(t(`copy_err_${r.error}`), true); return; }
+    if (r.cancelled) { copyMsg(t('copies_cancelled'), true); return; }
+    state.reports[c.id] = reportOf(r.verify.problems, r.failed);
+    copyMsg(r.verify.problems.length ? t('copy_verify_bad', { titles: joinList(r.verify.problems.map((p) => p.title)) }) : t('copies_repaired', { n: r.repaired }), r.verify.problems.length > 0);
+    renderDone();
+  }
+
+  function renderDone() {
+    $('copy-done-empty').hidden = state.copies.length > 0;
+    const stateKey = (c) => (c.state === 'ok' ? 'ok' : c.state === 'problem' ? 'problem' : 'new');
+    $('copy-done').replaceChildren(...state.copies.map((c) => {
+      const report = state.reports[c.id];
+      const off = state.copying;
+      return h('li', { class: `done-item ${stateKey(c)}` },
+        h('div', { class: 'cal-main' },
+          h('strong', { dir: 'auto' }, c.name),
+          h('span', { class: `tag st-${stateKey(c)}` }, t(`copies_state_${stateKey(c)}`)),
+          h('span', { class: 'cal-when' }, t('copies_info', { n: c.files, size: size(c.bytes) }))),
+        h('div', { class: 'path', dir: 'ltr' }, c.target),
+        c.state === 'problem' && !report ? h('p', { class: 'help' }, t('copies_problem_hint')) : null,
+        report?.length ? h('ul', { class: 'plain problems' }, report.map((x) => h('li', { dir: 'auto' }, `${x.title}: `, h('span', { class: 'path' }, x.text)))) : null,
+        h('div', { class: 'cal-actions' },
+          h('button', { type: 'button', class: 'btn', disabled: off, onclick: () => checkCopy(c, true) }, t('copies_check')),
+          h('button', { type: 'button', class: 'btn', disabled: off, onclick: () => checkCopy(c, false) }, t('copies_quick')),
+          c.state === 'problem' ? h('button', { type: 'button', class: 'btn primary', disabled: off, onclick: () => repairCopy(c) }, t('copies_repair')) : null,
+          h('button', { type: 'button', class: 'btn', disabled: off, onclick: async () => { if (window.confirm(t('copies_confirm_remove'))) { await api.removeCopy(c.id); await loadCopies(); } } }, t('copies_remove'))));
+    }));
   }
 
   // The owner's own tags: filled accent chips (genres from OMDb stay outlined). Added with Enter or a comma, removed with the x.
@@ -819,14 +952,28 @@
   $('sel-tag-remove').addEventListener('click', () => tagPicked(true));
   $('sel-tag').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); tagPicked(false); } });
   $('sel-copy').addEventListener('click', copyPicked);
-  $('copy-btn').addEventListener('click', () => { renderCopy(); $('copy-dlg').showModal(); updateCopyPlan(); });
+  $('copy-btn').addEventListener('click', async () => { renderCopy(); $('copy-dlg').showModal(); updateCopyPlan(); await loadCopies(); });
   $('copy-x').addEventListener('click', () => { if (!state.copying) $('copy-dlg').close(); });
   $('copy-dlg').addEventListener('cancel', (ev) => { if (state.copying) ev.preventDefault(); }); // Esc must not hide a running copy
-  $('copy-name').addEventListener('input', () => { clearTimeout(planTimer); planTimer = setTimeout(updateCopyPlan, 300); });
+  $('copy-name').addEventListener('input', () => {
+    const l = currentList();
+    if (l) { l.name = $('copy-name').value; saveLists(); renderListSelect(); }
+    clearTimeout(planTimer);
+    planTimer = setTimeout(updateCopyPlan, 300);
+  });
+  $('copy-list').addEventListener('change', () => selectList($('copy-list').value));
+  $('copy-new').addEventListener('click', () => { selectList(makeList().id); saveLists(); $('copy-name').focus(); });
+  $('copy-del').addEventListener('click', () => {
+    if (state.lists.length < 2 || !window.confirm(t('copy_confirm_delete_list'))) return;
+    state.lists = state.lists.filter((l) => l.id !== state.listId);
+    selectList(state.lists[0].id);
+    saveLists();
+  });
   $('copy-browse').addEventListener('click', async () => {
     const p = await api.pickFolder();
     if (!p) return;
     state.copyDest = p;
+    if (currentList()) { currentList().dest = p; saveLists(); }
     $('copy-dest').value = p;
     updateCopyPlan();
   });
@@ -1047,9 +1194,10 @@
     applyLang();
     await renderRoots();
     await refresh();
-    // a few seconds after launch, so the first screen is not competing with it
+    await loadLists();
     await pollCalendar(true);
     setInterval(() => pollCalendar(false), 20000);
+    // a few seconds after launch, so the first screen is not competing with it
     if (state.lang === 'fa' && s.autoTranslate !== false) setTimeout(() => backgroundTranslate(false), 4000);
   })();
 })();
