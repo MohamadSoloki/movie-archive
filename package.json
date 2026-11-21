@@ -30,7 +30,8 @@
       {
         "provider": "github",
         "owner": "MohamadSoloki",
-        "repo": "movie-archive"
+        "repo": "movie-archive",
+        "releaseType": "release"
       }
     ]
   }

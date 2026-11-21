@@ -66,6 +66,7 @@ Plans: `docs/superpowers/plans/2026-11-17-movie-archive.md`, `docs/superpowers/p
 3. GitHub Actions (`.github/workflows/release.yml`) runs the tests, builds the installer on Windows and publishes a
    GitHub Release. Installed copies check for it on start and install it when the app closes.
    The tag must equal `v` + the `package.json` version, or the job fails on purpose.
+   `build.publish[0].releaseType` is `release`: electron-builder's default is `draft`, and the updater never sees drafts. The release job has a `concurrency` group per tag so a second run cannot create a second release.
 4. The installer is not code-signed, so Windows SmartScreen shows a warning on the first install.
 
 ## Known gaps (deferred on purpose)
