@@ -5,8 +5,12 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
-  # Actions tab -> CI and release -> Run workflow: releases the version in package.json, no tag needed
+  # Actions tab -> CI and release -> Run workflow -> type the version (e.g. 0.4.1): no tag and no package.json edit needed
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number, e.g. 0.4.1 (must be higher than the previous release)"
+        required: true
 
 jobs:
   test:
@@ -20,15 +24,16 @@ jobs:
       - run: npm ci
       - run: npm test
 
-  # A tag like v0.2.0, or a hand-started run, builds the Windows installer and publishes it as a GitHub Release.
-  # The installed app finds that release and updates itself. GitHub creates the tag v<version> itself when a hand-started run publishes.
+  # A hand-started run (typed version) or a tag like v0.4.1 builds the Windows installer and publishes it as a GitHub Release.
+  # The version is written into package.json at build time, so the repo never needs a version-bump commit.
+  # The installed app finds the release and offers the update itself. GitHub creates the tag v<version> when the release is published.
   release:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     needs: test
     runs-on: windows-latest
-    # a second run for the same tag would race the first and create a second release
+    # a second run for the same version would race the first and create a second release
     concurrency:
-      group: release-${{ github.ref }}
+      group: release-${{ github.event.inputs.version || github.ref }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -38,21 +43,29 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Tag must match package.json version
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
-      - name: Version must be new
-        if: github.event_name == 'workflow_dispatch'
+      - name: Set the version
         shell: bash
         env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          if gh release view "v$VERSION" >/dev/null 2>&1; then
-            echo "Release v$VERSION already exists. Raise version in package.json and push first."
+          VERSION="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
+          VERSION="${VERSION#v}"
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Version must look like 0.4.1, got: $VERSION"
             exit 1
           fi
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists. Use a higher version number."
+            exit 1
+          fi
+          VERSION="$VERSION" node -e '
+            const fs = require("fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            pkg.version = process.env.VERSION;
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+            console.log("version", pkg.version);
+          '
       - run: npm ci
       - run: npx electron-builder --win --publish always
         env:

@@ -5,7 +5,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 const METHODS = [
   'getSettings', 'setSettings', 'getDrives', 'addRoot', 'removeRoot', 'getRoots', 'scan', 'startQueue',
   'getEntries', 'applyFix', 'getCandidates', 'pickCandidate', 'posterPath',
-  'getEpisodes', 'translate', 'openLocation', 'openImdb', 'openCollection', 'checkUpdate', 'installUpdate', 'getEntry', 'addTag', 'removeTag', 'getTags', 'addTags', 'removeTags', 'addDropped', 'startPretranslate', 'stopPretranslate', 'planTransfer', 'startTransfer', 'cancelTransfer', 'getCopyLists', 'saveCopyLists', 'getCopies', 'verifyCopy', 'repairCopy', 'removeCopy', 'getVersion', 'calendarList', 'calendarAdd', 'calendarUpdate', 'calendarTick', 'calendarSkip', 'calendarRemove', 'getAiring',
+  'getEpisodes', 'translate', 'openLocation', 'openImdb', 'openCollection', 'checkUpdate', 'downloadUpdate', 'installUpdate', 'getEntry', 'addTag', 'removeTag', 'getTags', 'addTags', 'removeTags', 'addDropped', 'startPretranslate', 'stopPretranslate', 'planTransfer', 'startTransfer', 'cancelTransfer', 'getCopyLists', 'saveCopyLists', 'getCopies', 'verifyCopy', 'repairCopy', 'removeCopy', 'getVersion', 'calendarList', 'calendarAdd', 'calendarUpdate', 'calendarTick', 'calendarSkip', 'calendarRemove', 'getAiring',
 ];
 
 const api = Object.fromEntries(METHODS.map((m) => [m, (...args) => ipcRenderer.invoke(`api:${m}`, ...args)]));

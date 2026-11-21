@@ -26,7 +26,7 @@ const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections'
 function createApi({
   db, userDataDir, fetch = globalThis.fetch, listDrives = defaultListDrives,
   openPath = async () => '', openExternal = async () => {},
-  updater = { check: async () => ({ state: 'dev' }), install() {} },
+  updater = { check: async () => ({ state: 'dev' }), download: async () => ({ state: 'dev' }), install() {} },
   concurrency = 5, translatePause = 700, now = () => Date.now(), clock = () => Date.now(), version = '',
   freeSpace = (dir) => { try { const s = fs.statfsSync(dir); return s.bavail * s.bsize; } catch { return Infinity; } },
 }) {
@@ -556,6 +556,7 @@ function createApi({
       return { ok: true };
     },
     checkUpdate: () => updater.check(),
+    downloadUpdate: (onProgress = () => {}) => updater.download(onProgress),
     installUpdate() { updater.install(); },
     applyFix: fixLocation,
     async getCandidates(locationId, query = '') {

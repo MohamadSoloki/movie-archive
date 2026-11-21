@@ -77,7 +77,6 @@
     document.documentElement.dir = state.lang === 'fa' ? 'rtl' : 'ltr';
     document.title = t('app_title');
     for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
-    if ($('update').dataset.v) $('update-label').textContent = t('update_install', { v: $('update').dataset.v });
     for (const el of document.querySelectorAll('[data-i18n-placeholder]')) el.placeholder = t(el.dataset.i18nPlaceholder);
     $('lang-label').textContent = t('lang_toggle');
     for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === state.tab));
@@ -906,22 +905,51 @@
     setStatus(parts.join(' '));
   });
 
-  // first press checks (and downloads); once an update is ready the same button installs it
-  $('update').addEventListener('click', async () => {
-    if ($('update').dataset.v) { await api.installUpdate(); return; }
-    $('update').disabled = true;
-    setStatus(t('update_checking'));
+  // ---- app update: a banner offers it, Update downloads with a percent, then the app restarts into it ----
+
+  let updBusy = false;
+  const updBar = $('upd-bar');
+  function showUpd(children, error) {
+    updBar.className = error ? 'upd err' : 'upd';
+    updBar.replaceChildren(...children);
+    updBar.hidden = false;
+  }
+  const hideUpd = () => { updBar.hidden = true; };
+  async function checkUpdate(manual) {
+    if (updBusy) return;
+    if (manual) { $('update').disabled = true; setStatus(t('update_checking')); }
     try {
       const r = await api.checkUpdate();
-      if (r.state === 'ready') {
-        $('update').dataset.v = r.version;
-        $('update-label').textContent = t('update_install', { v: r.version });
-        $('update-label').hidden = false;
-        $('update').classList.add('ready');
-        setStatus(t('update_ready', { v: r.version }));
-      } else setStatus(t(`update_${r.state}`));
-    } catch { setStatus(t('err_unexpected')); } finally { $('update').disabled = false; }
-  });
+      if (r.state === 'available') {
+        showUpd([h('span', {}, t('upd_new', { v: r.version })), h('span', { class: 'grow' }),
+          h('button', { type: 'button', class: 'btn primary', onclick: doUpdate }, t('upd_do')),
+          h('button', { type: 'button', class: 'btn', onclick: hideUpd }, t('upd_later'))]);
+        if (manual) setStatus('');
+      } else if (manual) setStatus(t(`update_${r.state}`));
+    } catch { if (manual) setStatus(t('err_unexpected')); } finally { if (manual) $('update').disabled = false; }
+  }
+  async function doUpdate() {
+    if (updBusy) return;
+    updBusy = true;
+    const bar = h('progress', { max: '100', value: '0' });
+    const pct = h('span', { dir: 'ltr' }, '0%');
+    showUpd([h('span', {}, t('upd_downloading')), bar, pct]);
+    progressHandlers.update = (p) => { bar.value = p.percent; pct.textContent = `${p.percent}%`; };
+    let r;
+    try { r = await api.downloadUpdate(); } catch { r = { state: 'error' }; }
+    if (r.state === 'ready') {
+      showUpd([h('span', {}, t('upd_installing'))]);
+      await api.installUpdate();
+      return;
+    }
+    updBusy = false;
+    showUpd([h('span', {}, t('upd_failed', { e: r.message || t('update_error') })), h('span', { class: 'grow' }),
+      h('button', { type: 'button', class: 'btn', onclick: doUpdate }, t('upd_retry'))], true);
+  }
+  $('update').addEventListener('click', () => checkUpdate(true));
+  // silent check a few seconds after launch, then every 6 hours; only a found update shows anything
+  setTimeout(() => checkUpdate(false), 4000);
+  setInterval(() => checkUpdate(false), 6 * 3600 * 1000);
 
   $('fetch').addEventListener('click', async () => {
     busy(true);

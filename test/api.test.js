@@ -12,7 +12,7 @@ const OMDB_BODY = {
   imdbRating: '7.8', Runtime: '176 min', Actors: 'Robert Pattinson', Poster: 'https://img.example/p.jpg',
 };
 
-function setup({ key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause, now, clock, version } = {}) {
+function setup({ updater, key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause, now, clock, version } = {}) {
   const media = fs.mkdtempSync(path.join(os.tmpdir(), 'media-'));
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'ud-'));
   const fetchCalls = [];
@@ -30,7 +30,7 @@ function setup({ key = 'K', openPath, openExternal, mymemory, freeSpace, transla
   const db = openDb();
   const state = { online: true };
   const api = createApi({
-    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace, translatePause, now, clock, version,
+    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace, translatePause, now, clock, version, updater,
     listDrives: async () => (state.online ? [{ serial: 'S1', label: 'Test', root: media + path.sep }] : []),
   });
   return { api, db, media, userData, fetchCalls, key, state };
@@ -757,4 +757,20 @@ test('copy lists are saved and come back; junk in them is dropped, not stored', 
 test('getVersion returns the version the app was started with', async () => {
   const { api } = setup({ version: '1.2.3' });
   assert.equal(await api.getVersion(), '1.2.3');
+});
+
+test('the update calls are passed to the updater, progress goes to the callback', async () => {
+  const calls = [];
+  const updater = {
+    check: async () => ({ state: 'available', version: '9.9.9' }),
+    download: async (onProgress) => { onProgress({ type: 'update', percent: 40 }); return { state: 'ready' }; },
+    install: () => calls.push('install'),
+  };
+  const { api } = setup({ updater });
+  assert.deepEqual(await api.checkUpdate(), { state: 'available', version: '9.9.9' });
+  const seen = [];
+  assert.deepEqual(await api.downloadUpdate((p) => seen.push(p)), { state: 'ready' });
+  assert.deepEqual(seen, [{ type: 'update', percent: 40 }]);
+  api.installUpdate();
+  assert.deepEqual(calls, ['install']);
 });

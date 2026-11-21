@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { openDb } = require('./core/db.js');
 const { createApi } = require('./api.js');
-const { checkForUpdates, createUpdater } = require('./updater.js');
+const { createUpdater } = require('./updater.js');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'poster', privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -39,7 +39,7 @@ app.whenReady().then(() => {
   });
 
   for (const name of Object.keys(api)) {
-    if (name === 'startQueue' || name === 'startTransfer' || name === 'startPretranslate' || name === 'verifyCopy' || name === 'repairCopy') {
+    if (name === 'startQueue' || name === 'startTransfer' || name === 'startPretranslate' || name === 'verifyCopy' || name === 'repairCopy' || name === 'downloadUpdate') {
       // long runs: progress goes back on api:progress, the callback is always the last argument
       ipcMain.handle(`api:${name}`, (e, ...args) => api[name](...args, (p) => e.sender.send('api:progress', p)));
     } else {
@@ -58,7 +58,6 @@ app.whenReady().then(() => {
   });
   win.setMenuBarVisibility(false);
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  checkForUpdates({ isPackaged: app.isPackaged });
 });
 
 app.on('window-all-closed', () => app.quit());

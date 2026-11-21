@@ -12,19 +12,24 @@ test('release is published directly, because the updater cannot see drafts', () 
   assert.equal(pkg.build.publish[0].releaseType, 'release');
 });
 
-test('one release run per tag at a time', () => {
-  assert.match(workflow, /concurrency:\s*\n\s+group: release-\$\{\{ github\.ref \}\}\s*\n\s+cancel-in-progress: false/);
+test('one release run per version at a time', () => {
+  assert.match(workflow, /concurrency:\s*\n\s+group: release-\$\{\{ github\.event\.inputs\.version \|\| github\.ref \}\}\s*\n\s+cancel-in-progress: false/);
 });
 
-test('a release can be started by hand from the Actions tab, no tag needed', () => {
-  assert.match(workflow, /workflow_dispatch:/);
+test('a release is started by hand with a typed version, or by a tag', () => {
+  assert.match(workflow, /workflow_dispatch:\s*\n\s+inputs:\s*\n\s+version:\s*\n(?:\s+.*\n)*?\s+required: true/);
+  assert.match(workflow, /tags: \['v\*'\]/);
   assert.match(workflow, /if: github\.event_name == 'workflow_dispatch' \|\| startsWith\(github\.ref, 'refs\/tags\/v'\)/);
 });
 
-test('a hand-started release refuses a version that already has a release', () => {
-  assert.match(workflow, /gh release view "v\$VERSION"/);
+test('the typed version never goes into a shell script directly, only through an env variable', () => {
+  const runs = workflow.split('\n').filter((l) => /^\s+run:/.test(l) || /^\s{12,}\S/.test(l));
+  assert.ok(!runs.some((l) => /\$\{\{\s*github\.event\.inputs/.test(l) && !/^\s+(INPUT_VERSION|VERSION):/.test(l)));
+  assert.match(workflow, /INPUT_VERSION: \$\{\{ github\.event\.inputs\.version \}\}/);
 });
 
-test('the tag-matches-version check only runs for tag builds', () => {
-  assert.match(workflow, /name: Tag must match package\.json version\n\s+if: startsWith\(github\.ref, 'refs\/tags\/v'\)/);
+test('the version is checked, written into package.json at build time, and must be new', () => {
+  assert.match(workflow, /\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$/);
+  assert.match(workflow, /pkg\.version = process\.env\.VERSION/);
+  assert.match(workflow, /gh release view "v\$VERSION"/);
 });

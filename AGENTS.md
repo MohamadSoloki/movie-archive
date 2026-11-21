@@ -25,7 +25,7 @@ Plans: `docs/superpowers/plans/2026-11-17-movie-archive.md`, `docs/superpowers/p
 - `src/api.js` — wires core modules into one object. `src/main.js` + `src/preload.js` only expose it over IPC.
 - `src/renderer/` — vanilla HTML/JS, `i18n.js` holds both languages (keys must match; `test/i18n.test.js` checks).
   UI: no framework, no build. Light/dark tokens live in `styles.css` (`:root` light, dark via `prefers-color-scheme` and `[data-theme]`); `theme.js` (loaded in `<head>`) applies/saves the choice in localStorage. Font Vazirmatn is bundled in `renderer/fonts` (OFL). CSP forbids inline styles, so set dynamic values with `el.style.setProperty`. Icons are inline SVG (`ICONS` in `app.js`). The drive list is intentionally NOT shown on the main screen; archive folders are managed in `#folders-dlg`. Detail is a side drawer (`#detail`, full-screen under 860px). Cards: poster + rating chip + dot beside the name; no-poster films get a hue from the title.
-- `src/updater.js` — self-update from GitHub Releases (packaged app only). `createUpdater` backs the header Update button (`api.checkUpdate` → `{state: dev|latest|ready|error, version}`, then `api.installUpdate`); the startup check stays silent.
+- `src/updater.js` — self-update from GitHub Releases (packaged app only): `api.checkUpdate` / `api.downloadUpdate` / `api.installUpdate`, see Release below.
 
 ## Rules that must not break
 
@@ -62,13 +62,13 @@ Plans: `docs/superpowers/plans/2026-11-17-movie-archive.md`, `docs/superpowers/p
 
 ## Release (how the owner updates the app)
 
-1. Bump `version` in `package.json` (for example 0.1.0 → 0.2.0) and commit to `main`.
-2. Either start it by hand (GitHub → Actions → CI and release → Run workflow, no tag; GitHub creates tag `v<version>` when the release is published, and a `gh release view` step refuses a version that already has a release), or `git tag v0.2.0 && git push origin main --tags`.
-3. GitHub Actions (`.github/workflows/release.yml`) runs the tests, builds the installer on Windows and publishes a
-   GitHub Release. Installed copies check for it on start and install it when the app closes.
-   The tag must equal `v` + the `package.json` version, or the job fails on purpose.
-   `build.publish[0].releaseType` is `release`: electron-builder's default is `draft`, and the updater never sees drafts. The release job has a `concurrency` group per tag so a second run cannot create a second release.
-4. The installer is not code-signed, so Windows SmartScreen shows a warning on the first install.
+Same system as the owner's Music Player, adapted to Electron.
+
+1. GitHub → Actions → CI and release → Run workflow → type the version (`0.4.1`). No tag, no version-bump commit. A tag `v0.4.1` push also works (version = tag name).
+2. The release job validates the version (`N.N.N`), refuses one that already has a release (`gh release view`), writes it into `package.json` at build time (`pkg.version = process.env.VERSION`), then `electron-builder --win --publish always`. The repo's own `package.json` version only matters for dev runs; do not hand-edit it for a release. The typed version reaches the shell only through `env:` (never interpolated into `run:`).
+3. `build.publish[0].releaseType` is `release`: electron-builder's default is `draft`, and the updater never sees drafts. The job has a `concurrency` group per version so a second run cannot create a second release. GitHub creates tag `v<version>` when the release is published.
+4. `src/updater.js` `createUpdater`: `check()` → `dev|latest|available{version}|error` (`autoDownload=false`), `download(onProgress)` → `ready|error{message}|busy|dev` with `{type:'update', percent}` events on `api:progress`, `install()` → `quitAndInstall(true, true)` (silent, relaunch). The renderer checks 4 s after launch and every 6 h; only a found update shows anything: banner `#upd-bar` (Update / Later → percent → "Installing…", error with Try again). The header Update button is the manual check. `main.js` has no startup `checkForUpdatesAndNotify` any more.
+5. The installer is not code-signed, so Windows SmartScreen shows a warning on the first install.
 
 ## Known gaps (deferred on purpose)
 
