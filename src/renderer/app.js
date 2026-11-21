@@ -816,6 +816,7 @@
         }, genreName(g)))) : null,
         facts.length ? h('dl', { class: 'facts' }, facts.flatMap(([k, v]) => [h('dt', {}, k), h('dd', { dir: 'auto' }, v)])) : null,
         h('section', {}, h('h3', {}, t('plot')), ...plotBlock(e)),
+        e.titleId != null && e.kind !== 'collection' ? similarSection(e) : null,
         e.titleId != null && e.kind !== 'movie' ? airingSection(e) : null,
         e.titleId != null && e.kind !== 'movie' ? episodesSection(e) : null,
         h('section', {}, h('h3', {}, t('locations')), h('ul', { class: 'plain' }, e.locations.map(locationRow))),
@@ -1125,6 +1126,26 @@
   }
 
   // "Airing" on a series card: the weekly day and time, which become a reminder named after the series.
+  // Films of the archive that resemble the open one, each with the reason (director, actor, genre, tag, country).
+  const SIM_ORDER = ['director', 'actor', 'genre', 'tag', 'country'];
+  function similarSection(e) {
+    const box = h('section', { class: 'similar' });
+    api.getSimilar(e.key).then((r) => {
+      if (state.selected !== e.key) return;
+      box.append(h('h3', {}, t('sim_title')));
+      if (!r.ok || !r.items.length) { box.append(h('p', { class: 'help' }, t('sim_none'))); return; }
+      const sep = state.lang === 'fa' ? '، ' : ', ';
+      const shown = { genre: genreName, country: countryName };
+      const why = (x) => x.reasons.slice().sort((a, b) => SIM_ORDER.indexOf(a.type) - SIM_ORDER.indexOf(b.type)).slice(0, 2)
+        .map((q) => t(`sim_${q.type}`, { v: q.values.slice(0, 2).map(shown[q.type] || ((v) => v)).join(sep) })).join(' · ');
+      box.append(h('div', { class: 'sim-list' }, r.items.map((x) => h('button', { type: 'button', class: 'card sim', 'data-key': x.key, onclick: () => select(x.key) },
+        frame(x, x.rating ? rateChip(x.rating) : null),
+        h('span', { class: 'info' }, h('span', { class: 'name', dir: 'auto' }, x.title), x.year ? h('span', { class: 'year' }, String(x.year)) : null),
+        h('span', { class: 'why', dir: 'auto' }, why(x))))));
+    });
+    return box;
+  }
+
   function airingSection(e) {
     const box = h('section', { class: 'airing' });
     api.getAiring(e.key).then((a) => {

@@ -423,3 +423,9 @@ body.selecting main { padding-block-end: 6rem; }
 .upd .btn { white-space: nowrap; flex-shrink: 0; }
 .upd progress { flex: 1; min-width: 6rem; }
 .upd.err { border-color: var(--danger, #d64550); background: color-mix(in srgb, var(--danger, #d64550) 12%, transparent); }
+
+.sim-list { display: flex; gap: 0.9rem; overflow-x: auto; padding: 0.3rem 0.2rem 0.8rem; scroll-snap-type: x proximity; }
+.card.sim { flex: none; width: 7.4rem; scroll-snap-align: start; gap: 0.45rem; }
+.card.sim .info { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.85rem; }
+.card.sim .year { color: var(--muted); font-size: 0.75rem; }
+.card.sim .why { color: var(--muted); font-size: 0.72rem; line-height: 1.35; }

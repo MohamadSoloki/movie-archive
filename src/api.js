@@ -20,6 +20,7 @@ const { createCalendar, isEnded } = require('./core/calendar.js');
 const copies = require('./core/copies.js');
 const { verifyFiles } = require('./core/verify.js');
 const { createRate } = require('./core/rate.js');
+const { similarTo } = require('./core/similar.js');
 
 const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate'];
 
@@ -403,6 +404,13 @@ function createApi({
     },
     async getEntry(key) {
       return search.find(key);
+    },
+    // films of the archive that resemble this one, with why (genre, director, actors, country, tags)
+    async getSimilar(key, limit = 12) {
+      const base = search.find(key);
+      if (!base) return { ok: false, error: 'unknown' };
+      const { entries } = search.query({});
+      return { ok: true, items: similarTo(base, entries, { limit }).map((r) => ({ ...lightOf(r.entry), score: r.score, reasons: r.reasons })) };
     },
     // manual tags belong to the folders of an entry, so they survive rescans and online fixes
     async addTag(key, text) {

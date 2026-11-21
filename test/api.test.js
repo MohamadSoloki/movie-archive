@@ -774,3 +774,17 @@ test('the update calls are passed to the updater, progress goes to the callback'
   api.installUpdate();
   assert.deepEqual(calls, ['install']);
 });
+
+test('getSimilar lists the other films that share genre or people, as card-sized entries with reasons', async () => {
+  const { api } = await withFilms();
+  await api.setSettings({ omdbKey: 'K' });
+  await api.startQueue(() => {}); // both folders get their OMDb data (the same genre) and become titles
+  const keys = (await api.getEntries()).entries.map((e) => e.key);
+  const r = await api.getSimilar(keys[0]);
+  assert.equal(r.ok, true);
+  assert.equal(r.items.length, 1);
+  assert.notEqual(r.items[0].key, keys[0]);
+  assert.ok(r.items[0].score > 0 && r.items[0].reasons.some((x) => x.type === 'genre'));
+  assert.equal('plot' in r.items[0], false); // card fields only, like the grid
+  assert.deepEqual(await api.getSimilar('t:99999'), { ok: false, error: 'unknown' });
+});
