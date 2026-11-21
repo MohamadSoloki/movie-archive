@@ -16,6 +16,7 @@ const { createSearch } = require('./core/search.js');
 const { lightOf } = require('./core/library.js');
 const tags = require('./core/tags.js');
 const transfer = require('./core/transfer.js');
+const { createCalendar, isEnded } = require('./core/calendar.js');
 
 const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate'];
 
@@ -23,10 +24,11 @@ function createApi({
   db, userDataDir, fetch = globalThis.fetch, listDrives = defaultListDrives,
   openPath = async () => '', openExternal = async () => {},
   updater = { check: async () => ({ state: 'dev' }), install() {} },
-  concurrency = 5, translatePause = 700,
+  concurrency = 5, translatePause = 700, now = () => Date.now(),
   freeSpace = (dir) => { try { const s = fs.statfsSync(dir); return s.bavail * s.bsize; } catch { return Infinity; } },
 }) {
   const search = createSearch(db);
+  const calendar = createCalendar(db);
   const postersDir = path.join(userDataDir, 'posters');
   const key = () => getSetting(db, 'omdbKey');
   const deps = () => ({
@@ -325,6 +327,39 @@ function createApi({
     },
     async getTags() {
       return search.tagList();
+    },
+    // ---- series calendar ----
+    async calendarList() {
+      return calendar.list(now());
+    },
+    async calendarAdd(data) {
+      let title = data.title;
+      if (data.key) {
+        const e = search.find(data.key);
+        if (!e) return { ok: false, error: 'unknown' };
+        title = title || e.title;
+      }
+      return calendar.add({ ...data, title }, now());
+    },
+    async calendarUpdate(id, patch) {
+      return calendar.update(id, patch, now());
+    },
+    async calendarTick(id) {
+      return calendar.tick(id, now());
+    },
+    async calendarSkip(id) {
+      return calendar.skip(id);
+    },
+    async calendarRemove(id) {
+      calendar.remove(id);
+      return { ok: true };
+    },
+    // a series (or anime) that OMDb does not say has finished can be put on the calendar
+    async getAiring(key) {
+      const e = search.find(key);
+      const ended = !!e && isEnded(e.year);
+      const canAir = !!e && (e.kind === 'series' || e.type === 'anime') && !ended;
+      return { canAir, ended, reminder: calendar.forKey(key) };
     },
     async getEpisodes(titleId) {
       const seasons = new Map();

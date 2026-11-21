@@ -12,7 +12,7 @@ const OMDB_BODY = {
   imdbRating: '7.8', Runtime: '176 min', Actors: 'Robert Pattinson', Poster: 'https://img.example/p.jpg',
 };
 
-function setup({ key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause } = {}) {
+function setup({ key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause, now } = {}) {
   const media = fs.mkdtempSync(path.join(os.tmpdir(), 'media-'));
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'ud-'));
   const fetchCalls = [];
@@ -30,7 +30,7 @@ function setup({ key = 'K', openPath, openExternal, mymemory, freeSpace, transla
   const db = openDb();
   const state = { online: true };
   const api = createApi({
-    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace, translatePause,
+    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace, translatePause, now,
     listDrives: async () => (state.online ? [{ serial: 'S1', label: 'Test', root: media + path.sep }] : []),
   });
   return { api, db, media, userData, fetchCalls, key, state };
@@ -596,4 +596,52 @@ test('autoTranslate is a setting that is on by default', async () => {
   assert.equal((await api.getSettings()).autoTranslate, true);
   await api.setSettings({ autoTranslate: false });
   assert.equal((await api.getSettings()).autoTranslate, false);
+});
+
+// 2026-11-23 is a Monday; the api reads the clock through the injected `now`
+const clock = { t: new Date(2026, 10, 21, 12, 0).getTime() };
+const atT = (d, h = 0) => new Date(2026, 10, d, h).getTime();
+
+test('calendar: add, list, tick and skip go through the api with the injected clock', async () => {
+  const { api } = setup({ now: () => clock.t });
+  clock.t = atT(21, 12);
+  const r = await api.calendarAdd({ title: 'بامداد خمار', weekday: 1, time: '20:00', episode: 7 });
+  assert.equal(r.ok, true);
+  assert.equal((await api.calendarList())[0].state, 'soon');
+  clock.t = atT(23, 21);
+  assert.equal((await api.calendarList())[0].state, 'out');
+  assert.deepEqual(await api.calendarTick(r.id), { ok: true });
+  const [x] = await api.calendarList();
+  assert.deepEqual([x.episode, x.state, x.due], [8, 'soon', atT(30, 20)]);
+  assert.deepEqual(await api.calendarSkip(r.id), { ok: true });
+  assert.equal((await api.calendarList())[0].due, new Date(2026, 11, 7, 20).getTime());
+});
+
+test('calendar: update and remove, bad input is refused with a reason', async () => {
+  const { api } = setup({ now: () => clock.t });
+  clock.t = atT(21, 12);
+  const { id } = await api.calendarAdd({ title: 'X', weekday: 1, time: '20:00' });
+  assert.deepEqual(await api.calendarUpdate(id, { title: 'Y', episode: 4 }), { ok: true });
+  assert.deepEqual(await api.calendarUpdate(id, { time: 'nope' }), { ok: false, error: 'bad_time' });
+  assert.equal((await api.calendarList())[0].title, 'Y');
+  await api.calendarRemove(id);
+  assert.deepEqual(await api.calendarList(), []);
+});
+
+test('getAiring: a running series can be added, an ended one and a film cannot; adding links the reminder to the entry', async () => {
+  const { api, db, e } = await scanned({ now: () => clock.t });
+  clock.t = atT(21, 12);
+  assert.equal((await api.getAiring(e.key)).canAir, false); // a film
+  db.prepare("UPDATE titles SET type = 'series', year = '2019–2022' WHERE id = ?").run(e.titleId);
+  await api.setSettings({});
+  assert.deepEqual(await api.getAiring(e.key), { canAir: false, ended: true, reminder: null });
+  db.prepare("UPDATE titles SET year = '2019–' WHERE id = ?").run(e.titleId);
+  await api.setSettings({});
+  assert.deepEqual(await api.getAiring(e.key), { canAir: true, ended: false, reminder: null });
+  const r = await api.calendarAdd({ key: e.key, weekday: 1, time: '22:00', episode: 3 });
+  assert.equal(r.ok, true);
+  const air = await api.getAiring(e.key);
+  assert.deepEqual([air.reminder.title, air.reminder.episode], [e.title, 3]); // title defaults to the entry's
+  assert.equal((await api.calendarAdd({ key: e.key, weekday: 2, time: '22:00' })).error, 'exists');
+  assert.equal((await api.getAiring('t:99999')).canAir, false);
 });
