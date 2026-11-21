@@ -407,7 +407,7 @@ body.selecting main { padding-block-end: 6rem; }
 .cal-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .cal-form input[type="text"] { flex: 1 1 12rem; }
 .cal-form select, .cal-form input[type="time"] { width: auto; }
-.cal-form .cal-ep { width: 8rem; }
+.cal-form .cal-ep { width: 10.5rem; }
 .cal-form .msg { flex-basis: 100%; }
 .airing .btn { margin-block-start: 0.4rem; }
 
