@@ -148,3 +148,38 @@ test('a typed query also finds a tag, and tagList counts entries per tag', () =>
   assert.deepEqual(s.query({ query: 'iranian' }).entries.map((e) => e.title), ['The Batman']);
   assert.deepEqual(s.tagList(), [{ name: 'Classic', count: 2 }, { name: 'Iranian', count: 1 }]);
 });
+
+function seedCountries() {
+  const db = openDb();
+  const add = (imdbId, title, country, genres) => {
+    const t = upsertTitle(db, { ...info(imdbId, title), genres, country }, null);
+    n += 1;
+    db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, title_id, status)
+      VALUES('S1', ?, ?, 'x', ?, 'matched')`).run(`C/${title}${n}`, title, t);
+  };
+  add('tt1', 'A Separation', 'Iran', 'Drama');
+  add('tt2', 'Taxi', 'Iran, France', 'Comedy');
+  add('tt3', 'Alien', 'United States, United Kingdom', 'Horror');
+  add('tt4', 'Amelie', 'France', 'Comedy');
+  return createSearch(db);
+}
+
+test('the country filter keeps films from any chosen country, ignoring case', () => {
+  const s = seedCountries();
+  assert.deepEqual(names(s.query({ countries: ['iran'] })).sort(), ['A Separation', 'Taxi']);
+  assert.deepEqual(names(s.query({ countries: ['IRAN', 'united states'] })).sort(), ['A Separation', 'Alien', 'Taxi']);
+  assert.deepEqual(s.query({ countries: ['Mars'] }).entries, []);
+});
+
+test('country counts follow the other filters but not the country filter; other counts follow the country filter', () => {
+  const s = seedCountries();
+  const all = s.query({ countries: ['Iran'], genres: ['Comedy'] });
+  assert.deepEqual(all.countryCounts, [{ name: 'France', count: 2 }, { name: 'Iran', count: 1 }]);
+  assert.deepEqual(s.query({ countries: ['Iran'] }).genres.map((g) => g.name).sort(), ['Comedy', 'Drama']);
+  assert.deepEqual(s.query({ countries: ['Iran'] }).attentionCounts, { ok: 2, guess: 0, problem: 0 });
+});
+
+test('a typed query finds a film by its country', () => {
+  const s = seedCountries();
+  assert.deepEqual(names(s.query({ query: 'France' })).sort(), ['Amelie', 'Taxi']);
+});

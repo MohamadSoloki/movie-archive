@@ -2,9 +2,10 @@
 (() => {
   const api = window.api;
   const $ = (id) => document.getElementById(id);
-  const state = { lang: 'fa', entries: [], selected: null, cart: new Map(), copyDest: '', copyPlan: null, copying: false, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], tags: [], tagCounts: [], knownTags: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, sort: 'name', rootCount: 0 };
+  const state = { lang: 'fa', entries: [], selected: null, cart: new Map(), copyDest: '', copyPlan: null, copying: false, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], tags: [], tagCounts: [], countries: [], countryCounts: [], knownTags: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, sort: 'name', rootCount: 0 };
   const t = (key, vars) => window.i18n.t(state.lang, key, vars);
   const genreName = (g) => window.i18n.genreLabel(state.lang, g);
+  const countryName = (g) => window.i18n.countryLabel(state.lang, g);
   const CHUNK = 200;
 
   // Builds DOM with textContent only, so titles and plots from the web can never inject markup.
@@ -100,13 +101,20 @@
     return refresh(true);
   }
 
+  const hasCountry = (g) => state.countries.some((x) => sameGenre(x, g));
+
+  function toggleCountry(g) {
+    state.countries = hasCountry(g) ? state.countries.filter((x) => !sameGenre(x, g)) : [...state.countries, g];
+    return refresh(true);
+  }
+
   function toggleAttention(a) {
     state.attention = state.attention.includes(a) ? state.attention.filter((x) => x !== a) : [...state.attention, a];
     return refresh();
   }
 
   function clearFilters() {
-    state.genres = []; state.attention = []; state.tags = [];
+    state.genres = []; state.attention = []; state.tags = []; state.countries = [];
     return refresh();
   }
 
@@ -123,10 +131,11 @@
     const pills = [
       ...state.attention.map((a) => h('button', { type: 'button', class: 'pill', onclick: () => toggleAttention(a) },
         dot(DOT_CLASS[a], t(STATES.find((s) => s[0] === a)[1])), t(STATES.find((s) => s[0] === a)[1]), ' ×')),
+      ...state.countries.map((g) => h('button', { type: 'button', class: 'pill', onclick: () => toggleCountry(g) }, `${countryName(g)} ×`)),
       ...state.tags.map((g) => h('button', { type: 'button', class: 'pill mine', onclick: () => toggleTag(g) }, icon('tag'), `${g} ×`)),
       ...state.genres.map((g) => h('button', { type: 'button', class: 'pill', onclick: () => toggleGenre(g) }, `${genreName(g)} ×`)),
     ];
-    const n = state.genres.length + state.attention.length + state.tags.length;
+    const n = state.genres.length + state.attention.length + state.tags.length + state.countries.length;
     $('filter-badge').hidden = !n;
     $('filter-badge').textContent = String(n);
     $('active').replaceChildren(...pills);
@@ -142,6 +151,11 @@
     $('f-genres').replaceChildren(...(shown.length
       ? shown.map((c) => chip(genreName(c.name), c.count, hasGenre(c.name), () => toggleGenre(c.name)))
       : [h('p', { class: 'help' }, t('filter_no_genres'))]));
+    const places = [...state.countryCounts];
+    for (const g of state.countries) if (!places.some((c) => sameGenre(c.name, g))) places.push({ name: g, count: 0 });
+    $('f-countries').replaceChildren(...(places.length
+      ? places.map((c) => chip(countryName(c.name), c.count, hasCountry(c.name), () => toggleCountry(c.name)))
+      : [h('p', { class: 'help' }, t('filter_no_countries'))]));
     const mine = [...state.tagCounts];
     for (const g of state.tags) if (!mine.some((c) => sameGenre(c.name, g))) mine.push({ name: g, count: 0 });
     $('f-tags').replaceChildren(...(mine.length
@@ -151,7 +165,7 @@
       type: 'button', 'aria-pressed': String(state.sort === s), onclick: () => { state.sort = s; refresh(); },
     }, t(`sort_${s}`))));
     $('filter-show').textContent = t('filter_show', { n: state.entries.length });
-    $('filter-clear').disabled = !(state.genres.length || state.attention.length || state.tags.length);
+    $('filter-clear').disabled = !(state.genres.length || state.attention.length || state.tags.length || state.countries.length);
   }
 
   function renderFilters() {
@@ -231,7 +245,7 @@
   }
 
   function resetView() {
-    state.tab = 'all'; state.genres = []; state.tags = []; state.attention = []; state.query = ''; $('q').value = '';
+    state.tab = 'all'; state.genres = []; state.tags = []; state.countries = []; state.attention = []; state.query = ''; $('q').value = '';
     for (const x of document.querySelectorAll('#tabs button')) x.setAttribute('aria-selected', String(x.dataset.tab === 'all'));
     return refresh();
   }
@@ -241,7 +255,7 @@
     const box = $('empty');
     box.hidden = state.entries.length > 0;
     if (box.hidden) { box.replaceChildren(); return; }
-    const filtered = state.query || state.genres.length || state.tags.length || state.attention.length || state.tab !== 'all';
+    const filtered = state.query || state.genres.length || state.tags.length || state.countries.length || state.attention.length || state.tab !== 'all';
     const [art, title, text, label, go] = filtered
       ? ['search', 'no_results', 'no_results_hint', 'reset_view', resetView]
       : !state.rootCount
@@ -252,10 +266,11 @@
   }
 
   async function refresh(forceDetail = false) {
-    const r = await api.getEntries({ query: state.query, tab: state.tab, genres: state.genres, tags: state.tags, attention: state.attention, sort: state.sort, light: true });
+    const r = await api.getEntries({ query: state.query, tab: state.tab, genres: state.genres, tags: state.tags, countries: state.countries, attention: state.attention, sort: state.sort, light: true });
     state.entries = r.entries;
     state.genreCounts = r.genres;
     state.tagCounts = r.tagCounts;
+    state.countryCounts = r.countryCounts;
     state.knownTags = await api.getTags();
     state.attentionCounts = r.attentionCounts;
     renderFilters();
@@ -574,7 +589,7 @@
     d.hidden = false;
     if (e.kind === 'collection') { d.replaceChildren(...collectionDetail(e)); return; }
     const facts = [[t('runtime'), e.runtime], [t('director'), e.director], [t('actors'), e.actors],
-      [t('country'), e.country], [t('rated'), e.rated], [t('awards'), e.awards]].filter(([, v]) => v);
+      [t('country'), e.countryList.map(countryName).join(state.lang === 'fa' ? '، ' : ', ')], [t('rated'), e.rated], [t('awards'), e.awards]].filter(([, v]) => v);
     const flags = flagsOf(e);
     // dir="auto": English titles and plots from OMDb stay left-to-right inside the right-to-left Persian UI
     d.replaceChildren(

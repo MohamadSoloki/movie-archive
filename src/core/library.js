@@ -29,7 +29,7 @@ function listEntries(db) {
         key: `l:${l.id}`, titleId: null, locationId: l.id, title: l.parsed_title || l.folder_name, year: l.parsed_year,
         type: null, plot: null, genres: null, rating: null, runtime: null, actors: null, posterFile: null,
         status: l.status, guessed: !!l.guessed, locations: [shape(l)],
-        imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, totalSeasons: null,
+        imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, countryList: [], totalSeasons: null,
         kind: l.season ? 'series' : 'movie', addedOrder: l.id, userTags: [],
       });
       continue;
@@ -41,7 +41,7 @@ function listEntries(db) {
         genres: t.genres, rating: t.rating, runtime: t.runtime, actors: t.actors, posterFile: t.poster_file,
         status: 'matched', guessed: false, locations: [],
         imdbId: t.imdb_id, genreList: t.genres ? t.genres.split(', ') : [], director: t.director, awards: t.awards,
-        rated: t.rated, country: t.country, totalSeasons: t.total_seasons, kind: kindOf(t.type), addedOrder: l.id, userTags: [],
+        rated: t.rated, country: t.country, countryList: t.country ? t.country.split(', ') : [], totalSeasons: t.total_seasons, kind: kindOf(t.type), addedOrder: l.id, userTags: [],
       };
       byTitle.set(t.id, e);
       entries.push(e);
@@ -87,7 +87,7 @@ function collectionEntries(entries) {
       key: `c:${l.driveSerial}|${l.collection}`, kind: 'collection', titleId: null, locationId: null,
       title: l.collection.split('/').pop(), year: null, type: 'collection', plot: null, genres: null, rating: null, runtime: null,
       actors: null, posterFile: list.find((m) => m.posterFile)?.posterFile ?? null, status: 'matched', guessed: false, locations: [],
-      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, totalSeasons: null, attention: 'ok', userTags: [],
+      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, countryList: [], totalSeasons: null, attention: 'ok', userTags: [],
       addedOrder: Math.min(...locs.map((x) => x.id)),
       collection: { driveSerial: l.driveSerial, relPath: l.collection, online: l.online, missing: locs.every((x) => x.missing) },
       members: list.map((m) => ({ key: m.key, title: m.title, year: m.year, posterFile: m.posterFile, status: m.status, kind: m.kind })),

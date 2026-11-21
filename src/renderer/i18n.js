@@ -115,6 +115,8 @@
       copy_err_no_space: 'جای خالی مقصد کافی نیست: {needed} لازمه، {free} خالیه.',
       copy_err_nothing: 'چیزی برای کپی نیست.',
       copy_err_busy: 'یه کپی دیگه در حال انجامه.',
+      filter_countries: 'کشور سازنده',
+      filter_no_countries: 'کشوری برای نمایش نیست',
       filter_tags: 'تگ‌های من',
       filter_no_tags: 'هنوز تگی نساخته‌اید. از صفحهٔ هر فیلم می‌توانید تگ بزنید.',
       my_tags: 'تگ‌های من',
@@ -278,6 +280,8 @@
       copy_err_no_space: 'Not enough free space: {needed} needed, {free} free.',
       copy_err_nothing: 'Nothing to copy.',
       copy_err_busy: 'Another copy is running.',
+      filter_countries: 'Country',
+      filter_no_countries: 'No countries to show',
       filter_tags: 'My tags',
       filter_no_tags: 'No tags yet. Open any film to add one.',
       my_tags: 'My tags',
@@ -338,12 +342,24 @@
     'Talk-Show': 'گفتگو محور', 'Game-Show': 'مسابقه‌ای', News: 'خبری', Adult: 'بزرگسال',
   };
   const genreLabel = (lang, genre) => (lang === 'fa' && GENRES_FA[genre]) || genre;
+  // OMDb country names, as they appear in its Country field
+  const COUNTRIES_FA = {
+    Iran: 'ایران', 'United States': 'آمریکا', USA: 'آمریکا', 'United Kingdom': 'بریتانیا', UK: 'بریتانیا', France: 'فرانسه', Germany: 'آلمان',
+    Italy: 'ایتالیا', Spain: 'اسپانیا', Canada: 'کانادا', Australia: 'استرالیا', Japan: 'ژاپن', 'South Korea': 'کره جنوبی', China: 'چین',
+    'Hong Kong': 'هنگ‌کنگ', India: 'هند', Turkey: 'ترکیه', Russia: 'روسیه', Mexico: 'مکزیک', Brazil: 'برزیل', Argentina: 'آرژانتین',
+    Sweden: 'سوئد', Denmark: 'دانمارک', Norway: 'نروژ', Finland: 'فنلاند', Netherlands: 'هلند', Belgium: 'بلژیک', Poland: 'لهستان',
+    Ireland: 'ایرلند', Switzerland: 'سوئیس', Austria: 'اتریش', Greece: 'یونان', Egypt: 'مصر', Israel: 'اسرائیل', Lebanon: 'لبنان',
+    'New Zealand': 'نیوزیلند', Thailand: 'تایلند', Taiwan: 'تایوان', Ukraine: 'اوکراین', Czechia: 'چک', 'Czech Republic': 'چک',
+    Hungary: 'مجارستان', Romania: 'رومانی', Portugal: 'پرتغال', 'South Africa': 'آفریقای جنوبی', Iraq: 'عراق', Afghanistan: 'افغانستان',
+    Tajikistan: 'تاجیکستان', Armenia: 'ارمنستان', Georgia: 'گرجستان', Azerbaijan: 'آذربایجان', Iceland: 'ایسلند', Luxembourg: 'لوکزامبورگ',
+  };
+  const countryLabel = (lang, name) => (lang === 'fa' && COUNTRIES_FA[name]) || name;
 
   function t(lang, key, vars) {
     const s = (STRINGS[lang] && STRINGS[lang][key]) || key;
     return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m)) : s;
   }
 
-  if (typeof module === 'object' && module.exports) module.exports = { STRINGS, t, GENRES_FA, genreLabel };
-  else root.i18n = { STRINGS, t, GENRES_FA, genreLabel };
+  if (typeof module === 'object' && module.exports) module.exports = { STRINGS, t, GENRES_FA, genreLabel, COUNTRIES_FA, countryLabel };
+  else root.i18n = { STRINGS, t, GENRES_FA, genreLabel, COUNTRIES_FA, countryLabel };
 })(typeof window !== 'undefined' ? window : globalThis);

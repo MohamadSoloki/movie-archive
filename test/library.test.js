@@ -156,3 +156,14 @@ test('entries without tags have an empty list, and so does a collection', () => 
   assert.deepEqual(all.filter((e) => e.kind === 'collection').map((e) => e.userTags), [[]]);
   assert.deepEqual(all.find((e) => e.title === 'B').userTags, []);
 });
+
+test('countryList splits the OMDb country text; unmatched entries have none', () => {
+  const db = openDb();
+  const t = upsertTitle(db, { source: 'omdb', imdbId: 'tt9', malId: null, title: 'Taxi', year: '2015', type: 'movie', plot: 'p', genres: 'Comedy',
+    rating: '7', runtime: '82 min', actors: 'x', posterUrl: null, country: 'Iran, France' }, null);
+  db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, title_id, status) VALUES('S1','M/Taxi','Taxi','taxi',?, 'matched')`).run(t);
+  db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, status) VALUES('S1','M/بتمن','بتمن','بتمن','pending')`).run();
+  const e = listEntries(db);
+  assert.deepEqual(e.find((x) => x.title === 'Taxi').countryList, ['Iran', 'France']);
+  assert.deepEqual(e.find((x) => x.title === 'بتمن').countryList, []);
+});

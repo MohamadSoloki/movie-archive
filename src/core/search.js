@@ -31,14 +31,14 @@ function createSearch(db) {
   const fuzzy = () => {
     fuse ??= new Fuse(all, {
       keys: [{ name: 'title', weight: 3 }, { name: 'locations.folderName', weight: 2 },
-        { name: 'userTags', weight: 2 }, { name: 'genres', weight: 1 }, { name: 'actors', weight: 1 }],
+        { name: 'userTags', weight: 2 }, { name: 'countryList', weight: 1 }, { name: 'genres', weight: 1 }, { name: 'actors', weight: 1 }],
       threshold: 0.35,
       ignoreLocation: true,
     });
     return fuse;
   };
   return {
-    query({ query = '', tab = 'all', genres = [], tags = [], attention = [], sort = 'name' } = {}) {
+    query({ query = '', tab = 'all', genres = [], tags = [], countries = [], attention = [], sort = 'name' } = {}) {
       if (!all) build();
       const q = query.trim();
       let list = q ? fuzzy().search(q).map((r) => r.item) : [...all];
@@ -48,11 +48,14 @@ function createSearch(db) {
       const hasGenres = (e) => wanted.every((g) => e.genreList.some((x) => x.toLowerCase() === g));
       const wantedTags = tags.map((g) => g.toLowerCase());
       const hasTags = (e) => wantedTags.every((g) => e.userTags.some((x) => x.toLowerCase() === g));
+      const wantedCountries = countries.map((g) => g.toLowerCase());
+      // a film made in several countries matches when it is from ANY chosen one
+      const hasCountries = (e) => !wantedCountries.length || e.countryList.some((x) => wantedCountries.includes(x.toLowerCase()));
       const hasAttention = (e) => !attention.length || attention.includes(e.attention);
 
       // each group of counts ignores its own filter, so a chip keeps its number while others of its group are selected
       const attentionCounts = { ok: 0, guess: 0, problem: 0 };
-      for (const e of list) if (hasGenres(e) && hasTags(e)) attentionCounts[e.attention] += 1;
+      for (const e of list) if (hasGenres(e) && hasTags(e) && hasCountries(e)) attentionCounts[e.attention] += 1;
       const countOf = (pick, keep) => {
         const counts = new Map();
         for (const e of list.filter(keep)) {
@@ -64,14 +67,15 @@ function createSearch(db) {
         }
         return [...counts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
       };
-      const genreCounts = countOf((e) => e.genreList, (e) => hasAttention(e) && hasTags(e));
-      const tagCounts = countOf((e) => e.userTags, (e) => hasAttention(e) && hasGenres(e));
+      const genreCounts = countOf((e) => e.genreList, (e) => hasAttention(e) && hasTags(e) && hasCountries(e));
+      const tagCounts = countOf((e) => e.userTags, (e) => hasAttention(e) && hasGenres(e) && hasCountries(e));
+      const countryCounts = countOf((e) => e.countryList, (e) => hasAttention(e) && hasGenres(e) && hasTags(e));
 
-      list = list.filter((e) => hasGenres(e) && hasTags(e) && hasAttention(e));
+      list = list.filter((e) => hasGenres(e) && hasTags(e) && hasCountries(e) && hasAttention(e));
       // the second comparison keeps equal entries in alphabetical order
       const cmp = SORTS[sort] || byName;
       list.sort((a, b) => cmp(a, b) || byName(a, b));
-      return { entries: list, genres: genreCounts, tagCounts, attentionCounts };
+      return { entries: list, genres: genreCounts, tagCounts, countryCounts, attentionCounts };
     },
     // every manual tag with the number of entries that carry it, for suggestions
     tagList() {
