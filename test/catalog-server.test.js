@@ -9,6 +9,7 @@ function make(over = {}) {
   const srv = createCatalogServer({
     lang: () => 'fa',
     films: (lang) => [{ k: 't:1', t: 'Alien', y: '1979', g: [lang === 'en' ? 'Horror' : 'ترسناک'], r: '8.5', b: ['1080p'], a: ['بیگانه'], p: true }],
+    font: () => Buffer.from('WOFF'),
     ask: (name) => (name === 'known' ? { ok: true, inArchive: ['Alien'] } : { ok: true, inArchive: [] }),
     posterFile: (k) => (k === 't:1' ? Buffer.from('JPEG') : null),
     known: (k) => (k === 't:1' ? { key: k, title: 'Alien', year: '1979' } : null),
@@ -34,6 +35,10 @@ test('serves the page, the film list and posters, read-only', async () => {
     const img = await fetch(`${base}/poster/${encodeURIComponent('t:1')}`);
     assert.equal(img.headers.get('content-type'), 'image/jpeg');
     assert.equal((await img.text()), 'JPEG');
+    const font = await fetch(`${base}/font.woff2`);
+    assert.equal(font.headers.get('content-type'), 'font/woff2');
+    assert.equal(await font.text(), 'WOFF');
+    assert.match(await (await fetch(`${base}/`)).text(), /font-family: *"?Vazirmatn"?[^}]*url\("\/font\.woff2"\)|url\("\/font\.woff2"\)/);
     assert.equal((await fetch(`${base}/poster/x`)).status, 404);
     assert.equal((await fetch(`${base}/etc/passwd`)).status, 404);
     assert.equal((await fetch(`${base}/api/films`, { method: 'DELETE' })).status, 405);

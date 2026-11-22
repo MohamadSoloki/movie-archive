@@ -11,7 +11,7 @@ const clean = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, m
  * The phone catalog: a small read-only web server for the shop's local network. Customers browse the film list on their
  * phone and send back the list they want. No file path, drive or folder name ever leaves it; sent lists only reach `submit`.
  */
-function createCatalogServer({ films, posterFile, known, submit, ask, lang = () => 'fa', clock = Date.now }) {
+function createCatalogServer({ films, posterFile, known, submit, ask, font = () => null, lang = () => 'fa', clock = Date.now }) {
   let server = null;
   const sent = new Map(); // address -> times of its recent lists
 
@@ -77,7 +77,7 @@ function createCatalogServer({ films, posterFile, known, submit, ask, lang = () 
   function handle(req, res) {
     const url = new URL(req.url, 'http://x');
     const path = url.pathname;
-    const routes = ['/', '/api/films', '/api/wish', '/api/ask'];
+    const routes = ['/', '/api/films', '/api/wish', '/api/ask', '/font.woff2'];
     const poster = path.startsWith('/poster/');
     if (!routes.includes(path) && !poster) { json(res, 404, { ok: false }); return; }
     if (path === '/api/wish' || path === '/api/ask') {
@@ -87,7 +87,11 @@ function createCatalogServer({ films, posterFile, known, submit, ask, lang = () 
     }
     if (req.method !== 'GET') { json(res, 405, { ok: false }); return; }
     if (path === '/') reply(res, 200, 'text/html; charset=utf-8', pageHtml(langOf(url)));
-    else if (path === '/api/films') json(res, 200, films(langOf(url)));
+    else if (path === '/font.woff2') {
+      const f = font();
+      if (!f) json(res, 404, { ok: false });
+      else { res.writeHead(200, { 'content-type': 'font/woff2', 'cache-control': 'max-age=86400' }); res.end(f); }
+    } else if (path === '/api/films') json(res, 200, films(langOf(url)));
     else {
       let key = '';
       try { key = decodeURIComponent(path.slice('/poster/'.length)); } catch { /* bad escape */ }

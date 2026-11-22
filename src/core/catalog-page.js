@@ -36,15 +36,17 @@ function pageHtml(lang) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${x.title}</title>
 <style>
+@font-face { font-family: "Vazirmatn"; src: url("/font.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 :root { --bg: #eceff5; --card: #fff; --ink: #141925; --muted: #586276; --accent: #3a46d6; --line: #dde2ec; --ok: #1f7a52; }
 @media (prefers-color-scheme: dark) { :root { --bg: #11141c; --card: #1a1f2b; --ink: #eef0f6; --muted: #a2abbd; --accent: #8b95ff; --line: #2a3142; --ok: #5fd39a; } }
 * { box-sizing: border-box; }
-body { margin: 0; font: 17px/1.5 Vazirmatn, system-ui, Tahoma, sans-serif; background: var(--bg); color: var(--ink); padding-bottom: 6rem; }
+body { margin: 0; font: 17px/1.5 "Vazirmatn", system-ui, Tahoma, sans-serif; background: var(--bg); color: var(--ink); padding-bottom: 6rem; }
 header { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 0.6rem 1rem 0.6rem; border-bottom: 1px solid var(--line); }
 .filters { padding: 0 1rem; }
 .top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.3rem; }
 h1 { font-size: 1.1rem; margin: 0; }
 a.lang { color: var(--accent); text-decoration: none; font-size: 0.9rem; padding: 0.4rem 0.2rem; }
+input, textarea, select, button { font-family: inherit; }
 input, textarea, select { width: 100%; font: inherit; padding: 0.65rem 0.8rem; min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
 .tools { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
 .tools select { flex: 1; }

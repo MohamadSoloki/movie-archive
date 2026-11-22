@@ -378,6 +378,7 @@ function createApi({
       if (!f) return null;
       try { return fs.readFileSync(path.join(postersDir, path.basename(f))); } catch { return null; }
     },
+    font: () => { try { return fs.readFileSync(path.join(__dirname, 'renderer', 'fonts', 'Vazirmatn-Variable.woff2')); } catch { return null; } },
     known: (k) => { const e = search.find(k); return e && e.kind !== 'collection' ? { key: e.key, title: e.title, year: e.year } : null; },
     // 0 when the inbox is full, so a prank cannot fill the database
     submit: (w) => {
