@@ -22,7 +22,7 @@ const { verifyFiles } = require('./core/verify.js');
 const { createRate } = require('./core/rate.js');
 const { similarTo } = require('./core/similar.js');
 const { seriesGaps } = require('./core/gaps.js');
-const { singleDrive } = require('./core/reports.js');
+const { singleDrive, catalogByGenre } = require('./core/reports.js');
 const { exportData, importData } = require('./core/backup.js');
 const orders = require('./core/orders.js');
 const { ProviderError } = require('./core/errors.js');
@@ -509,6 +509,9 @@ function createApi({
       return { ...r, entries: r.entries.map((e) => ({ ...e, key: `t:${e.titleId}` })) };
     },
     // films and series that live on one drive only, per drive: what would be lost with it
+    async getCatalog() {
+      return catalogByGenre(search.query({}).entries);
+    },
     async getSingleDrive() {
       return singleDrive(search.query({}).entries);
     },

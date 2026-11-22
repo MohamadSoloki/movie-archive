@@ -1369,6 +1369,20 @@
             h('span', { dir: 'auto' }, i.title), i.year ? h('span', { class: 'year' }, String(i.year)) : null)))))) : [h('p', {}, t('rep_single_none'))]));
     },
   };
+  // The archive as a printable list by genre. Printing goes through the print dialog, which also saves a PDF.
+  REPORTS.catalog = async (body) => {
+    const groups = await api.getCatalog();
+    const shop = (await api.getSettings()).shopName;
+    const total = groups.reduce((n, g) => n + g.items.length, 0);
+    const line = (i) => h('li', { dir: 'auto' }, i.year ? `${i.title} (${i.year})` : i.title,
+      i.badges.length ? h('small', {}, ` ${i.badges.map((b) => t(`qb_${b}`)).join(' · ')}`) : null);
+    const sheet = () => h('article', { class: 'catalog', dir: state.lang === 'fa' ? 'rtl' : 'ltr' },
+      h('header', {}, shop ? h('h1', { dir: 'auto' }, shop) : null, h('h2', {}, t('cat_title')), h('p', {}, `${t('count', { n: total })} · ${dateOf(Date.now())}`)),
+      ...groups.map((g) => h('section', {}, h('h3', {}, g.genre ? genreName(g.genre) : t('cat_other')), h('ul', {}, g.items.map(line)))));
+    body.replaceChildren(h('p', { class: 'help' }, t('cat_help', { n: total })),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: () => { $('print-area').replaceChildren(sheet()); window.print(); } }, t('cat_print'))),
+      ...groups.map((g) => h('section', {}, h('h3', {}, `${g.genre ? genreName(g.genre) : t('cat_other')} (${g.items.length})`))));
+  };
   Object.assign(REPORTS, {
     // every copy made for a customer, newest first, with the films in it; the same list gives the invoice again
     async orders(body) {

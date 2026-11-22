@@ -454,5 +454,12 @@ body.selecting main { padding-block-end: 6rem; }
   .invoice h2 { font-size: 14pt; margin: 0; }
   .invoice table { width: 100%; border-collapse: collapse; margin: 0.5cm 0; }
   .invoice th, .invoice td { border-bottom: 1px solid #999; padding: 0.15cm 0.2cm; text-align: start; }
+  .catalog { font-family: Vazirmatn, system-ui, sans-serif; font-size: 10.5pt; color: #000; }
+  .catalog h1 { font-size: 20pt; margin: 0 0 0.2cm; }
+  .catalog h2 { font-size: 14pt; margin: 0; }
+  .catalog h3 { font-size: 12pt; margin: 0.4cm 0 0.1cm; border-bottom: 1px solid #999; break-after: avoid; }
+  .catalog ul { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 0.8cm; }
+  .catalog li { break-inside: avoid; padding: 0.04cm 0; }
+  .catalog section { break-inside: auto; }
   .invoice .total { font-size: 15pt; font-weight: 700; }
 }

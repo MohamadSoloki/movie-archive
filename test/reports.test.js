@@ -22,3 +22,23 @@ test('films kept on one drive only are listed per drive; films on two drives or 
   assert.deepEqual(r.map((g) => [g.driveSerial, g.driveLabel, g.items.map((i) => i.title)]),
     [['D1', 'Big', ['Copy Gone', 'Only Big']], ['D2', 'Small', ['Two Folders Same Drive']]]);
 });
+
+test('the printable catalog lists each film once, under its first genre, in name order; no genre goes last', () => {
+  const { catalogByGenre } = require('../src/core/reports.js');
+  const db = openDb();
+  db.prepare("INSERT INTO drives(serial, label, root, online) VALUES('D1','Big','D:\\\\',1)").run();
+  const add = (id, title, genres, folder, type = 'movie') => {
+    const tid = upsertTitle(db, { ...info(id, title), genres, type }, null);
+    db.prepare("INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, title_id, status) VALUES('D1',?,?,?,?,'matched')").run(folder, folder, title, tid);
+  };
+  add('t1', 'Zed', 'Action, Drama', 'Zed 1080p');
+  add('t2', 'Alpha', 'Action', 'Alpha دوبله');
+  add('t3', 'Beta', 'Comedy', 'Beta');
+  add('t4', 'Nameless', '', 'Nameless', 'series');
+  db.prepare("INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, status) VALUES('D1','mystery','mystery','mystery','pending')").run();
+  const r = catalogByGenre(listEntries(db));
+  assert.deepEqual(r.map((g) => [g.genre, g.items.map((i) => i.title)]),
+    [['Action', ['Alpha', 'Zed']], ['Comedy', ['Beta']], [null, ['mystery', 'Nameless']]]);
+  assert.deepEqual(r[0].items[0].badges, ['dub']);
+  assert.deepEqual(r[0].items[1].badges, ['1080p']);
+});

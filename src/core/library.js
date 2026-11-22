@@ -138,4 +138,4 @@ function lightOf(e) {
   };
 }
 
-module.exports = { listEntries, reasonOf, lightOf, compareTitles };
+module.exports = { listEntries, reasonOf, lightOf, compareTitles, badgesOf };

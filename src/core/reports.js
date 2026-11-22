@@ -1,4 +1,5 @@
 'use strict';
+const { badgesOf, compareTitles } = require('./library.js');
 
 // Films and series whose every present folder is on one drive: lose that drive and the title is gone. Grouped by drive.
 function singleDrive(entries) {
@@ -17,4 +18,18 @@ function singleDrive(entries) {
     .map((g) => ({ ...g, items: g.items.sort((a, b) => byName(a.title, b.title)) }));
 }
 
-module.exports = { singleDrive };
+// The archive as a printable list: every film once, under its first genre (no genre last), names in order.
+function catalogByGenre(entries) {
+  const groups = new Map();
+  for (const e of entries) {
+    if (e.kind === 'collection') continue;
+    const genre = e.genreList[0] ?? null;
+    if (!groups.has(genre)) groups.set(genre, []);
+    groups.get(genre).push({ title: e.title, year: e.year, kind: e.kind, badges: badgesOf(e.quality) });
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => (a === null) - (b === null) || String(a).localeCompare(String(b)))
+    .map(([genre, items]) => ({ genre, items: items.sort(compareTitles) }));
+}
+
+module.exports = { singleDrive, catalogByGenre };
