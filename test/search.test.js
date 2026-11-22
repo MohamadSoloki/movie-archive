@@ -183,3 +183,24 @@ test('a typed query finds a film by its country', () => {
   const s = seedCountries();
   assert.deepEqual(names(s.query({ query: 'France' })).sort(), ['Amelie', 'Taxi']);
 });
+
+test('quality flags come from folder names and filter with counts', () => {
+  const db = openDb();
+  const a = upsertTitle(db, info('tq1', 'Alpha'), null);
+  addLoc(db, { titleId: a, folder: 'Alpha 2022 1080p دوبله فارسی' });
+  const b = upsertTitle(db, info('tq2', 'Beta'), null);
+  addLoc(db, { titleId: b, folder: 'Beta 2021 720p x' });
+  addLoc(db, { titleId: b, folder: 'Beta 2021 زیرنویس چسبیده' });
+  const c = upsertTitle(db, info('tq3', 'Gamma'), null);
+  addLoc(db, { titleId: c, folder: 'Gamma 4K x' });
+  const s = createSearch(db);
+  const by = (q) => s.query({ quality: q }).entries.map((e) => e.title);
+  assert.deepEqual(by(['dub']), ['Alpha']);
+  assert.deepEqual(by(['sub']), ['Beta']);
+  assert.deepEqual(by(['hd']), ['Alpha', 'Gamma']);
+  assert.deepEqual(by(['dub', 'hd']), ['Alpha']);
+  const r = s.query({});
+  assert.deepEqual(r.qualityCounts, { dub: 1, sub: 1, hardsub: 1, hd: 2, '4k': 1 });
+  assert.deepEqual(s.query({ quality: ['dub'] }).qualityCounts.hd, 2);
+  assert.deepEqual(s.find(r.entries.find((e) => e.title === 'Beta').key).quality, { res: '720p', dub: false, sub: true, hardsub: true });
+});

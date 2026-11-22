@@ -307,7 +307,7 @@ test('a collection folder with movie files is scanned into one entry per film an
 test('light entries carry only what a card needs; getEntry returns the whole entry by key', async () => {
   const { api, e } = await scanned();
   const light = (await api.getEntries({ light: true })).entries[0];
-  assert.deepEqual(Object.keys(light).sort(), ['attention', 'genres', 'key', 'kind', 'members', 'posterFile', 'rating', 'reason', 'tags', 'title', 'year']);
+  assert.deepEqual(Object.keys(light).sort(), ['attention', 'badges', 'genres', 'key', 'kind', 'members', 'posterFile', 'rating', 'reason', 'tags', 'title', 'year']);
   assert.deepEqual([light.key, light.title, light.rating, light.attention, light.members], [e.key, e.title, e.rating, e.attention, 0]);
   assert.ok(JSON.stringify(light).length * 3 < JSON.stringify(e).length);
   assert.deepEqual(await api.getEntry(e.key), e);

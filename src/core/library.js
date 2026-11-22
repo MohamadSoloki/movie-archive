@@ -1,4 +1,5 @@
 'use strict';
+const { qualityOf, mergeQuality } = require('./quality.js');
 
 // one shared collator: building it per comparison is what made sorting thousands of titles slow
 const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
@@ -55,7 +56,10 @@ function listEntries(db) {
     for (const l of e.locations) for (const tag of tagsByLoc.get(l.id) ?? []) if (!seen.has(tag.toLowerCase())) seen.set(tag.toLowerCase(), tag);
     e.userTags = [...seen.values()].sort((a, b) => collator.compare(a, b));
   }
-  for (const e of entries) e.attention = attentionOf(e);
+  for (const e of entries) {
+    e.attention = attentionOf(e);
+    e.quality = mergeQuality(e.locations.map((l) => qualityOf(l.relPath)));
+  }
   entries.push(...collectionEntries(entries));
   return entries.sort(compareTitles);
 }
@@ -90,6 +94,7 @@ function collectionEntries(entries) {
       title: l.collection.split('/').pop(), year: null, type: 'collection', plot: null, genres: null, rating: null, runtime: null,
       actors: null, posterFile: list.find((m) => m.posterFile)?.posterFile ?? null, status: 'matched', guessed: false, locations: [],
       imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, countryList: [], totalSeasons: null, attention: 'ok', userTags: shared,
+      quality: mergeQuality(list.map((m) => m.quality)),
       addedOrder: Math.min(...locs.map((x) => x.id)),
       collection: { driveSerial: l.driveSerial, relPath: l.collection, online: l.online, missing: locs.every((x) => x.missing) },
       members: list.map((m) => ({ key: m.key, title: m.title, year: m.year, posterFile: m.posterFile, status: m.status, kind: m.kind })),
@@ -108,11 +113,20 @@ function reasonOf(e) {
   return 'empty';
 }
 
+// the short badge list a card shows: resolution, then dub, then subtitles (glued ones named apart)
+function badgesOf(q) {
+  const out = [];
+  if (q.res === '4K' || q.res === '1080p') out.push(q.res);
+  if (q.dub) out.push('dub');
+  if (q.hardsub) out.push('hardsub'); else if (q.sub) out.push('sub');
+  return out;
+}
+
 // What a grid card needs. The whole entry (plot, cast, folders) is asked for when one is opened.
 function lightOf(e) {
   return {
     key: e.key, title: e.title, year: e.year, rating: e.rating, posterFile: e.posterFile, kind: e.kind,
-    attention: e.attention, genres: e.genreList.slice(0, 2), tags: e.userTags.slice(0, 2), reason: reasonOf(e), members: e.members ? e.members.length : 0,
+    attention: e.attention, genres: e.genreList.slice(0, 2), tags: e.userTags.slice(0, 2), reason: reasonOf(e), badges: badgesOf(e.quality), members: e.members ? e.members.length : 0,
   };
 }
 

@@ -2,7 +2,7 @@
 (() => {
   const api = window.api;
   const $ = (id) => document.getElementById(id);
-  const state = { lang: 'fa', entries: [], selected: null, cart: new Map(), lists: [], listId: null, copies: [], reports: {}, selecting: false, picked: new Set(), copyDest: '', copyPlan: null, copying: false, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], tags: [], tagCounts: [], countries: [], countryCounts: [], knownTags: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, sort: 'name', rootCount: 0 };
+  const state = { lang: 'fa', entries: [], selected: null, cart: new Map(), lists: [], listId: null, copies: [], reports: {}, selecting: false, picked: new Set(), copyDest: '', copyPlan: null, copying: false, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], tags: [], tagCounts: [], countries: [], countryCounts: [], knownTags: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, quality: [], qualityCounts: {}, sort: 'name', rootCount: 0 };
   const t = (key, vars) => window.i18n.t(state.lang, key, vars);
   const genreName = (g) => window.i18n.genreLabel(state.lang, g);
   const countryName = (g) => window.i18n.countryLabel(state.lang, g);
@@ -117,8 +117,14 @@
     return refresh();
   }
 
+  const QUALITY = ['dub', 'sub', 'hardsub', 'hd', '4k'];
+  function toggleQuality(f) {
+    state.quality = state.quality.includes(f) ? state.quality.filter((x) => x !== f) : [...state.quality, f];
+    return refresh();
+  }
+
   function clearFilters() {
-    state.genres = []; state.attention = []; state.tags = []; state.countries = [];
+    state.genres = []; state.attention = []; state.tags = []; state.countries = []; state.quality = [];
     return refresh();
   }
 
@@ -135,11 +141,12 @@
     const pills = [
       ...state.attention.map((a) => h('button', { type: 'button', class: 'pill', onclick: () => toggleAttention(a) },
         dot(DOT_CLASS[a], t(STATES.find((s) => s[0] === a)[1])), t(STATES.find((s) => s[0] === a)[1]), ' ×')),
+      ...state.quality.map((f) => h('button', { type: 'button', class: 'pill', onclick: () => toggleQuality(f) }, `${t(`q_${f}`)} ×`)),
       ...state.countries.map((g) => h('button', { type: 'button', class: 'pill', onclick: () => toggleCountry(g) }, `${countryName(g)} ×`)),
       ...state.tags.map((g) => h('button', { type: 'button', class: 'pill mine', onclick: () => toggleTag(g) }, icon('tag'), `${g} ×`)),
       ...state.genres.map((g) => h('button', { type: 'button', class: 'pill', onclick: () => toggleGenre(g) }, `${genreName(g)} ×`)),
     ];
-    const n = state.genres.length + state.attention.length + state.tags.length + state.countries.length;
+    const n = state.genres.length + state.attention.length + state.tags.length + state.countries.length + state.quality.length;
     $('filter-badge').hidden = !n;
     $('filter-badge').textContent = String(n);
     $('active').replaceChildren(...pills);
@@ -149,6 +156,8 @@
   function renderSheet() {
     $('f-status').replaceChildren(...STATES.map(([key, label]) =>
       chip(t(label), state.attentionCounts[key], state.attention.includes(key), () => toggleAttention(key), dot(DOT_CLASS[key], ''))));
+    $('f-quality').replaceChildren(...QUALITY.map((f) =>
+      chip(t(`q_${f}`), state.qualityCounts[f] ?? 0, state.quality.includes(f), () => toggleQuality(f))));
     // a selected genre stays visible even when the current tab has none of it, so it can be switched off
     const shown = [...state.genreCounts];
     for (const g of state.genres) if (!shown.some((c) => sameGenre(c.name, g))) shown.push({ name: g, count: 0 });
@@ -169,7 +178,7 @@
       type: 'button', 'aria-pressed': String(state.sort === s), onclick: () => { state.sort = s; refresh(); },
     }, t(`sort_${s}`))));
     $('filter-show').textContent = t('filter_show', { n: state.entries.length });
-    $('filter-clear').disabled = !(state.genres.length || state.attention.length || state.tags.length || state.countries.length);
+    $('filter-clear').disabled = !(state.genres.length || state.attention.length || state.tags.length || state.countries.length || state.quality.length);
   }
 
   function renderFilters() {
@@ -219,6 +228,7 @@
   function card(e) {
     const mine = e.tags.map((g) => h('span', { class: 'mine', dir: 'auto' }, icon('tag'), g));
     const genres = e.genres.map((g) => h('span', {}, genreName(g)));
+    const marks = (e.badges || []).map((b) => h('span', { class: `qb q-${b}` }, t(`qb_${b}`)));
     return h('button', {
       class: `card a-${e.attention}${state.selected === e.key ? ' sel' : ''}${state.picked.has(e.key) ? ' picked' : ''}`,
       type: 'button',
@@ -232,7 +242,7 @@
       e.kind === 'collection' ? h('span', { class: 'stack' }, icon('layers'), t('collection_n', { n: e.members })) : null),
     h('span', { class: 'info' },
       h('span', { class: 'title-row' }, dotOf(e), h('span', { class: 'name', dir: 'auto' }, e.title)),
-      e.year || genres.length || mine.length ? h('span', { class: 'meta' }, e.year ? h('span', { class: 'year' }, String(e.year)) : null, ...mine, ...genres) : null));
+      e.year || genres.length || mine.length || marks.length ? h('span', { class: 'meta' }, e.year ? h('span', { class: 'year' }, String(e.year)) : null, ...marks, ...mine, ...genres) : null));
   }
 
   function appendChunk() {
@@ -250,7 +260,7 @@
   }
 
   function resetView() {
-    state.tab = 'all'; state.genres = []; state.tags = []; state.countries = []; state.attention = []; state.query = ''; $('q').value = '';
+    state.tab = 'all'; state.genres = []; state.tags = []; state.countries = []; state.attention = []; state.quality = []; state.query = ''; $('q').value = '';
     for (const x of document.querySelectorAll('#tabs button')) x.setAttribute('aria-selected', String(x.dataset.tab === 'all'));
     return refresh();
   }
@@ -260,7 +270,7 @@
     const box = $('empty');
     box.hidden = state.entries.length > 0;
     if (box.hidden) { box.replaceChildren(); return; }
-    const filtered = state.query || state.genres.length || state.tags.length || state.countries.length || state.attention.length || state.tab !== 'all';
+    const filtered = state.query || state.genres.length || state.tags.length || state.countries.length || state.attention.length || state.quality.length || state.tab !== 'all';
     const [art, title, text, label, go] = filtered
       ? ['search', 'no_results', 'no_results_hint', 'reset_view', resetView]
       : !state.rootCount
@@ -271,13 +281,14 @@
   }
 
   async function refresh(forceDetail = false) {
-    const r = await api.getEntries({ query: state.query, tab: state.tab, genres: state.genres, tags: state.tags, countries: state.countries, attention: state.attention, sort: state.sort, light: true });
+    const r = await api.getEntries({ query: state.query, tab: state.tab, genres: state.genres, tags: state.tags, countries: state.countries, attention: state.attention, quality: state.quality, sort: state.sort, light: true });
     state.entries = r.entries;
     state.genreCounts = r.genres;
     state.tagCounts = r.tagCounts;
     state.countryCounts = r.countryCounts;
     state.knownTags = await api.getTags();
     state.attentionCounts = r.attentionCounts;
+    state.qualityCounts = r.qualityCounts;
     renderFilters();
     for (const key of [...state.picked]) if (!state.entries.some((e) => e.key === key)) state.picked.delete(key); // filtered out of view
     renderSelbar();

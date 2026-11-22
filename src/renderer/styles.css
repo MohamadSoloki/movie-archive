@@ -355,6 +355,8 @@ dialog[open] { animation: pop 0.18s ease-out; }
 /* manual tags: filled accent, with a tag icon, so they never look like the outlined genres from OMDb */
 .mine, .tag.mine, .pill.mine { display: inline-flex; align-items: center; gap: 0.3rem; background: var(--accent-soft); color: var(--accent); border: 1px solid transparent; font-weight: 600; }
 .mine svg { width: 0.85em; height: 0.85em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.meta .qb { flex: none; padding: 0 0.4rem; border-radius: 4px; font-size: 0.72rem; height: 1.2rem; line-height: 1.2rem; background: var(--raised); border: 1px solid var(--line); color: var(--ink); font-weight: 600; }
+.meta .qb.q-dub { background: var(--accent-soft); color: var(--accent); }
 .meta .mine { padding: 0 0.45rem; border-radius: 999px; font-size: 0.76rem; height: 1.2rem; }
 .tag.mine { padding-inline-end: 0.25rem; }
 .tag .x { display: inline-grid; place-items: center; width: 1.2rem; height: 1.2rem; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
