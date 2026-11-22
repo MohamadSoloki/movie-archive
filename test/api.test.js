@@ -1000,3 +1000,28 @@ test('phone catalog starts at launch only when it was left on', async () => {
     assert.equal((await api.initCatalog()).running, true);
   } finally { await api.stopCatalog(); }
 });
+
+test('phone catalog rows: persian genres, persian name from a folder, no paths; asking for a film we have is not demand', async () => {
+  const { api, media } = await withFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  fs.mkdirSync(path.join(media, 'Movies', 'بتمن آغاز می‌کند 2005 دوبله فارسی'), { recursive: true });
+  fs.writeFileSync(path.join(media, 'Movies', 'بتمن آغاز می‌کند 2005 دوبله فارسی', 'a.mkv'), 'x');
+  await api.scan();
+  await api.setSettings({ omdbKey: 'K', catalogPort: 0 });
+  await api.startQueue(() => {});
+  const r = await api.startCatalog();
+  try {
+    const base = `http://127.0.0.1:${new URL(r.url).port}`;
+    const fa = await (await fetch(`${base}/api/films?lang=fa`)).json();
+    const en = await (await fetch(`${base}/api/films?lang=en`)).json();
+    assert.deepEqual(fa.find((f) => f.g.includes('اکشن'))?.g.slice(0, 1), ['اکشن']);
+    assert.ok(en.find((f) => f.g.includes('Action')));
+    assert.ok(fa.some((f) => f.a.some((n) => n.includes('بتمن آغاز'))));
+    assert.ok(!JSON.stringify(fa).match(/دوبله|Movies|media-/));
+    assert.ok(fa.every((f) => ['movie', 'series', 'anime'].includes(f.kd) && Number.isInteger(f.o)));
+    const ask = (name) => fetch(`${base}/api/ask`, { method: 'POST', body: JSON.stringify({ name }) }).then((x) => x.json());
+    assert.deepEqual(await ask('Dune'), { ok: true, inArchive: [fa.find((f) => /dune/i.test(f.t)).t] });
+    assert.deepEqual(await api.getRequests(), []);
+    assert.deepEqual(await ask('Some Film We Lack'), { ok: true, inArchive: [] });
+    assert.deepEqual((await api.getRequests()).map((x) => [x.name, x.count]), [['Some Film We Lack', 1]]);
+  } finally { await api.stopCatalog(); }
+});

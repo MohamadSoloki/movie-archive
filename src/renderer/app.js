@@ -1383,15 +1383,35 @@
       h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: () => { $('print-area').replaceChildren(sheet()); window.print(); } }, t('cat_print'))),
       ...groups.map((g) => h('section', {}, h('h3', {}, `${g.genre ? genreName(g.genre) : t('cat_other')} (${g.items.length})`))));
   };
+  // a list that arrives while the app is open: a number on the reports button and one line in the status bar
+  let seenWishes = null;
+  function paintWishBadge(n) {
+    $('rep-badge').hidden = !n;
+    $('rep-badge').textContent = String(n);
+  }
+  async function pollWishes() {
+    const rows = await api.getWishes();
+    const top = rows.reduce((m, w) => Math.max(m, w.id), 0);
+    if (seenWishes === null) { seenWishes = top; return; }
+    const fresh = rows.filter((w) => w.id > seenWishes);
+    paintWishBadge(fresh.length);
+    if (fresh.length && top > (pollWishes.told ?? 0)) { pollWishes.told = top; setStatus(t('wish_new', { name: fresh[0].name, n: fresh.length })); }
+  }
+
   // lists customers sent from their phones; one tap moves a list into the copy list, with the customer's name
   REPORTS.wishes = async (body) => {
     const list = h('ul', { class: 'plain orders' });
     const paint = async () => {
       const rows = await api.getWishes();
+      // a film this customer already got (by name) is marked, the same warning the copy dialog gives
+      for (const w of rows) w.delivered = await api.getDelivered({ customer: w.name, keys: w.items.map((i) => i.key) });
+      seenWishes = rows.reduce((m, w) => Math.max(m, w.id), seenWishes);
+      paintWishBadge(0);
       list.replaceChildren(...(rows.length ? rows.map((w) => h('li', { class: 'order' },
-        h('div', { class: 'order-head' }, h('strong', { dir: 'auto' }, w.name), h('span', { class: 'help' }, dateOf(w.created, true))),
+        h('div', { class: 'order-head' }, h('strong', { dir: 'auto' }, `#${w.id} ${w.name}`), h('span', { class: 'help' }, dateOf(w.created, true))),
         h('p', { class: 'help', dir: 'auto' }, [w.phone, w.note].filter(Boolean).join(' · ')),
-        h('ul', { class: 'plain' }, w.items.map((i) => h('li', { dir: 'auto' }, i.year ? `${i.title} (${i.year})` : i.title))),
+        h('ul', { class: 'plain' }, w.items.map((i) => h('li', { dir: 'auto' }, i.year ? `${i.title} (${i.year})` : i.title,
+          w.delivered[i.key] ? h('span', { class: 'help' }, ` · ${t('wish_had', { date: dateOf(w.delivered[i.key].created) })}`) : null))),
         h('div', { class: 'row' },
           h('button', { type: 'button', class: 'btn primary', onclick: async () => {
             let added = 0;
@@ -1586,6 +1606,8 @@
     await loadLists();
     await pollCalendar(true);
     setInterval(() => pollCalendar(false), 20000);
+    await pollWishes();
+    setInterval(pollWishes, 15000);
     // a few seconds after launch, so the first screen is not competing with it
     if (state.lang === 'fa' && s.autoTranslate !== false) setTimeout(() => backgroundTranslate(false), 4000);
   })();

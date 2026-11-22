@@ -367,7 +367,7 @@ dialog[open] { animation: pop 0.18s ease-out; }
 
 /* copy list */
 #copy-btn { position: relative; }
-#copy-badge { position: absolute; inset-block-start: -0.3rem; inset-inline-end: -0.3rem; }
+#copy-badge, #rep-badge { position: absolute; inset-block-start: -0.3rem; inset-inline-end: -0.3rem; }
 .cart-mark { position: absolute; inset-block-end: 0.5rem; inset-inline-start: 0.5rem; display: grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--accent); color: var(--accent-ink); }
 .cart-mark svg { width: 0.95rem; height: 0.95rem; stroke-width: 2.6; }
 #copy-items li { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.45rem 0; border-block-end: 1px solid var(--line); }

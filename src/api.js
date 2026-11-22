@@ -1,6 +1,7 @@
 'use strict';
 const path = require('node:path');
 const os = require('node:os');
+const { genreLabel } = require('./renderer/i18n.js');
 const { getSetting, setSetting } = require('./core/db.js');
 const { listDrives: defaultListDrives, refreshDrives, toDriveRel, listRemovable: defaultListRemovable, ejectDrive: defaultEject } = require('./core/drives.js');
 const { scanFolder, VIDEO } = require('./core/scanner.js');
@@ -36,6 +37,32 @@ function defaultLanAddress() {
   return '127.0.0.1';
 }
 const defaultQr = (text) => require('qrcode').toDataURL(text, { margin: 1, width: 240 });
+
+const WISH_LIMIT = 300;
+// words of a folder name that say how the copy is, not what the film is called
+const NOT_A_NAME = new Set(['دوبله', 'فارسی', 'زیرنویس', 'چسبیده', 'فصل', 'قسمت', 'دو', 'زبانه', 'کامل', 'سریال', 'فیلم']);
+// Persian film names kept in folder names, so a customer typing the Persian name finds a film OMDb knows in English
+function persianNames(e) {
+  const out = new Set();
+  for (const l of e.locations) {
+    for (const m of l.folderName.matchAll(/[\u0600-\u06FF]+(?:\s+[\u0600-\u06FF]+)*/g)) {
+      const words = m[0].split(/\s+/).filter((w) => !NOT_A_NAME.has(w));
+      if (words.length) out.add(words.join(' '));
+    }
+  }
+  return [...out];
+}
+
+// what the phone page gets for one film: names, genres and ratings only; nothing about folders or drives
+function catalogRow(e, lang) {
+  const seasons = new Set(e.locations.filter((l) => !l.missing && l.season).map((l) => String(l.season))).size;
+  const na = (v) => (v && v !== 'N/A' ? v : null);
+  return {
+    k: e.key, t: e.title, y: e.year ?? null, g: e.genreList.map((g) => genreLabel(lang, g)), r: na(e.rating), b: badgesOf(e.quality),
+    a: [...e.aliases, ...persianNames(e), ...[na(e.director), na(e.actors)].filter(Boolean)], p: !!e.posterFile,
+    kd: e.kind === 'other' ? 'anime' : e.kind, s: e.kind === 'series' ? seasons : 0, o: e.addedOrder, d: na(e.director),
+  };
+}
 
 // "The Batman!" and "the batman" are the same name
 const nameKey = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
@@ -345,20 +372,35 @@ function createApi({
   // ---- phone catalog: a read-only page on the shop network, customers send back the films they want ----
   const catalogServer = createCatalogServer({
     lang: () => getSetting(db, 'language'),
-    films: () => search.query({}).entries.filter((e) => e.kind !== 'collection').map((e) => ({
-      k: e.key, t: e.title, y: e.year ?? null, g: e.genreList, r: e.rating ?? null, b: badgesOf(e.quality), a: e.aliases, p: !!e.posterFile,
-    })),
+    films: (lang) => search.query({}).entries.filter((e) => e.kind !== 'collection').map((e) => catalogRow(e, lang)),
     posterFile: (k) => {
       const f = search.find(k)?.posterFile;
       if (!f) return null;
       try { return fs.readFileSync(path.join(postersDir, path.basename(f))); } catch { return null; }
     },
     known: (k) => { const e = search.find(k); return e && e.kind !== 'collection' ? { key: e.key, title: e.title, year: e.year } : null; },
-    submit: (w) => db.prepare('INSERT INTO wishes(name, phone, note, created, items) VALUES(?,?,?,?,?)')
-      .run(w.name, w.phone || null, w.note || null, now(), JSON.stringify(w.items)),
+    // 0 when the inbox is full, so a prank cannot fill the database
+    submit: (w) => {
+      if (db.prepare('SELECT COUNT(*) c FROM wishes').get().c >= WISH_LIMIT) return 0;
+      return Number(db.prepare('INSERT INTO wishes(name, phone, note, created, items) VALUES(?,?,?,?,?)')
+        .run(w.name, w.phone || null, w.note || null, now(), JSON.stringify(w.items)).lastInsertRowid);
+    },
+    // a film that is already in the archive is not demand: only a missing one is counted in the request list
+    ask: (name) => {
+      const found = inArchiveNamed(name);
+      if (found.length) return { ok: true, inArchive: found.map((f) => f.title) };
+      return orders.addRequest(db, name, now()) ? { ok: true, inArchive: [] } : { ok: false };
+    },
     clock,
   });
   let catalogUrl = null;
+
+  // already here: the same name as a title or other name, or inside a folder name
+  function inArchiveNamed(name) {
+    const key = orders.nameKey(name);
+    return search.query({}).entries.filter((e) => e.kind !== 'collection' && [e.title, ...e.aliases].some((n) => orders.nameKey(n) === key)
+      || (key.length >= 4 && e.locations.some((l) => orders.nameKey(l.folderName).includes(key)))).map((e) => ({ key: e.key, title: e.title }));
+  }
 
   async function catalogInfo() {
     if (!catalogServer.running || !catalogUrl) return { running: false };
@@ -636,11 +678,7 @@ function createApi({
       if (String(name ?? '').trim().length > 100) return { ok: false, error: 'too_long' };
       const r = orders.addRequest(db, name, now());
       if (!r) return { ok: false, error: 'empty' };
-      const key = orders.nameKey(r.name);
-      // already here: the same name as a title or other name, or inside a folder name
-      const inArchive = search.query({}).entries.filter((e) => e.kind !== 'collection' && [e.title, ...e.aliases].some((n) => orders.nameKey(n) === key)
-        || (key.length >= 4 && e.locations.some((l) => orders.nameKey(l.folderName).includes(key)))).map((e) => ({ key: e.key, title: e.title }));
-      return { ok: true, ...r, inArchive };
+      return { ok: true, ...r, inArchive: inArchiveNamed(r.name) };
     },
     async getRequests() {
       return orders.listRequests(db);

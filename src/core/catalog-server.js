@@ -4,24 +4,27 @@ const { pageHtml } = require('./catalog-page.js');
 
 const MAX_BODY = 16 * 1024;
 const MAX_ITEMS = 200;
-const RATE = { windowMs: 10 * 60 * 1000, max: 5 };
+const RATE = { windowMs: 10 * 60 * 1000, wish: 5, ask: 20 };
 const clean = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
 /**
  * The phone catalog: a small read-only web server for the shop's local network. Customers browse the film list on their
  * phone and send back the list they want. No file path, drive or folder name ever leaves it; sent lists only reach `submit`.
  */
-function createCatalogServer({ films, posterFile, known, submit, lang = () => 'fa', clock = Date.now }) {
+function createCatalogServer({ films, posterFile, known, submit, ask, lang = () => 'fa', clock = Date.now }) {
   let server = null;
   const sent = new Map(); // address -> times of its recent lists
 
-  const limited = (ip) => {
+  // `what` is 'wish' or 'ask': each has its own allowance per address
+  const limited = (ip, what) => {
     const now = clock();
-    const recent = (sent.get(ip) ?? []).filter((x) => now - x < RATE.windowMs);
-    if (recent.length >= RATE.max) { sent.set(ip, recent); return true; }
-    sent.set(ip, [...recent, now]);
+    const id = `${what}:${ip}`;
+    const recent = (sent.get(id) ?? []).filter((x) => now - x < RATE.windowMs);
+    if (recent.length >= RATE[what]) { sent.set(id, recent); return true; }
+    sent.set(id, [...recent, now]);
     return false;
   };
+  const langOf = (url) => (['fa', 'en'].includes(url.searchParams.get('lang')) ? url.searchParams.get('lang') : lang());
 
   const reply = (res, status, type, body) => {
     res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
@@ -50,26 +53,41 @@ function createCatalogServer({ films, posterFile, known, submit, lang = () => 'f
       if (!name || !keys.length || keys.length > MAX_ITEMS) { json(res, 400, { ok: false, error: 'bad_list' }); return; }
       const items = [...new Set(keys)].map((k) => known(k)).filter(Boolean).map((e) => ({ key: e.key, title: e.title, year: e.year ?? null }));
       if (!items.length) { json(res, 400, { ok: false, error: 'bad_list' }); return; }
-      if (limited(req.socket.remoteAddress)) { json(res, 429, { ok: false, error: 'slow_down' }); return; }
-      submit({ name, phone: clean(b.phone, 30), note: clean(b.note, 200), items });
-      json(res, 200, { ok: true });
+      if (limited(req.socket.remoteAddress, 'wish')) { json(res, 429, { ok: false, error: 'slow_down' }); return; }
+      const id = submit({ name, phone: clean(b.phone, 30), note: clean(b.note, 200), items });
+      if (!id) json(res, 503, { ok: false, error: 'full' });
+      else json(res, 200, { ok: true, id });
+    });
+  }
+
+  // a film the archive lacks: the answer lists what the archive already has under that name
+  function onAsk(req, res) {
+    readBody(req, res, (text) => {
+      let b;
+      try { b = JSON.parse(text); } catch { json(res, 400, { ok: false, error: 'bad_json' }); return; }
+      const name = clean(b?.name, 101);
+      if (!name || name.length > 100) { json(res, 400, { ok: false, error: 'bad_name' }); return; }
+      if (limited(req.socket.remoteAddress, 'ask')) { json(res, 429, { ok: false, error: 'slow_down' }); return; }
+      const r = ask(name);
+      if (!r?.ok) json(res, 400, { ok: false, error: 'bad_name' });
+      else json(res, 200, { ok: true, inArchive: r.inArchive });
     });
   }
 
   function handle(req, res) {
     const url = new URL(req.url, 'http://x');
     const path = url.pathname;
-    const routes = ['/', '/api/films', '/api/wish'];
+    const routes = ['/', '/api/films', '/api/wish', '/api/ask'];
     const poster = path.startsWith('/poster/');
     if (!routes.includes(path) && !poster) { json(res, 404, { ok: false }); return; }
-    if (path === '/api/wish') {
+    if (path === '/api/wish' || path === '/api/ask') {
       if (req.method !== 'POST') { json(res, 405, { ok: false }); return; }
-      onWish(req, res);
+      (path === '/api/wish' ? onWish : onAsk)(req, res);
       return;
     }
     if (req.method !== 'GET') { json(res, 405, { ok: false }); return; }
-    if (path === '/') reply(res, 200, 'text/html; charset=utf-8', pageHtml(lang()));
-    else if (path === '/api/films') json(res, 200, films());
+    if (path === '/') reply(res, 200, 'text/html; charset=utf-8', pageHtml(langOf(url)));
+    else if (path === '/api/films') json(res, 200, films(langOf(url)));
     else {
       let key = '';
       try { key = decodeURIComponent(path.slice('/poster/'.length)); } catch { /* bad escape */ }
