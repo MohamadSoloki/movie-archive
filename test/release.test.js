@@ -33,3 +33,8 @@ test('the version is checked, written into package.json at build time, and must 
   assert.match(workflow, /pkg\.version = process\.env\.VERSION/);
   assert.match(workflow, /gh release view "v\$VERSION"/);
 });
+
+test('a hand-started release creates its tag first: GitHub refuses a published release without one', () => {
+  assert.match(workflow, /if: github\.event_name == 'workflow_dispatch'\s*\n\s+shell: bash\s*\n\s+env:\s*\n\s+GH_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}\s*\n\s+INPUT_VERSION: \$\{\{ github\.event\.inputs\.version \}\}\s*\n\s+run: \|[\s\S]*gh api "repos\/\$GITHUB_REPOSITORY\/git\/refs"[\s\S]*refs\/tags\/v\$\{VERSION\}/);
+  assert.ok(workflow.indexOf('git/refs') < workflow.indexOf('electron-builder'));
+});

@@ -26,7 +26,7 @@ jobs:
 
   # A hand-started run (typed version) or a tag like v0.4.1 builds the Windows installer and publishes it as a GitHub Release.
   # The version is written into package.json at build time, so the repo never needs a version-bump commit.
-  # The installed app finds the release and offers the update itself. GitHub creates the tag v<version> when the release is published.
+  # The installed app finds the release and offers the update itself. A hand-started run creates the tag v<version> itself (GitHub refuses a release without a tag).
   release:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     needs: test
@@ -66,6 +66,17 @@ jobs:
             fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
             console.log("version", pkg.version);
           '
+      # GitHub refuses to publish a release whose tag does not exist (422 "Published releases must have a valid tag"),
+      # so a hand-started run makes the tag itself. A push made with GITHUB_TOKEN does not start another run.
+      - name: Create the tag
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          VERSION="${INPUT_VERSION#v}"
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v${VERSION}" -f sha="$GITHUB_SHA"
       - run: npm ci
       - run: npx electron-builder --win --publish always
         env:
