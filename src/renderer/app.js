@@ -1255,6 +1255,63 @@
   $('cal-btn').addEventListener('click', () => openCal());
   $('cal-x').addEventListener('click', () => $('cal-dlg').close());
 
+  // ---- reports: incomplete series, titles kept on one drive only ----
+
+  const REPORTS = {
+    async gaps(body) {
+      const r = await api.getSeriesGaps();
+      body.replaceChildren(h('p', { class: 'help' }, t('rep_gaps_help')),
+        r.entries.length
+          ? h('ul', { class: 'plain members' }, r.entries.map((e) => h('li', {},
+            h('button', { type: 'button', class: 'member', onclick: () => { $('rep-dlg').close(); openMember(e.key); } }, h('span', { dir: 'auto' }, e.title)),
+            ...e.seasons.map((s) => h('p', { class: 'help' }, t('gap_line', { season: s.season, have: s.have, expected: s.expected, missing: s.missing.join(', ') }))))))
+          : h('p', {}, t('rep_gaps_none')),
+        h('p', { class: 'help' }, t('gap_note', { checked: r.checked, offline: r.offline, unreadable: r.unreadable })));
+    },
+    async single(body) {
+      const groups = await api.getSingleDrive();
+      body.replaceChildren(h('p', { class: 'help' }, t('rep_single_help')),
+        ...(groups.length ? groups.map((g) => h('section', {}, h('h3', {}, t('rep_single_drive', { drive: g.driveLabel || g.driveSerial, n: g.items.length })),
+          h('ul', { class: 'plain members' }, g.items.map((i) => h('li', {}, h('button', { type: 'button', class: 'member', onclick: () => { $('rep-dlg').close(); openMember(i.key); } },
+            h('span', { dir: 'auto' }, i.title), i.year ? h('span', { class: 'year' }, String(i.year)) : null)))))) : [h('p', {}, t('rep_single_none'))]));
+    },
+  };
+  let repTab = 'gaps';
+
+  async function renderReports() {
+    $('rep-tabs').replaceChildren(...Object.keys(REPORTS).map((k) => chip(t(`rep_tab_${k}`), null, k === repTab, () => { repTab = k; renderReports(); })));
+    const body = $('rep-body');
+    body.replaceChildren(h('p', { class: 'help' }, t('rep_loading')));
+    const mine = repTab;
+    const probe = h('div', {});
+    await REPORTS[mine](probe);
+    if (mine === repTab) body.replaceChildren(...probe.childNodes);
+  }
+
+  $('rep-btn').addEventListener('click', () => { if (!$('rep-dlg').open) $('rep-dlg').showModal(); renderReports(); });
+  $('rep-x').addEventListener('click', () => $('rep-dlg').close());
+
+  // ---- backup of the owner's own data ----
+
+  function backupNote(text) {
+    $('backup-note').hidden = !text;
+    $('backup-note').textContent = text || '';
+  }
+  $('backup-export').addEventListener('click', async () => {
+    const day = new Date().toISOString().slice(0, 10);
+    const file = await api.pickSaveFile(`movie-archive-backup-${day}.json`, [{ name: 'JSON', extensions: ['json'] }]);
+    if (!file) return;
+    const r = await api.exportBackup(file);
+    backupNote(r.ok ? t('backup_exported') : t(`backup_err_${r.error}`));
+  });
+  $('backup-import').addEventListener('click', async () => {
+    const file = await api.pickOpenFile([{ name: 'JSON', extensions: ['json'] }]);
+    if (!file) return;
+    const r = await api.importBackup(file);
+    backupNote(r.ok ? t('backup_imported', r) : t(`backup_err_${r.error}`));
+    if (r.ok) await refresh(true);
+  });
+
   // ---- background translation of plots ----
 
   let translating = false;
@@ -1284,6 +1341,7 @@
     $('set-collections').value = s.collections.join('\n');
     $('set-email').value = s.translateEmail || '';
     $('set-auto-translate').checked = s.autoTranslate !== false;
+    backupNote('');
     $('settings-dlg').showModal();
   });
   $('settings-cancel').addEventListener('click', () => $('settings-dlg').close());

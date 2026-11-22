@@ -30,6 +30,7 @@
       <button id="folders-btn" type="button" class="icon-btn" data-i18n-label="folders"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
       <button id="cal-btn" type="button" class="icon-btn" data-i18n-label="cal_btn"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span id="cal-badge" class="badge" hidden></span></button>
       <button id="copy-btn" type="button" class="icon-btn" data-i18n-label="copy_list"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg><span id="copy-badge" class="badge" hidden></span></button>
+      <button id="rep-btn" type="button" class="icon-btn" data-i18n-label="rep_btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></button>
       <button id="update" type="button" class="icon-btn" data-i18n-label="update_check"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 4-4 4 4"/><path d="M12 16V8"/></svg></button>
       <button id="settings-btn" type="button" class="icon-btn" data-i18n-label="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg></button>
       <button id="theme" type="button" class="icon-btn" data-i18n-label="theme_toggle">
@@ -163,6 +164,17 @@
     </footer>
   </dialog>
 
+  <dialog id="rep-dlg" class="sheet" aria-labelledby="rep-title">
+    <header class="sheet-head">
+      <h2 id="rep-title" data-i18n="rep_title"></h2>
+      <button id="rep-x" type="button" class="icon-btn" data-i18n-label="close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </header>
+    <div class="sheet-body">
+      <div id="rep-tabs" class="chips"></div>
+      <div id="rep-body"></div>
+    </div>
+  </dialog>
+
   <dialog id="settings-dlg" class="sheet" aria-labelledby="settings-title">
     <form id="settings-form" class="sheet-form">
       <header class="sheet-head">
@@ -188,6 +200,13 @@
         <label class="check"><input id="set-auto-translate" type="checkbox"><span data-i18n="settings_auto_translate"></span></label>
         <p class="help" data-i18n="settings_auto_translate_hint"></p>
         <button id="translate-now" type="button" class="btn" data-i18n="translate_now"></button>
+        <label data-i18n="backup_title"></label>
+        <div class="row">
+          <button id="backup-export" type="button" class="btn" data-i18n="backup_export"></button>
+          <button id="backup-import" type="button" class="btn" data-i18n="backup_import"></button>
+        </div>
+        <p class="help" data-i18n="backup_hint"></p>
+        <p id="backup-note" class="help" role="status" hidden></p>
       </div>
       <footer class="sheet-foot">
         <button id="settings-cancel" type="button" class="btn" data-i18n="close"></button>

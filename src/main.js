@@ -51,6 +51,17 @@ app.whenReady().then(() => {
     return r.canceled ? null : r.filePaths[0];
   });
 
+  // file pickers for backups; the renderer only gets the chosen path back
+  const asFilters = (f) => (Array.isArray(f) ? f.filter((x) => x && typeof x.name === 'string' && Array.isArray(x.extensions)) : []);
+  ipcMain.handle('dialog:save', async (_e, name, filters) => {
+    const r = await dialog.showSaveDialog({ defaultPath: typeof name === 'string' ? name : undefined, filters: asFilters(filters) });
+    return r.canceled ? null : r.filePath;
+  });
+  ipcMain.handle('dialog:open', async (_e, filters) => {
+    const r = await dialog.showOpenDialog({ properties: ['openFile'], filters: asFilters(filters) });
+    return r.canceled ? null : r.filePaths[0];
+  });
+
   const win = new BrowserWindow({
     width: 1280, height: 800,
     // spellcheck off: it would load a dictionary into memory for a window with one search box

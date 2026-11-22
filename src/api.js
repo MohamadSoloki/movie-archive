@@ -21,6 +21,9 @@ const copies = require('./core/copies.js');
 const { verifyFiles } = require('./core/verify.js');
 const { createRate } = require('./core/rate.js');
 const { similarTo } = require('./core/similar.js');
+const { seriesGaps } = require('./core/gaps.js');
+const { singleDrive } = require('./core/reports.js');
+const { exportData, importData } = require('./core/backup.js');
 const { ProviderError } = require('./core/errors.js');
 // "The Batman!" and "the batman" are the same name
 const nameKey = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
@@ -466,6 +469,35 @@ function createApi({
     },
     async removeTag(key, text) {
       return changeTag(key, text, tags.removeTag);
+    },
+    // seasons whose folder lacks episodes that have aired (folders of plugged-in drives only; names must carry episode numbers)
+    async getSeriesGaps() {
+      const r = seriesGaps(db, { today: new Date(now()).toISOString().slice(0, 10) });
+      return { ...r, entries: r.entries.map((e) => ({ ...e, key: `t:${e.titleId}` })) };
+    },
+    // films and series that live on one drive only, per drive: what would be lost with it
+    async getSingleDrive() {
+      return singleDrive(search.query({}).entries);
+    },
+    // what the owner made by hand (tags, other names, lists, calendar, copies), to a file and back; the archive itself is rescanned
+    async exportBackup(file) {
+      try {
+        fs.writeFileSync(file, JSON.stringify(exportData(db, { now: now() }), null, 1));
+        return { ok: true };
+      } catch {
+        return { ok: false, error: 'unwritable' };
+      }
+    },
+    async importBackup(file) {
+      let text;
+      try { text = fs.readFileSync(file, 'utf8'); } catch { return { ok: false, error: 'unreadable' }; }
+      try {
+        const r = importData(db, JSON.parse(text));
+        search.invalidate();
+        return { ok: true, ...r };
+      } catch {
+        return { ok: false, error: 'not_a_backup' };
+      }
     },
     // other names (Persian ones, mostly) the film can be found by; they stay with the folder like tags do
     async addAlias(key, text) {

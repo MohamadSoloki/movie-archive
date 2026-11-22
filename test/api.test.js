@@ -870,3 +870,33 @@ test('aliases: other names are added to the entry, searched, kept through a resc
   assert.deepEqual(await api.addAlias(e.key, 'x'.repeat(81)), { ok: false, error: 'too_long' });
   assert.deepEqual(await api.addAlias('t:99999', 'a'), { ok: false, error: 'unknown' });
 });
+
+test('getSingleDrive lists what lives on one drive only', async () => {
+  const { api, e } = await scanned();
+  const groups = await api.getSingleDrive();
+  assert.equal(groups.length, 1);
+  assert.deepEqual(groups[0].items.map((i) => i.key), [e.key]);
+});
+
+test('getSeriesGaps answers with entry keys and counts', async () => {
+  const { api } = await scanned();
+  const r = await api.getSeriesGaps();
+  assert.deepEqual([r.entries, typeof r.checked, typeof r.offline, typeof r.unreadable], [[], 'number', 'number', 'number']);
+});
+
+test('backup: exportBackup writes a file importBackup reads; a foreign file is refused', async () => {
+  const { api, e, media } = await scanned();
+  await api.addTag(e.key, 'Iranian');
+  await api.addAlias(e.key, 'بتمن');
+  const file = path.join(media, 'backup.json');
+  assert.deepEqual(await api.exportBackup(file), { ok: true });
+  await api.removeTag(e.key, 'Iranian');
+  const r = await api.importBackup(file);
+  assert.equal(r.ok, true);
+  assert.deepEqual((await api.getEntry(e.key)).userTags, ['Iranian']);
+  fs.writeFileSync(file, '{"hello":1}');
+  assert.deepEqual(await api.importBackup(file), { ok: false, error: 'not_a_backup' });
+  fs.writeFileSync(file, 'not json');
+  assert.deepEqual(await api.importBackup(file), { ok: false, error: 'not_a_backup' });
+  assert.deepEqual(await api.importBackup(path.join(media, 'nothing.json')), { ok: false, error: 'unreadable' });
+});
