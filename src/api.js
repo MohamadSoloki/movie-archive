@@ -1,5 +1,6 @@
 'use strict';
 const path = require('node:path');
+const os = require('node:os');
 const { getSetting, setSetting } = require('./core/db.js');
 const { listDrives: defaultListDrives, refreshDrives, toDriveRel, listRemovable: defaultListRemovable, ejectDrive: defaultEject } = require('./core/drives.js');
 const { scanFolder, VIDEO } = require('./core/scanner.js');
@@ -13,7 +14,8 @@ const fix = require('./core/fix.js');
 const { createTranslator, translateCached, pretranslate } = require('./core/translate.js');
 const { forgetSeasons, getCache, putCache, cached } = require('./core/cache.js');
 const { createSearch } = require('./core/search.js');
-const { lightOf } = require('./core/library.js');
+const { lightOf, badgesOf } = require('./core/library.js');
+const { createCatalogServer } = require('./core/catalog-server.js');
 const tags = require('./core/tags.js');
 const transfer = require('./core/transfer.js');
 const { createCalendar, isEnded } = require('./core/calendar.js');
@@ -26,10 +28,19 @@ const { singleDrive, catalogByGenre } = require('./core/reports.js');
 const { exportData, importData } = require('./core/backup.js');
 const orders = require('./core/orders.js');
 const { ProviderError } = require('./core/errors.js');
+// the first private-network address of this computer: what a phone on the same Wi-Fi can reach
+function defaultLanAddress() {
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const i of list ?? []) if (i.family === 'IPv4' && !i.internal) return i.address;
+  }
+  return '127.0.0.1';
+}
+const defaultQr = (text) => require('qrcode').toDataURL(text, { margin: 1, width: 240 });
+
 // "The Batman!" and "the batman" are the same name
 const nameKey = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
-const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate', 'pricePerGB', 'priceMovie', 'priceSeason', 'shopName'];
+const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate', 'pricePerGB', 'priceMovie', 'priceSeason', 'shopName', 'phoneCatalog', 'catalogPort'];
 const PRICE_KEYS = ['pricePerGB', 'priceMovie', 'priceSeason'];
 
 function createApi({
@@ -37,6 +48,7 @@ function createApi({
   openPath = async () => '', openExternal = async () => {},
   updater = { check: async () => ({ state: 'dev' }), download: async () => ({ state: 'dev' }), install() {} },
   concurrency = 5, translatePause = 700, now = () => Date.now(), clock = () => Date.now(), version = '',
+  qr = defaultQr, lanAddress = defaultLanAddress,
   freeSpace = (dir) => { try { const s = fs.statfsSync(dir); return s.bavail * s.bsize; } catch { return Infinity; } },
 }) {
   const search = createSearch(db);
@@ -330,6 +342,29 @@ function createApi({
 
   const manyTags = (keys, text, apply) => (keys.length ? changeTags(keys, text, apply) : { ok: false, error: 'nothing' });
 
+  // ---- phone catalog: a read-only page on the shop network, customers send back the films they want ----
+  const catalogServer = createCatalogServer({
+    lang: () => getSetting(db, 'language'),
+    films: () => search.query({}).entries.filter((e) => e.kind !== 'collection').map((e) => ({
+      k: e.key, t: e.title, y: e.year ?? null, g: e.genreList, r: e.rating ?? null, b: badgesOf(e.quality), a: e.aliases, p: !!e.posterFile,
+    })),
+    posterFile: (k) => {
+      const f = search.find(k)?.posterFile;
+      if (!f) return null;
+      try { return fs.readFileSync(path.join(postersDir, path.basename(f))); } catch { return null; }
+    },
+    known: (k) => { const e = search.find(k); return e && e.kind !== 'collection' ? { key: e.key, title: e.title, year: e.year } : null; },
+    submit: (w) => db.prepare('INSERT INTO wishes(name, phone, note, created, items) VALUES(?,?,?,?,?)')
+      .run(w.name, w.phone || null, w.note || null, now(), JSON.stringify(w.items)),
+    clock,
+  });
+  let catalogUrl = null;
+
+  async function catalogInfo() {
+    if (!catalogServer.running || !catalogUrl) return { running: false };
+    return { running: true, url: catalogUrl, qr: await qr(catalogUrl) };
+  }
+
   return {
     async getSettings() {
       return Object.fromEntries(SETTING_KEYS.map((k) => [k, getSetting(db, k)]));
@@ -340,6 +375,8 @@ function createApi({
         let v = partial[k];
         if (PRICE_KEYS.includes(k)) { v = Number(v); v = Number.isFinite(v) && v > 0 ? v : 0; }
         if (k === 'shopName') v = String(v ?? '').trim().slice(0, 80);
+        if (k === 'phoneCatalog') v = !!v;
+        if (k === 'catalogPort') { v = Number(v); v = Number.isInteger(v) && v >= 0 && v <= 65535 ? v : 8787; }
         setSetting(db, k, v);
       }
       search.invalidate();
@@ -778,6 +815,38 @@ function createApi({
     },
     async pickCandidate(locationId, imdbId) {
       return fixLocation({ locationId }, imdbId);
+    },
+    async getCatalogInfo() {
+      return catalogInfo();
+    },
+    async startCatalog() {
+      try {
+        const { port } = await catalogServer.start(getSetting(db, 'catalogPort'));
+        catalogUrl = `http://${lanAddress()}:${port}`;
+      } catch (e) {
+        return { ok: false, error: e.code === 'EADDRINUSE' ? 'port_busy' : 'start_failed' };
+      }
+      setSetting(db, 'phoneCatalog', true);
+      return { ok: true, ...(await catalogInfo()) };
+    },
+    async stopCatalog() {
+      await catalogServer.stop();
+      catalogUrl = null;
+      setSetting(db, 'phoneCatalog', false);
+      return { ok: true };
+    },
+    // at launch: bring the catalog back when it was left on
+    async initCatalog() {
+      if (getSetting(db, 'phoneCatalog')) await this.startCatalog();
+      return catalogInfo();
+    },
+    async getWishes() {
+      return db.prepare('SELECT * FROM wishes ORDER BY created DESC, id DESC').all()
+        .map((w) => ({ id: w.id, name: w.name, phone: w.phone, note: w.note, created: w.created, items: JSON.parse(w.items) }));
+    },
+    async removeWish(id) {
+      db.prepare('DELETE FROM wishes WHERE id = ?').run(id);
+      return { ok: true };
     },
     posterPath(file) {
       return path.join(postersDir, path.basename(file));

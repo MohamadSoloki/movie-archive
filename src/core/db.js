@@ -13,6 +13,8 @@ const DEFAULTS = {
   priceMovie: 0,
   priceSeason: 0,
   shopName: '',
+  phoneCatalog: false,
+  catalogPort: 8787,
 };
 
 const SCHEMA = `
@@ -49,6 +51,8 @@ CREATE TABLE IF NOT EXISTS order_items(order_id INTEGER NOT NULL, ref TEXT NOT N
 CREATE INDEX IF NOT EXISTS order_items_order ON order_items(order_id);
 -- films customers asked for; key is the normalised name, so spellings of one name count together
 CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY, name TEXT NOT NULL, key TEXT NOT NULL UNIQUE, count INTEGER NOT NULL DEFAULT 1, last INTEGER NOT NULL);
+-- lists customers sent from the phone catalog: items is a JSON array of { key, title, year }
+CREATE TABLE IF NOT EXISTS wishes(id INTEGER PRIMARY KEY, name TEXT NOT NULL, phone TEXT, note TEXT, created INTEGER NOT NULL, items TEXT NOT NULL);
 -- series calendar: one row per show; due is the next air time (epoch ms, local clock), moved a week on each tick
 CREATE TABLE IF NOT EXISTS reminders(
   id INTEGER PRIMARY KEY, title TEXT NOT NULL, key TEXT UNIQUE, weekday INTEGER NOT NULL, time TEXT NOT NULL,

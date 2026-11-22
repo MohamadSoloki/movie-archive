@@ -1383,6 +1383,30 @@
       h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: () => { $('print-area').replaceChildren(sheet()); window.print(); } }, t('cat_print'))),
       ...groups.map((g) => h('section', {}, h('h3', {}, `${g.genre ? genreName(g.genre) : t('cat_other')} (${g.items.length})`))));
   };
+  // lists customers sent from their phones; one tap moves a list into the copy list, with the customer's name
+  REPORTS.wishes = async (body) => {
+    const list = h('ul', { class: 'plain orders' });
+    const paint = async () => {
+      const rows = await api.getWishes();
+      list.replaceChildren(...(rows.length ? rows.map((w) => h('li', { class: 'order' },
+        h('div', { class: 'order-head' }, h('strong', { dir: 'auto' }, w.name), h('span', { class: 'help' }, dateOf(w.created, true))),
+        h('p', { class: 'help', dir: 'auto' }, [w.phone, w.note].filter(Boolean).join(' · ')),
+        h('ul', { class: 'plain' }, w.items.map((i) => h('li', { dir: 'auto' }, i.year ? `${i.title} (${i.year})` : i.title))),
+        h('div', { class: 'row' },
+          h('button', { type: 'button', class: 'btn primary', onclick: async () => {
+            let added = 0;
+            for (const i of w.items) {
+              if (!state.cart.has(i.key) && await api.getEntry(i.key)) { toggleCart(i.key, i.title); added += 1; }
+            }
+            $('copy-customer').value = w.name;
+            setStatus(t('wish_added', { n: added }));
+          } }, t('wish_add')),
+          h('button', { type: 'button', class: 'btn', onclick: async () => { await api.removeWish(w.id); paint(); } }, t('wish_delete')))))
+        : [h('li', { class: 'help' }, t('wish_empty'))]));
+    };
+    await paint();
+    body.replaceChildren(h('p', { class: 'help' }, t('wish_help')), list);
+  };
   Object.assign(REPORTS, {
     // every copy made for a customer, newest first, with the films in it; the same list gives the invoice again
     async orders(body) {
@@ -1497,8 +1521,25 @@
   api.getVersion().then((v) => { if (v) $('app-version').textContent = `v${v}`; });
   $('translate-now').addEventListener('click', () => backgroundTranslate(true));
 
+  // phone catalog: starts and stops at once (it is not part of the Save button); shows the address and a QR code to scan
+  async function paintPhone(note = '') {
+    const info = await api.getCatalogInfo();
+    $('phone-toggle').textContent = t(info.running ? 'phone_stop' : 'phone_start');
+    $('phone-box').hidden = !info.running;
+    if (info.running) { $('phone-qr').src = info.qr; $('phone-url').textContent = info.url; }
+    $('phone-note').hidden = !note;
+    $('phone-note').textContent = note;
+  }
+  $('phone-toggle').addEventListener('click', async () => {
+    const info = await api.getCatalogInfo();
+    if (info.running) { await api.stopCatalog(); await paintPhone(); return; }
+    const r = await api.startCatalog();
+    await paintPhone(r.ok ? '' : t(`phone_err_${r.error}`));
+  });
+
   $('settings-btn').addEventListener('click', async () => {
     const s = await api.getSettings();
+    paintPhone();
     $('set-key').value = s.omdbKey;
     $('set-patterns').value = s.patterns.join('\n');
     $('set-ignore').value = s.ignore.join('\n');

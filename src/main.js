@@ -32,6 +32,8 @@ app.whenReady().then(() => {
     updater: createUpdater({ isPackaged: app.isPackaged }), version: require('../package.json').version,
   });
 
+  api.initCatalog().catch(() => {}); // the phone catalog comes back when it was left on
+
   // poster://x/<file>: serves only files inside <userData>/posters (api.posterPath keeps the base name)
   protocol.handle('poster', (req) => {
     const file = api.posterPath(decodeURIComponent(new URL(req.url).pathname));

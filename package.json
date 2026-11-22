@@ -9,8 +9,9 @@
     "dist": "electron-builder --win"
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "fuse.js": "^7.0.0",
-    "electron-updater": "^6.8.11"
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "electron": "^45.3.3",

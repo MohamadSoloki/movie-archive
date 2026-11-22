@@ -445,6 +445,7 @@ body.selecting main { padding-block-end: 6rem; }
 
 /* the invoice shows only on paper */
 .print-area { display: none; }
+@media screen { .phone-box { display: flex; align-items: center; gap: 1rem; } .phone-box[hidden] { display: none; } .phone-box img { background: #fff; padding: 4px; border-radius: 8px; } }
 @media print {
   html, body { background: #fff !important; color: #000 !important; display: block !important; height: auto !important; overflow: visible !important; }
   body > *:not(#print-area) { display: none !important; }

@@ -12,7 +12,7 @@ const OMDB_BODY = {
   imdbRating: '7.8', Runtime: '176 min', Actors: 'Robert Pattinson', Poster: 'https://img.example/p.jpg',
 };
 
-function setup({ jikan, updater, key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause, now, clock, version, listRemovable, eject } = {}) {
+function setup({ jikan, updater, key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause, now, clock, version, listRemovable, eject, qr, lanAddress } = {}) {
   const media = fs.mkdtempSync(path.join(os.tmpdir(), 'media-'));
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'ud-'));
   const fetchCalls = [];
@@ -35,7 +35,7 @@ function setup({ jikan, updater, key = 'K', openPath, openExternal, mymemory, fr
   const db = openDb();
   const state = { online: true };
   const api = createApi({
-    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace, translatePause, now, clock, version, updater, listRemovable, eject,
+    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace, translatePause, now, clock, version, updater, listRemovable, eject, qr, lanAddress,
     listDrives: async () => (state.online ? [{ serial: 'S1', label: 'Test', root: media + path.sep }] : []),
   });
   return { api, db, media, userData, fetchCalls, key, state };
@@ -961,4 +961,42 @@ test('estimateSize gives the size and price of a list before any destination is 
   assert.deepEqual(await api.estimateSize([]), { bytes: 0, count: 0, price: null });
   assert.equal(await api.getFreeSpace(dest), 777);
   assert.equal(await api.getFreeSpace(path.join(dest, 'nope')), null);
+});
+
+test('phone catalog: off by default, serves films without paths, takes customer lists, stops again', async () => {
+  const { api } = await withFilms({ qr: async (text) => `qr:${text}`, lanAddress: () => '192.168.1.20' });
+  await api.setSettings({ catalogPort: 0 });
+  assert.deepEqual(await api.getCatalogInfo(), { running: false });
+  const r = await api.startCatalog();
+  try {
+    assert.equal(r.ok, true);
+    assert.match(r.url, /^http:\/\/192\.168\.1\.20:\d+$/);
+    assert.equal(r.qr, `qr:${r.url}`);
+    assert.equal((await api.getSettings()).phoneCatalog, true);
+    const base = `http://127.0.0.1:${new URL(r.url).port}`;
+    const films = await (await fetch(`${base}/api/films`)).json();
+    assert.equal(films.length, 2);
+    assert.ok(!JSON.stringify(films).match(/Movies|media-|batman 2022/));
+    const key = films[0].k;
+    const sent = await fetch(`${base}/api/wish`, { method: 'POST', body: JSON.stringify({ name: 'Ali', phone: '0912', keys: [key] }) });
+    assert.equal(sent.status, 200);
+    const wishes = await api.getWishes();
+    assert.equal(wishes.length, 1);
+    assert.deepEqual([wishes[0].name, wishes[0].phone, wishes[0].items[0].key], ['Ali', '0912', key]);
+    assert.deepEqual(await api.removeWish(wishes[0].id), { ok: true });
+    assert.deepEqual(await api.getWishes(), []);
+  } finally {
+    assert.deepEqual(await api.stopCatalog(), { ok: true });
+  }
+  assert.equal((await api.getSettings()).phoneCatalog, false);
+});
+
+test('phone catalog starts at launch only when it was left on', async () => {
+  const { api } = await withFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  await api.setSettings({ catalogPort: 0 });
+  assert.equal((await api.initCatalog()).running, false);
+  await api.setSettings({ phoneCatalog: true });
+  try {
+    assert.equal((await api.initCatalog()).running, true);
+  } finally { await api.stopCatalog(); }
 });
