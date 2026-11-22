@@ -532,6 +532,34 @@ function createApi({
         return { ok: false, error: 'not_a_backup' };
       }
     },
+    // the size and price of a list before a destination exists: the same copy choice the plan makes, without a destination
+    async estimateSize(keys = []) {
+      const drives = await getDrives();
+      search.invalidate();
+      const rootOf = new Map(drives.map((d) => [d.serial, d.root]));
+      const jobs = [];
+      for (const key of keys) {
+        const e = search.find(key);
+        if (!e) continue;
+        if (e.kind === 'collection') {
+          const c = e.collection;
+          const src = c.online && !c.missing && rootOf.has(c.driveSerial) ? path.join(rootOf.get(c.driveSerial), c.relPath) : null;
+          if (src && fs.existsSync(src)) jobs.push({ bytes: transfer.treeSize(src), season: null });
+          continue;
+        }
+        for (const l of transfer.pickLocations(e.locations, undefined).picks) {
+          const src = path.join(rootOf.get(l.driveSerial), l.relPath);
+          if (fs.existsSync(src)) jobs.push({ bytes: transfer.treeSize(src), season: l.season ?? null });
+        }
+      }
+      return { bytes: jobs.reduce((n, j) => n + j.bytes, 0), count: jobs.length, price: jobs.length ? orders.priceOf(jobs, priceSettings()) : null };
+    },
+    // free bytes of the folder's disk, null when the folder is not there
+    async getFreeSpace(dir) {
+      if (!dir || !fs.existsSync(dir)) return null;
+      const n = freeSpace(dir);
+      return Number.isFinite(n) ? n : null;
+    },
     // ---- customers: orders, delivery history, requests, flash drives ----
     async getOrders(opts = {}) {
       return orders.listOrders(db, opts);

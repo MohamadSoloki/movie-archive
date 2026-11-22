@@ -431,3 +431,28 @@ body.selecting main { padding-block-end: 6rem; }
 .card.sim .info { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.85rem; }
 .card.sim .year { color: var(--muted); font-size: 0.75rem; }
 .card.sim .why { color: var(--muted); font-size: 0.72rem; line-height: 1.35; }
+
+/* orders, requests, prices */
+.price { font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.orders { display: grid; gap: 0.6rem; }
+.order { border: 1px solid var(--line); border-radius: 10px; padding: 0.6rem 0.8rem; display: grid; gap: 0.35rem; background: var(--raised); }
+.order-head { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: baseline; }
+.order-head .price { margin-inline-start: auto; }
+#copy-items li.dup { color: var(--yellow); }
+.dup-note { font-weight: 600; }
+.help.bad, #copy-cap.bad { color: var(--red); }
+.price-fields input { min-width: 0; }
+
+/* the invoice shows only on paper */
+.print-area { display: none; }
+@media print {
+  html, body { background: #fff !important; color: #000 !important; display: block !important; height: auto !important; overflow: visible !important; }
+  body > *:not(#print-area) { display: none !important; }
+  .print-area { display: block !important; }
+  .invoice { font-family: Vazirmatn, system-ui, sans-serif; font-size: 12pt; color: #000; max-width: 18cm; margin: 0 auto; }
+  .invoice h1 { font-size: 20pt; margin: 0 0 0.2cm; }
+  .invoice h2 { font-size: 14pt; margin: 0; }
+  .invoice table { width: 100%; border-collapse: collapse; margin: 0.5cm 0; }
+  .invoice th, .invoice td { border-bottom: 1px solid #999; padding: 0.15cm 0.2cm; text-align: start; }
+  .invoice .total { font-size: 15pt; font-weight: 700; }
+}

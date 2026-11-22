@@ -952,3 +952,13 @@ test('requests count up, say when the film is already in the archive, and can be
   assert.deepEqual(await api.removeRequest(miss.id), { ok: true });
   assert.equal((await api.getRequests()).length, 1);
 });
+
+test('estimateSize gives the size and price of a list before any destination is chosen; getFreeSpace reports the destination', async () => {
+  const { api, keys, dest } = await withFilms({ freeSpace: () => 777 });
+  await api.setSettings({ priceMovie: 100 });
+  const est = await api.estimateSize(keys);
+  assert.deepEqual([est.bytes, est.count, est.price.total], [5020, 2, 200]);
+  assert.deepEqual(await api.estimateSize([]), { bytes: 0, count: 0, price: null });
+  assert.equal(await api.getFreeSpace(dest), 777);
+  assert.equal(await api.getFreeSpace(path.join(dest, 'nope')), null);
+});

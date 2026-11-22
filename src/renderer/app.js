@@ -2,7 +2,7 @@
 (() => {
   const api = window.api;
   const $ = (id) => document.getElementById(id);
-  const state = { lang: 'fa', entries: [], selected: null, cart: new Map(), lists: [], listId: null, copies: [], reports: {}, selecting: false, picked: new Set(), copyDest: '', copyPlan: null, copying: false, query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], tags: [], tagCounts: [], countries: [], countryCounts: [], knownTags: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, quality: [], qualityCounts: {}, sort: 'name', rootCount: 0 };
+  const state = { lang: 'fa', entries: [], selected: null, cart: new Map(), lists: [], listId: null, copies: [], reports: {}, selecting: false, picked: new Set(), copyDest: '', copyPlan: null, copying: false, delivered: {}, removable: [], query: '', shown: 0, tab: 'all', genres: [], genreCounts: [], tags: [], tagCounts: [], countries: [], countryCounts: [], knownTags: [], attention: [], attentionCounts: { ok: 0, guess: 0, problem: 0 }, quality: [], qualityCounts: {}, sort: 'name', rootCount: 0 };
   const t = (key, vars) => window.i18n.t(state.lang, key, vars);
   const genreName = (g) => window.i18n.genreLabel(state.lang, g);
   const countryName = (g) => window.i18n.countryLabel(state.lang, g);
@@ -46,6 +46,7 @@
   const progressHandlers = {};
   api.onProgress((p) => progressHandlers[p.type || 'queue']?.(p));
   let planTimer = null;
+  let deliveredTimer = null;
   function setStatus(text) {
     const el = $('status');
     el.textContent = text;
@@ -572,7 +573,61 @@
   const size = (n) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)} GB` : `${Math.max(1, Math.round(n / 1024 ** 2))} MB`);
   const copyMsg = (text, bad = false) => { $('copy-msg').textContent = text; $('copy-msg').classList.toggle('bad', bad); };
 
+  const money = (n) => `${new Intl.NumberFormat(state.lang === 'fa' ? 'fa-IR' : 'en-US').format(n)} ${t('currency')}`;
+  const dateOf = (ts, long) => new Intl.DateTimeFormat(state.lang === 'fa' ? 'fa-IR-u-ca-persian' : 'en-GB', long ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' }).format(ts);
+
+  // The total size and the destination's free space, live while films are chosen, and the price when one is set.
+  let capToken = 0;
+  async function updateCapacity() {
+    const mine = ++capToken;
+    const keys = [...state.cart.keys()];
+    const est = keys.length ? await api.estimateSize(keys) : null;
+    const free = est && state.copyDest ? await api.getFreeSpace(state.copyDest) : null;
+    if (mine !== capToken) return;
+    const bad = est && free !== null && est.bytes > free;
+    $('copy-cap').classList.toggle('bad', !!bad);
+    $('copy-cap').textContent = !est ? '' : bad ? t('copy_cap_bad', { size: size(est.bytes), free: size(free) })
+      : free !== null ? t('copy_cap', { size: size(est.bytes), free: size(free) }) : t('copy_cap_nodest', { size: size(est.bytes) });
+    $('copy-price').hidden = !est?.price;
+    if (est?.price) $('copy-price').textContent = t('price_total', { n: money(est.price.total) });
+  }
+
+  // films this customer already received (delivery history); the warning names them and each is marked in the list
+  let deliveredToken = 0;
+  async function updateDelivered() {
+    const mine = ++deliveredToken;
+    const customer = $('copy-customer').value.trim();
+    const keys = [...state.cart.keys()];
+    const found = customer && keys.length ? await api.getDelivered({ customer, keys }) : {};
+    if (mine !== deliveredToken) return;
+    state.delivered = found;
+    const titles = keys.filter((k) => found[k]).map((k) => state.cart.get(k));
+    $('copy-warn').hidden = !titles.length;
+    $('copy-warn').textContent = titles.length ? t('order_warn_dup', { customer, titles: joinList(titles) }) : '';
+    renderCopy();
+  }
+
+  async function loadRemovable() {
+    state.removable = await api.getRemovable();
+    $('copy-removable').replaceChildren(...state.removable.map((d) => chip(t('removable_chip', { drive: d.root.replace(/\\$/, ''), label: d.label, free: size(d.free) }), null,
+      state.copyDest.toLowerCase() === d.root.toLowerCase(), () => chooseDest(d.root))));
+  }
+
+  function chooseDest(p) {
+    state.copyDest = p;
+    if (currentList()) { currentList().dest = p; saveLists(); }
+    $('copy-dest').value = p;
+    updateCopyPlan();
+    loadRemovable();
+  }
+
+  async function refreshCustomers() {
+    $('customer-suggest').replaceChildren(...(await api.getCustomers()).map((c) => h('option', { value: c.name })));
+  }
+
   async function updateCopyPlan() {
+    updateCapacity();
+    updateDelivered();
     const name = $('copy-name').value.trim();
     state.copyPlan = null;
     $('copy-info').classList.remove('bad');
@@ -593,8 +648,8 @@
 
   function renderCopy() {
     renderListSelect();
-    $('copy-items').replaceChildren(...[...state.cart].map(([key, title]) => h('li', {},
-      h('span', { dir: 'auto' }, title),
+    $('copy-items').replaceChildren(...[...state.cart].map(([key, title]) => h('li', { class: state.delivered[key] ? 'dup' : '' },
+      h('span', { dir: 'auto' }, title, state.delivered[key] ? h('small', { class: 'dup-note' }, ` · ${t('order_dup_item', { date: dateOf(state.delivered[key].created) })}`) : null),
       h('button', { type: 'button', class: 'icon-btn x', 'aria-label': t('copy_item_remove', { title }), title: t('copy_item_remove', { title }),
         onclick: () => { toggleCart(key, title); updateCopyPlan(); } }, icon('x')))));
     $('copy-empty').hidden = state.cart.size > 0;
@@ -602,6 +657,7 @@
     $('copy-go').textContent = t(state.copying ? 'copy_cancel' : 'copy_start');
     $('copy-go').disabled = !state.copying && !(state.copyPlan?.ok && state.copyPlan.jobs.length);
     $('copy-name').disabled = $('copy-browse').disabled = state.copying;
+    for (const id of ['copy-customer', 'copy-phone', 'copy-note']) $(id).disabled = state.copying;
   }
 
   async function runCopy() {
@@ -610,6 +666,7 @@
     copyMsg('');
     $('copy-bar').hidden = false;
     $('copy-bar').value = 0;
+    $('copy-after').hidden = true;
     renderCopy();
     progressHandlers.copy = (p) => {
       $('copy-bar').value = p.totalBytes ? Math.round((p.doneBytes / p.totalBytes) * 100) : 0;
@@ -619,7 +676,8 @@
     };
     let r;
     try {
-      r = await api.startTransfer({ keys: [...state.cart.keys()], destDir: state.copyDest, name: $('copy-name').value.trim() });
+      r = await api.startTransfer({ keys: [...state.cart.keys()], destDir: state.copyDest, name: $('copy-name').value.trim(),
+        customer: $('copy-customer').value.trim(), phone: $('copy-phone').value.trim(), note: $('copy-note').value.trim() });
     } catch { r = { ok: false, error: 'busy' }; }
     state.copying = false;
     $('copy-bar').hidden = true;
@@ -635,9 +693,47 @@
       renderDone();
     } else {
       copyMsg(t(v?.repaired ? 'copy_verify_fixed' : 'copy_verify_ok', { n: r.done, size: size(r.bytes), files: v?.checked ?? 0, r: v?.repaired ?? 0 }));
+      afterCopy(r);
       for (const key of [...state.cart.keys()]) toggleCart(key, '');
+      for (const id of ['copy-customer', 'copy-phone', 'copy-note']) $(id).value = ''; // the next customer starts empty
     }
+    refreshCustomers();
     await updateCopyPlan();
+  }
+
+  // after a good copy: print the invoice, and take the flash drive out safely
+  function afterCopy(r) {
+    const dest = state.copyDest;
+    const drive = state.removable.find((d) => dest.toLowerCase().startsWith(d.root.toLowerCase()));
+    const buttons = [];
+    if (r.orderId) buttons.push(h('button', { type: 'button', class: 'btn', onclick: () => showInvoice(r.orderId) }, t('invoice_print')));
+    if (drive) {
+      buttons.push(h('button', { type: 'button', class: 'btn', onclick: async (ev) => {
+        ev.currentTarget.disabled = true;
+        const x = await api.ejectDrive(drive.root);
+        copyMsg(x.ok ? t('eject_ok', { drive: drive.root.replace(/\\$/, '') }) : t(`eject_err_${x.error}`), !x.ok);
+        ev.currentTarget.disabled = !!x.ok;
+        loadRemovable();
+      } }, t('eject_btn')));
+    }
+    $('copy-after').replaceChildren(...buttons);
+    $('copy-after').hidden = !buttons.length;
+  }
+
+  // The invoice is built in #print-area, which only shows when printing (see the print rules in styles.css).
+  async function showInvoice(orderId) {
+    const order = (await api.getOrders()).find((o) => o.id === orderId);
+    if (!order) return;
+    const shop = (await api.getSettings()).shopName;
+    $('print-area').replaceChildren(h('article', { class: 'invoice', dir: state.lang === 'fa' ? 'rtl' : 'ltr' },
+      h('header', {}, shop ? h('h1', { dir: 'auto' }, shop) : null, h('h2', {}, `${t('invoice_title')} ${order.id}`), h('p', {}, dateOf(order.created, true))),
+      order.customer ? h('p', { dir: 'auto' }, `${t('order_customer')}: ${order.customer}${order.phone ? ` · ${order.phone}` : ''}`) : null,
+      h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, t('invoice_col_title')), h('th', {}, t('invoice_col_detail')))),
+        h('tbody', {}, order.items.map((i) => h('tr', {}, h('td', { dir: 'auto' }, i.year ? `${i.title} (${i.year})` : i.title), h('td', { dir: 'auto' }, i.detail || ''))))),
+      h('p', {}, t('invoice_size', { n: order.items.length, size: size(order.bytes) })),
+      order.price != null ? h('p', { class: 'total' }, t('price_total', { n: money(order.price) })) : null,
+      order.note ? h('p', { dir: 'auto' }, order.note) : null));
+    window.print();
   }
 
   // ---- named copy lists -----------------------------------------------------
@@ -1026,7 +1122,8 @@
   $('sel-tag-remove').addEventListener('click', () => tagPicked(true));
   $('sel-tag').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); tagPicked(false); } });
   $('sel-copy').addEventListener('click', copyPicked);
-  $('copy-btn').addEventListener('click', async () => { renderCopy(); $('copy-dlg').showModal(); updateCopyPlan(); await loadCopies(); });
+  $('copy-btn').addEventListener('click', async () => { renderCopy(); $('copy-dlg').showModal(); updateCopyPlan(); loadRemovable(); refreshCustomers(); await loadCopies(); });
+  $('copy-customer').addEventListener('input', () => { clearTimeout(deliveredTimer); deliveredTimer = setTimeout(updateDelivered, 250); });
   $('copy-x').addEventListener('click', () => { if (!state.copying) $('copy-dlg').close(); });
   $('copy-dlg').addEventListener('cancel', (ev) => { if (state.copying) ev.preventDefault(); }); // Esc must not hide a running copy
   $('copy-name').addEventListener('input', () => {
@@ -1045,11 +1142,7 @@
   });
   $('copy-browse').addEventListener('click', async () => {
     const p = await api.pickFolder();
-    if (!p) return;
-    state.copyDest = p;
-    if (currentList()) { currentList().dest = p; saveLists(); }
-    $('copy-dest').value = p;
-    updateCopyPlan();
+    if (p) chooseDest(p);
   });
   $('copy-go').addEventListener('click', runCopy);
   $('copy-clear').addEventListener('click', () => { for (const key of [...state.cart.keys()]) toggleCart(key, ''); updateCopyPlan(); });
@@ -1276,6 +1369,63 @@
             h('span', { dir: 'auto' }, i.title), i.year ? h('span', { class: 'year' }, String(i.year)) : null)))))) : [h('p', {}, t('rep_single_none'))]));
     },
   };
+  Object.assign(REPORTS, {
+    // every copy made for a customer, newest first, with the films in it; the same list gives the invoice again
+    async orders(body) {
+      await refreshCustomers();
+      const filter = h('input', { type: 'search', list: 'customer-suggest', dir: 'auto', autocomplete: 'off', placeholder: t('order_filter_ph'), 'aria-label': t('order_filter_ph') });
+      const list = h('ul', { class: 'plain orders' });
+      const paint = async () => {
+        const name = filter.value.trim();
+        const rows = await api.getOrders(name ? { customer: name } : {});
+        list.replaceChildren(...(rows.length ? rows.map((o) => h('li', { class: 'order' },
+          h('div', { class: 'order-head' },
+            h('strong', { dir: 'auto' }, o.customer || t('order_nameless')),
+            h('span', { class: 'help' }, dateOf(o.created, true)),
+            o.price != null ? h('span', { class: 'price' }, money(o.price)) : null),
+          h('p', { class: 'help' }, t('order_summary', { n: o.items.length, size: size(o.bytes) }) + (o.phone ? ` · ${o.phone}` : '') + (o.note ? ` · ${o.note}` : '')),
+          h('details', {}, h('summary', {}, joinList(o.items.slice(0, 3).map((i) => i.title)) + (o.items.length > 3 ? '…' : '')),
+            h('ul', { class: 'plain' }, o.items.map((i) => h('li', { dir: 'auto' }, i.detail ? `${i.title} · ${i.detail}` : i.title)))),
+          h('div', { class: 'row' },
+            h('button', { type: 'button', class: 'btn', onclick: () => showInvoice(o.id) }, t('order_invoice')),
+            h('button', { type: 'button', class: 'btn', onclick: async () => { if (window.confirm(t('order_confirm_delete'))) { await api.removeOrder(o.id); paint(); } } }, t('order_delete')))))
+          : [h('li', { class: 'help' }, t('order_empty'))]));
+      };
+      filter.addEventListener('input', paint);
+      await paint();
+      body.replaceChildren(filter, list);
+    },
+    // films customers asked for that the archive lacks; asking again counts up
+    async requests(body) {
+      const input = h('input', { type: 'text', maxlength: '100', dir: 'auto', autocomplete: 'off', placeholder: t('req_ph'), 'aria-label': t('req_ph') });
+      const note = h('p', { class: 'help', role: 'status' });
+      const list = h('ul', { class: 'plain orders' });
+      const paint = async () => {
+        const rows = await api.getRequests();
+        list.replaceChildren(...(rows.length ? rows.map((r) => h('li', { class: 'order' },
+          h('div', { class: 'order-head' }, h('strong', { dir: 'auto' }, r.name), h('span', { class: 'price' }, t('req_count', { n: r.count })),
+            h('span', { class: 'help' }, dateOf(r.last))),
+          h('div', { class: 'row' },
+            h('button', { type: 'button', class: 'btn', onclick: async () => { await add(r.name); } }, t('req_plus')),
+            h('button', { type: 'button', class: 'btn', onclick: async () => { await api.removeRequest(r.id); paint(); } }, t('req_delete')))))
+          : [h('li', { class: 'help' }, t('req_empty'))]));
+      };
+      const add = async (name) => {
+        const r = await api.addRequest(name);
+        note.replaceChildren();
+        if (!r.ok) { note.textContent = t(`req_err_${r.error}`); return; }
+        if (r.inArchive.length) {
+          note.append(`${t('req_in_archive')} `, ...r.inArchive.map((x) => h('button', { type: 'button', class: 'member', onclick: () => { $('rep-dlg').close(); openMember(x.key); } }, x.title)));
+        }
+        input.value = '';
+        await paint();
+      };
+      input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); add(input.value); } });
+      await paint();
+      body.replaceChildren(h('p', { class: 'help' }, t('req_help')),
+        h('div', { class: 'field-row' }, input, h('button', { type: 'button', class: 'btn primary', onclick: () => add(input.value) }, t('req_add'))), note, list);
+    },
+  });
   let repTab = 'gaps';
 
   async function renderReports() {
@@ -1341,6 +1491,10 @@
     $('set-collections').value = s.collections.join('\n');
     $('set-email').value = s.translateEmail || '';
     $('set-auto-translate').checked = s.autoTranslate !== false;
+    $('set-shop').value = s.shopName || '';
+    $('set-price-gb').value = s.pricePerGB || '';
+    $('set-price-movie').value = s.priceMovie || '';
+    $('set-price-season').value = s.priceSeason || '';
     backupNote('');
     $('settings-dlg').showModal();
   });
@@ -1355,6 +1509,10 @@
       collections: lines('set-collections'),
       translateEmail: $('set-email').value.trim(),
       autoTranslate: $('set-auto-translate').checked,
+      shopName: $('set-shop').value,
+      pricePerGB: $('set-price-gb').value,
+      priceMovie: $('set-price-movie').value,
+      priceSeason: $('set-price-season').value,
     });
     $('settings-dlg').close();
     setStatus(t('saved'));

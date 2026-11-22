@@ -141,17 +141,30 @@
         <input id="copy-name" type="text" maxlength="100" dir="auto" autocomplete="off">
       </div>
       <div>
+        <label for="copy-customer" data-i18n="order_customer"></label>
+        <div class="field-row">
+          <input id="copy-customer" type="text" maxlength="80" dir="auto" list="customer-suggest" autocomplete="off" data-i18n-placeholder="order_customer_ph">
+          <input id="copy-phone" type="text" maxlength="30" dir="ltr" autocomplete="off" data-i18n-placeholder="order_phone_ph">
+        </div>
+        <input id="copy-note" type="text" maxlength="200" dir="auto" autocomplete="off" data-i18n-placeholder="order_note_ph">
+        <p id="copy-warn" class="help bad" role="alert" hidden></p>
+      </div>
+      <div>
         <label for="copy-dest" data-i18n="copy_dest"></label>
         <div class="field-row">
           <input id="copy-dest" type="text" readonly dir="ltr" data-i18n-placeholder="copy_no_dest">
           <button id="copy-browse" type="button" class="btn" data-i18n="browse"></button>
         </div>
       </div>
+      <div id="copy-removable" class="chips"></div>
       <p id="copy-info" class="help" role="status"></p>
+      <p id="copy-cap" class="help" role="status"></p>
+      <p id="copy-price" class="price" role="status" hidden></p>
       <ul id="copy-skipped" class="plain"></ul>
       <progress id="copy-bar" max="100" value="0" hidden></progress>
       <p id="copy-msg" role="status"></p>
       <p id="copy-speed" class="help" role="status" hidden></p>
+      <div id="copy-after" class="row" hidden></div>
       <section>
         <h3 data-i18n="copies_title"></h3>
         <ul id="copy-done" class="plain"></ul>
@@ -200,6 +213,15 @@
         <label class="check"><input id="set-auto-translate" type="checkbox"><span data-i18n="settings_auto_translate"></span></label>
         <p class="help" data-i18n="settings_auto_translate_hint"></p>
         <button id="translate-now" type="button" class="btn" data-i18n="translate_now"></button>
+        <label for="set-shop" data-i18n="price_shop"></label>
+        <input id="set-shop" type="text" maxlength="80" dir="auto" autocomplete="off">
+        <label data-i18n="price_title"></label>
+        <div class="field-row price-fields">
+          <input id="set-price-gb" type="number" min="0" step="any" inputmode="decimal" dir="ltr" data-i18n-placeholder="price_per_gb" data-i18n-label="price_per_gb">
+          <input id="set-price-movie" type="number" min="0" step="any" inputmode="decimal" dir="ltr" data-i18n-placeholder="price_per_movie" data-i18n-label="price_per_movie">
+          <input id="set-price-season" type="number" min="0" step="any" inputmode="decimal" dir="ltr" data-i18n-placeholder="price_per_season" data-i18n-label="price_per_season">
+        </div>
+        <p class="help" data-i18n="price_hint"></p>
         <label data-i18n="backup_title"></label>
         <div class="row">
           <button id="backup-export" type="button" class="btn" data-i18n="backup_export"></button>
@@ -216,6 +238,9 @@
   </dialog>
 
   <datalist id="tag-suggest"></datalist>
+  <datalist id="customer-suggest"></datalist>
+
+  <div id="print-area" class="print-area" aria-hidden="true"></div>
 
   <div id="selbar" class="selbar" hidden>
     <span id="sel-count" class="sel-count"></span>
