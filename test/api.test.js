@@ -855,3 +855,18 @@ test('getRecommendations answers network when MyAnimeList cannot be reached, and
   await api.getRecommendations(keys[0]);
   assert.ok(fetchCalls.length > before); // asked again, an error is not remembered
 });
+
+test('aliases: other names are added to the entry, searched, kept through a rescan and removed', async () => {
+  const { api, e } = await tagged();
+  assert.deepEqual(await api.addAlias(e.key, '  ديپارتد '), { ok: true });
+  assert.deepEqual(await api.addAlias(e.key, 'ديپارتد'), { ok: true });
+  assert.deepEqual((await api.getEntry(e.key)).aliases, ['ديپارتد']);
+  assert.equal((await api.getEntries({ query: 'دیپارتد' })).entries[0].key, e.key);
+  await api.scan();
+  assert.deepEqual((await api.getEntry(e.key)).aliases, ['ديپارتد']);
+  assert.deepEqual(await api.removeAlias(e.key, 'ديپارتد'), { ok: true });
+  assert.deepEqual((await api.getEntry(e.key)).aliases, []);
+  assert.deepEqual(await api.addAlias(e.key, ' '), { ok: false, error: 'empty' });
+  assert.deepEqual(await api.addAlias(e.key, 'x'.repeat(81)), { ok: false, error: 'too_long' });
+  assert.deepEqual(await api.addAlias('t:99999', 'a'), { ok: false, error: 'unknown' });
+});

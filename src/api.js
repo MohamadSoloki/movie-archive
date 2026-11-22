@@ -278,8 +278,8 @@ function createApi({
     ? e.members.flatMap((m) => search.find(m.key)?.locations ?? []).map((l) => l.id)
     : e.locations.map((l) => l.id));
 
-  function changeTags(keys, text, apply) {
-    const tag = tags.normalizeTag(text);
+  function changeTags(keys, text, apply, max) {
+    const tag = tags.normalizeTag(text, max);
     if (tag === null) return { ok: false, error: 'empty' };
     if (tag === 'too_long') return { ok: false, error: 'too_long' };
     let count = 0;
@@ -293,8 +293,8 @@ function createApi({
     return { ok: true, count };
   }
 
-  function changeTag(key, text, apply) {
-    const r = changeTags([key], text, apply);
+  function changeTag(key, text, apply, max) {
+    const r = changeTags([key], text, apply, max);
     return !r.ok ? r : r.count ? { ok: true } : { ok: false, error: 'unknown' };
   }
 
@@ -361,6 +361,7 @@ function createApi({
         db.exec('DELETE FROM titles WHERE id NOT IN (SELECT title_id FROM locations WHERE title_id IS NOT NULL)');
         db.exec('DELETE FROM episodes WHERE title_id NOT IN (SELECT id FROM titles)');
         db.exec('DELETE FROM tags WHERE location_id NOT IN (SELECT id FROM locations)');
+        db.exec('DELETE FROM aliases WHERE location_id NOT IN (SELECT id FROM locations)');
         db.prepare('DELETE FROM roots WHERE id = ?').run(id);
         db.exec('COMMIT');
       } catch (e) {
@@ -465,6 +466,13 @@ function createApi({
     },
     async removeTag(key, text) {
       return changeTag(key, text, tags.removeTag);
+    },
+    // other names (Persian ones, mostly) the film can be found by; they stay with the folder like tags do
+    async addAlias(key, text) {
+      return changeTag(key, text, tags.addAlias, tags.ALIAS_MAX);
+    },
+    async removeAlias(key, text) {
+      return changeTag(key, text, tags.removeAlias, tags.ALIAS_MAX);
     },
     planTransfer,
     startTransfer,

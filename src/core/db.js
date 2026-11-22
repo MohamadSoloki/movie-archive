@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS translations(hash TEXT PRIMARY KEY, text TEXT NOT NUL
 CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 -- tags the owner adds by hand; they belong to the folder, so they survive a rescan and an online fix
 CREATE TABLE IF NOT EXISTS tags(location_id INTEGER NOT NULL, tag TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY(location_id, tag));
+-- other names of a film (mostly Persian ones) so it can be found by them; they belong to the folder like tags do
+CREATE TABLE IF NOT EXISTS aliases(location_id INTEGER NOT NULL, alias TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY(location_id, alias));
 -- series calendar: one row per show; due is the next air time (epoch ms, local clock), moved a week on each tick
 CREATE TABLE IF NOT EXISTS reminders(
   id INTEGER PRIMARY KEY, title TEXT NOT NULL, key TEXT UNIQUE, weekday INTEGER NOT NULL, time TEXT NOT NULL,

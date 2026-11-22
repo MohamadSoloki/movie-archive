@@ -14,6 +14,11 @@ function listEntries(db) {
     if (!tagsByLoc.has(r.location_id)) tagsByLoc.set(r.location_id, []);
     tagsByLoc.get(r.location_id).push(r.tag);
   }
+  const aliasesByLoc = new Map();
+  for (const r of db.prepare('SELECT location_id, alias FROM aliases').all()) {
+    if (!aliasesByLoc.has(r.location_id)) aliasesByLoc.set(r.location_id, []);
+    aliasesByLoc.get(r.location_id).push(r.alias);
+  }
   const shape = (l) => ({
     id: l.id, driveSerial: l.drive_serial, driveLabel: l.drive_label || '', online: !!l.drive_online,
     relPath: l.rel_path, folderName: l.folder_name, season: l.season, isEmpty: !!l.is_empty, missing: !!l.missing,
@@ -55,6 +60,9 @@ function listEntries(db) {
     const seen = new Map();
     for (const l of e.locations) for (const tag of tagsByLoc.get(l.id) ?? []) if (!seen.has(tag.toLowerCase())) seen.set(tag.toLowerCase(), tag);
     e.userTags = [...seen.values()].sort((a, b) => collator.compare(a, b));
+    const names = new Map();
+    for (const l of e.locations) for (const a of aliasesByLoc.get(l.id) ?? []) if (!names.has(a.toLowerCase())) names.set(a.toLowerCase(), a);
+    e.aliases = [...names.values()].sort((a, b) => collator.compare(a, b));
   }
   for (const e of entries) {
     e.attention = attentionOf(e);
@@ -93,7 +101,7 @@ function collectionEntries(entries) {
       key: `c:${l.driveSerial}|${l.collection}`, kind: 'collection', titleId: null, locationId: null,
       title: l.collection.split('/').pop(), year: null, type: 'collection', plot: null, genres: null, rating: null, runtime: null,
       actors: null, posterFile: list.find((m) => m.posterFile)?.posterFile ?? null, status: 'matched', guessed: false, locations: [],
-      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, countryList: [], totalSeasons: null, attention: 'ok', userTags: shared,
+      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, countryList: [], totalSeasons: null, attention: 'ok', userTags: shared, aliases: [],
       quality: mergeQuality(list.map((m) => m.quality)),
       addedOrder: Math.min(...locs.map((x) => x.id)),
       collection: { driveSerial: l.driveSerial, relPath: l.collection, online: l.online, missing: locs.every((x) => x.missing) },

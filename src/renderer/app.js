@@ -794,6 +794,33 @@
     return box;
   }
 
+  // Other names of the film (Persian ones, mostly): searching any of them finds it. Same look and keys as the tags.
+  function aliasSection(e) {
+    const box = h('section', { class: 'mytags' });
+    const note = h('p', { class: 'msg', role: 'alert' });
+    const change = async (call, text) => {
+      const r = await call(e.key, text);
+      if (!r.ok) { note.textContent = t(`alias_${r.error}`); return; }
+      await refresh(true);
+      document.querySelector('.alias-input')?.focus();
+    };
+    const input = h('input', { type: 'text', class: 'tag-input alias-input', maxlength: '80', 'aria-label': t('aliases'), placeholder: t('alias_placeholder') });
+    const add = () => {
+      const text = input.value.replace(/[,،]+$/, '').trim();
+      input.value = '';
+      if (text) change(api.addAlias, text);
+    };
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ',' || ev.key === '،') { ev.preventDefault(); add(); }
+    });
+    box.append(h('h3', {}, t('aliases')),
+      h('div', { class: 'detail-tags' }, e.aliases.map((g) => h('span', { class: 'tag', dir: 'auto' }, g,
+        h('button', { type: 'button', class: 'x', 'aria-label': t('tag_remove', { tag: g }), title: t('tag_remove', { tag: g }), onclick: () => change(api.removeAlias, g) }, icon('x')))),
+      input),
+      note);
+    return box;
+  }
+
   // The whole entry is fetched only for the open card. Without `force` an already open detail is left alone,
   // so typing in the search box does not rebuild it (and collapse its seasons).
   async function renderDetail(force = true) {
@@ -822,6 +849,7 @@
           e.imdbId ? h('button', { type: 'button', class: 'btn', onclick: () => api.openImdb(e.titleId) }, icon('link'), t('open_imdb')) : null,
           cartButton(e)),
         myTagsSection(e),
+        aliasSection(e),
         e.genreList.length ? h('div', { class: 'detail-tags', 'aria-label': t('genres') }, e.genreList.map((g) => h('button', {
           type: 'button', class: 'tag', 'aria-pressed': String(hasGenre(g)), onclick: () => { toggleGenre(g); },
         }, genreName(g)))) : null,

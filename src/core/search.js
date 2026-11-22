@@ -1,5 +1,6 @@
 'use strict';
 const Fuse = require('fuse.js');
+const { normalizeFa } = require('./persian.js');
 const { listEntries, compareTitles: byName } = require('./library.js');
 
 const num = (v) => { const n = parseFloat(v); return Number.isNaN(n) ? null : n; };
@@ -34,9 +35,14 @@ function createSearch(db) {
   };
   // the fuzzy index is only built when somebody types something
   const fuzzy = () => {
-    fuse ??= new Fuse(all, {
-      keys: [{ name: 'title', weight: 3 }, { name: 'locations.folderName', weight: 2 },
-        { name: 'userTags', weight: 2 }, { name: 'countryList', weight: 1 }, { name: 'genres', weight: 1 }, { name: 'actors', weight: 1 }],
+    // searched text is normalised (ي/ی, digits, half-space...) in a side copy, so the entries themselves stay as they are
+    const norm = (list) => list.map((x) => normalizeFa(x));
+    fuse ??= new Fuse(all.map((e) => ({
+      e, title: normalizeFa(e.title), folders: norm(e.locations.map((l) => l.folderName)), aliases: norm(e.aliases),
+      tags: norm(e.userTags), countries: norm(e.countryList), genres: normalizeFa(e.genres), actors: normalizeFa(e.actors),
+    })), {
+      keys: [{ name: 'title', weight: 3 }, { name: 'aliases', weight: 3 }, { name: 'folders', weight: 2 },
+        { name: 'tags', weight: 2 }, { name: 'countries', weight: 1 }, { name: 'genres', weight: 1 }, { name: 'actors', weight: 1 }],
       threshold: 0.35,
       ignoreLocation: true,
     });
@@ -46,7 +52,7 @@ function createSearch(db) {
     query({ query = '', tab = 'all', genres = [], tags = [], countries = [], attention = [], quality = [], sort = 'name' } = {}) {
       if (!all) build();
       const q = query.trim();
-      let list = q ? fuzzy().search(q).map((r) => r.item) : [...all];
+      let list = q ? fuzzy().search(normalizeFa(q)).map((r) => r.item.e) : [...all];
       if (tab !== 'all') list = list.filter((e) => e.kind === tab);
 
       const wanted = genres.map((g) => g.toLowerCase());

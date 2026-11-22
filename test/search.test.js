@@ -204,3 +204,26 @@ test('quality flags come from folder names and filter with counts', () => {
   assert.deepEqual(s.query({ quality: ['dub'] }).qualityCounts.hd, 2);
   assert.deepEqual(s.find(r.entries.find((e) => e.title === 'Beta').key).quality, { res: '720p', dub: false, sub: true, hardsub: true });
 });
+
+test('search ignores arabic letter forms and digit styles', () => {
+  const db = openDb();
+  const t = upsertTitle(db, info('tf1', 'Kimia'), null);
+  addLoc(db, { titleId: t, folder: 'کیمیا 1399' });
+  const s = createSearch(db);
+  assert.equal(s.query({ query: 'كيميا' }).entries[0]?.title, 'Kimia');
+  assert.equal(s.query({ query: '۱۳۹۹' }).entries[0]?.title, 'Kimia');
+});
+
+test('persian alias names are searchable and kept on the entry', () => {
+  const db = openDb();
+  const t = upsertTitle(db, info('tf2', 'The Departed'), null);
+  addLoc(db, { titleId: t, folder: 'Departed 2006' });
+  const loc = db.prepare('SELECT id FROM locations').get().id;
+  db.prepare('INSERT INTO aliases(location_id, alias) VALUES(?, ?)').run(loc, 'ديپارتد');
+  db.prepare('INSERT INTO aliases(location_id, alias) VALUES(?, ?)').run(loc, 'رفتگان');
+  const s = createSearch(db);
+  const hit = s.query({ query: 'دیپارتد' }).entries[0];
+  assert.equal(hit.title, 'The Departed');
+  assert.deepEqual(hit.aliases, ['ديپارتد', 'رفتگان']);
+  assert.equal(s.query({ query: 'zzzzqq' }).entries.length, 0);
+});
