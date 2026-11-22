@@ -12,7 +12,7 @@ const OMDB_BODY = {
   imdbRating: '7.8', Runtime: '176 min', Actors: 'Robert Pattinson', Poster: 'https://img.example/p.jpg',
 };
 
-function setup({ jikan, updater, key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause, now, clock, version } = {}) {
+function setup({ jikan, updater, key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause, now, clock, version, listRemovable, eject } = {}) {
   const media = fs.mkdtempSync(path.join(os.tmpdir(), 'media-'));
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'ud-'));
   const fetchCalls = [];
@@ -35,7 +35,7 @@ function setup({ jikan, updater, key = 'K', openPath, openExternal, mymemory, fr
   const db = openDb();
   const state = { online: true };
   const api = createApi({
-    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace, translatePause, now, clock, version, updater,
+    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace, translatePause, now, clock, version, updater, listRemovable, eject,
     listDrives: async () => (state.online ? [{ serial: 'S1', label: 'Test', root: media + path.sep }] : []),
   });
   return { api, db, media, userData, fetchCalls, key, state };
@@ -899,4 +899,56 @@ test('backup: exportBackup writes a file importBackup reads; a foreign file is r
   fs.writeFileSync(file, 'not json');
   assert.deepEqual(await api.importBackup(file), { ok: false, error: 'not_a_backup' });
   assert.deepEqual(await api.importBackup(path.join(media, 'nothing.json')), { ok: false, error: 'unreadable' });
+});
+
+test('a finished copy becomes an order with the customer, its films and the price; the plan shows the price first', async () => {
+  const { api, keys, dest } = await withFilms({ now: () => 5000 });
+  await api.setSettings({ pricePerGB: 0, priceMovie: 7000, priceSeason: 0, shopName: 'Net' });
+  const plan = await api.planTransfer({ keys, destDir: dest, name: 'c' });
+  assert.deepEqual([plan.price.movies, plan.price.total], [2, 14000]);
+  const r = await api.startTransfer({ keys, destDir: dest, name: 'c', customer: ' Ali ', phone: '0912', note: 'flash' }, () => {});
+  assert.equal(r.ok, true);
+  assert.equal(typeof r.orderId, 'number');
+  const [order] = await api.getOrders();
+  assert.deepEqual([order.id, order.customer, order.phone, order.note, order.created, order.price, order.bytes], [r.orderId, 'Ali', '0912', 'flash', 5000, 14000, 5020]);
+  assert.deepEqual(order.items.map((i) => i.title).sort(), ['batman', 'dune']);
+  assert.deepEqual((await api.getSettings()).shopName, 'Net');
+  assert.deepEqual((await api.getCustomers()).map((c) => [c.name, c.orders]), [['Ali', 1]]);
+  // delivery history: the same customer is warned about what they already have
+  const seen = await api.getDelivered({ customer: 'ali', keys });
+  assert.deepEqual(Object.keys(seen).sort(), [...keys].sort());
+  assert.deepEqual(await api.getDelivered({ customer: 'Sara', keys }), {});
+  assert.deepEqual(await api.removeOrder(order.id), { ok: true });
+  assert.deepEqual(await api.getOrders(), []);
+});
+
+test('a copy that delivered nothing makes no order; price settings are numbers', async () => {
+  const { api, keys, dest } = await withFilms();
+  await api.setSettings({ pricePerGB: 'abc', priceMovie: -5, priceSeason: '1500' });
+  const s = await api.getSettings();
+  assert.deepEqual([s.pricePerGB, s.priceMovie, s.priceSeason], [0, 0, 1500]);
+  assert.deepEqual(await api.startTransfer({ keys, destDir: dest, name: '..' }, () => {}), { ok: false, error: 'bad_name' });
+  assert.deepEqual(await api.getOrders(), []);
+});
+
+test('removable drives are listed and only they can be ejected', async () => {
+  const ejected = [];
+  const { api } = setup({ listRemovable: async () => [{ root: 'F:\\', label: 'FLASH', size: 100, free: 40 }], eject: async (root) => { ejected.push(root); return { ok: true }; } });
+  assert.deepEqual(await api.getRemovable(), [{ root: 'F:\\', label: 'FLASH', size: 100, free: 40 }]);
+  assert.deepEqual(await api.ejectDrive('F:\\'), { ok: true });
+  assert.deepEqual(await api.ejectDrive('C:\\'), { ok: false, error: 'not_removable' });
+  assert.deepEqual(ejected, ['F:\\']);
+});
+
+test('requests count up, say when the film is already in the archive, and can be removed', async () => {
+  const { api, e } = await scanned();
+  const miss = await api.addRequest('Dune Part Two');
+  assert.deepEqual([miss.ok, miss.count, miss.inArchive], [true, 1, []]);
+  assert.equal((await api.addRequest('dune  part two')).count, 2);
+  const have = await api.addRequest(e.title);
+  assert.deepEqual(have.inArchive.map((x) => x.key), [e.key]);
+  assert.deepEqual((await api.getRequests()).map((r) => [r.name, r.count]), [['Dune Part Two', 2], [e.title, 1]]);
+  assert.deepEqual(await api.addRequest('  '), { ok: false, error: 'empty' });
+  assert.deepEqual(await api.removeRequest(miss.id), { ok: true });
+  assert.equal((await api.getRequests()).length, 1);
 });

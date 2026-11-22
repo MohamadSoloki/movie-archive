@@ -9,6 +9,10 @@ const DEFAULTS = {
   omdbKey: '',
   translateEmail: '',
   autoTranslate: true,
+  pricePerGB: 0,
+  priceMovie: 0,
+  priceSeason: 0,
+  shopName: '',
 };
 
 const SCHEMA = `
@@ -37,6 +41,14 @@ CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tags(location_id INTEGER NOT NULL, tag TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY(location_id, tag));
 -- other names of a film (mostly Persian ones) so it can be found by them; they belong to the folder like tags do
 CREATE TABLE IF NOT EXISTS aliases(location_id INTEGER NOT NULL, alias TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY(location_id, alias));
+-- what was handed to a customer: one order per copy, with the titles in it (ref = imdb id, mal:<id> or n:<name>|<year>)
+CREATE TABLE IF NOT EXISTS orders(
+  id INTEGER PRIMARY KEY, customer TEXT NOT NULL DEFAULT '', customer_key TEXT NOT NULL DEFAULT '', phone TEXT, note TEXT,
+  created INTEGER NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, price INTEGER);
+CREATE TABLE IF NOT EXISTS order_items(order_id INTEGER NOT NULL, ref TEXT NOT NULL, title TEXT NOT NULL, year TEXT, kind TEXT, detail TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS order_items_order ON order_items(order_id);
+-- films customers asked for; key is the normalised name, so spellings of one name count together
+CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY, name TEXT NOT NULL, key TEXT NOT NULL UNIQUE, count INTEGER NOT NULL DEFAULT 1, last INTEGER NOT NULL);
 -- series calendar: one row per show; due is the next air time (epoch ms, local clock), moved a week on each tick
 CREATE TABLE IF NOT EXISTS reminders(
   id INTEGER PRIMARY KEY, title TEXT NOT NULL, key TEXT UNIQUE, weekday INTEGER NOT NULL, time TEXT NOT NULL,

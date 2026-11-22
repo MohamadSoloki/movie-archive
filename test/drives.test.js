@@ -37,3 +37,30 @@ test('toDriveRel splits an absolute path into serial and forward-slash relative 
   assert.deepEqual(toDriveRel(drives, 'E:\\'), { serial: 'S', relPath: '' });
   assert.equal(toDriveRel(drives, 'F:\\x'), null);
 });
+
+const { listRemovable, ejectDrive, isDriveRoot } = require('../src/core/drives.js');
+
+test('listRemovable reads flash drives with size and free space', async () => {
+  const out = '[{"DeviceID":"F:","VolumeName":"FLASH","Size":16000000000,"FreeSpace":9000000000},{"DeviceID":"G:","VolumeName":null,"Size":0,"FreeSpace":null}]';
+  assert.deepEqual(await listRemovable(async () => out), [
+    { root: 'F:\\', label: 'FLASH', size: 16000000000, free: 9000000000 },
+    { root: 'G:\\', label: '', size: 0, free: 0 },
+  ]);
+  assert.deepEqual(await listRemovable(async () => ''), []);
+  assert.deepEqual(await listRemovable(async () => { throw new Error('no powershell'); }), []);
+});
+
+test('isDriveRoot accepts only a drive letter root', () => {
+  assert.equal(isDriveRoot('F:\\'), true);
+  assert.equal(isDriveRoot('f:'), true);
+  for (const bad of ['F:\\x', '..', 'F:\; calc', '', 'FF:', null]) assert.equal(isDriveRoot(bad), false);
+});
+
+test('ejectDrive runs one fixed PowerShell command for a valid letter and refuses anything else', async () => {
+  const seen = [];
+  assert.deepEqual(await ejectDrive('f:\\', async (cmd) => { seen.push(cmd); return ''; }), { ok: true });
+  assert.equal(seen.length, 1);
+  assert.match(seen[0], /Namespace\(17\)\.ParseName\('F:'\)/);
+  assert.deepEqual(await ejectDrive('F:\; calc', async () => assert.fail('must not run')), { ok: false, error: 'bad_drive' });
+  assert.deepEqual(await ejectDrive('F:\\', async () => { throw new Error('x'); }), { ok: false, error: 'eject_failed' });
+});

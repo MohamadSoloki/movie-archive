@@ -1,7 +1,7 @@
 'use strict';
 const path = require('node:path');
 const { getSetting, setSetting } = require('./core/db.js');
-const { listDrives: defaultListDrives, refreshDrives, toDriveRel } = require('./core/drives.js');
+const { listDrives: defaultListDrives, refreshDrives, toDriveRel, listRemovable: defaultListRemovable, ejectDrive: defaultEject } = require('./core/drives.js');
 const { scanFolder, VIDEO } = require('./core/scanner.js');
 const { syncScan } = require('./core/sync.js');
 const { createOmdb } = require('./core/omdb.js');
@@ -24,14 +24,16 @@ const { similarTo } = require('./core/similar.js');
 const { seriesGaps } = require('./core/gaps.js');
 const { singleDrive } = require('./core/reports.js');
 const { exportData, importData } = require('./core/backup.js');
+const orders = require('./core/orders.js');
 const { ProviderError } = require('./core/errors.js');
 // "The Batman!" and "the batman" are the same name
 const nameKey = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
-const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate'];
+const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate', 'pricePerGB', 'priceMovie', 'priceSeason', 'shopName'];
+const PRICE_KEYS = ['pricePerGB', 'priceMovie', 'priceSeason'];
 
 function createApi({
-  db, userDataDir, fetch = globalThis.fetch, listDrives = defaultListDrives,
+  db, userDataDir, fetch = globalThis.fetch, listDrives = defaultListDrives, listRemovable = defaultListRemovable, eject = defaultEject,
   openPath = async () => '', openExternal = async () => {},
   updater = { check: async () => ({ state: 'dev' }), download: async () => ({ state: 'dev' }), install() {} },
   concurrency = 5, translatePause = 700, now = () => Date.now(), clock = () => Date.now(), version = '',
@@ -85,6 +87,24 @@ function createApi({
   let translating = null;
   const sanitize = (text) => String(text).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/[. ]+$/, '') || '_';
 
+  const priceSettings = () => ({ pricePerGB: getSetting(db, 'pricePerGB'), priceMovie: getSetting(db, 'priceMovie'), priceSeason: getSetting(db, 'priceSeason') });
+
+  // How a title is told apart across rescans and fixes: imdb id, MyAnimeList id, or its name and year
+  function refOfEntry(e) {
+    if (e.imdbId) return e.imdbId;
+    const mal = e.titleId != null ? db.prepare('SELECT mal_id FROM titles WHERE id = ?').get(e.titleId)?.mal_id : null;
+    return mal ? `mal:${mal}` : `n:${orders.nameKey(e.title)}|${e.year ?? ''}`;
+  }
+
+  // the titles one finished copy job handed over: a collection folder hands over each film in it
+  function itemsOfJob(j) {
+    const e = search.find(j.key);
+    if (!e) return [];
+    const item = (x, detail) => ({ ref: refOfEntry(x), title: x.title, year: x.year, kind: x.kind, detail });
+    if (e.kind === 'collection') return e.members.map((m) => search.find(m.key)).filter(Boolean).map((x) => item(x, ''));
+    return [item(e, j.season != null ? path.basename(j.src) : '')];
+  }
+
   async function planTransfer({ keys = [], destDir, name }) {
     const folder = transfer.cleanName(name);
     if (!folder) return { ok: false, error: 'bad_name' };
@@ -113,7 +133,7 @@ function createApi({
         let rel = path.basename(c.relPath);
         for (let n = 2; used.has(rel.toLowerCase()); n += 1) rel = `${rel.replace(/ \(\d+\)$/, '')} (${n})`;
         used.add(rel.toLowerCase());
-        jobs.push({ key, title: e.title, locationId: null, driveSerial: c.driveSerial, srcRoot: rootOf.get(c.driveSerial), src, dest: path.join(target, rel), bytes: transfer.treeSize(src) });
+        jobs.push({ key, title: e.title, locationId: null, season: null, driveSerial: c.driveSerial, srcRoot: rootOf.get(c.driveSerial), src, dest: path.join(target, rel), bytes: transfer.treeSize(src) });
         continue;
       }
       const { picks, reason } = transfer.pickLocations(e.locations, destDrive);
@@ -125,7 +145,7 @@ function createApi({
         let rel = l.season == null ? path.basename(l.relPath) : path.join(sanitize(e.title), path.basename(l.relPath));
         for (let n = 2; used.has(rel.toLowerCase()); n += 1) rel = `${rel.replace(/ \(\d+\)$/, '')} (${n})`;
         used.add(rel.toLowerCase());
-        jobs.push({ key, title: e.title, locationId: l.id, driveSerial: l.driveSerial, srcRoot: rootOf.get(l.driveSerial), src, dest: path.join(target, rel), bytes: transfer.treeSize(src) });
+        jobs.push({ key, title: e.title, locationId: l.id, season: l.season ?? null, driveSerial: l.driveSerial, srcRoot: rootOf.get(l.driveSerial), src, dest: path.join(target, rel), bytes: transfer.treeSize(src) });
       }
     }
     if (!jobs.length && !skipped.length) return { ok: false, error: 'nothing' };
@@ -137,7 +157,7 @@ function createApi({
     const bytes = jobs.reduce((n, j) => n + j.bytes, 0);
     const free = freeSpace(destDir);
     if (bytes > free) return { ok: false, error: 'no_space', needed: bytes, free };
-    return { ok: true, target, jobs, skipped, bytes, free };
+    return { ok: true, target, jobs, skipped, bytes, free, price: orders.priceOf(jobs, priceSettings()) };
   }
 
   // Copy, verify and repair share one slot: only one of them runs at a time, and cancelTransfer stops whichever it is.
@@ -160,6 +180,7 @@ function createApi({
     if (!plan.jobs.length) return { ok: false, error: 'nothing' };
     const result = { ok: true, done: 0, failed: [], skipped: plan.skipped, cancelled: false, bytes: 0 };
     const manifest = [];
+    const okJobs = [];
     let doneBytes = 0;
     let last = 0;
     const rate = createRate();
@@ -181,6 +202,7 @@ function createApi({
         }
         if (r.cancelled) break;
         result.done += 1;
+        okJobs.push(j);
       } catch (e) {
         result.failed.push({ key: j.key, title: j.title, error: e.code || 'error' });
       }
@@ -188,6 +210,11 @@ function createApi({
     result.cancelled = ac.signal.aborted;
     result.bytes = doneBytes;
     onProgress({ type: 'copy', index: plan.jobs.length, total: plan.jobs.length, title: '', doneBytes, totalBytes: plan.bytes, ...rate.sample(clock(), doneBytes, plan.bytes) });
+    if (okJobs.length) {
+      const price = orders.priceOf(okJobs, priceSettings());
+      result.orderId = orders.recordOrder(db, { customer: request.customer, phone: request.phone, note: request.note,
+        items: okJobs.flatMap(itemsOfJob), bytes: doneBytes, price: price ? price.total : null }, now());
+    }
     if (manifest.length) {
       const id = copies.saveCopy(db, { name: path.basename(plan.target), target: plan.target, files: manifest }, now());
       if (!result.cancelled) result.verify = await checkAndFix(id, ac, onProgress);
@@ -308,7 +335,13 @@ function createApi({
       return Object.fromEntries(SETTING_KEYS.map((k) => [k, getSetting(db, k)]));
     },
     async setSettings(partial) {
-      for (const k of SETTING_KEYS) if (k in partial) setSetting(db, k, partial[k]);
+      for (const k of SETTING_KEYS) {
+        if (!(k in partial)) continue;
+        let v = partial[k];
+        if (PRICE_KEYS.includes(k)) { v = Number(v); v = Number.isFinite(v) && v > 0 ? v : 0; }
+        if (k === 'shopName') v = String(v ?? '').trim().slice(0, 80);
+        setSetting(db, k, v);
+      }
       search.invalidate();
     },
     getDrives,
@@ -498,6 +531,55 @@ function createApi({
       } catch {
         return { ok: false, error: 'not_a_backup' };
       }
+    },
+    // ---- customers: orders, delivery history, requests, flash drives ----
+    async getOrders(opts = {}) {
+      return orders.listOrders(db, opts);
+    },
+    async getCustomers() {
+      return orders.customers(db);
+    },
+    // which of these entries this customer already received: { [key]: { created, orderId } }
+    async getDelivered({ customer, keys = [] } = {}) {
+      const out = {};
+      for (const key of keys) {
+        const e = search.find(key);
+        if (!e) continue;
+        const members = e.kind === 'collection' ? e.members.map((m) => search.find(m.key)).filter(Boolean) : [e];
+        const seen = [...orders.deliveredTo(db, customer, members.map(refOfEntry)).values()];
+        if (seen.length) out[key] = seen.reduce((a, b) => (b.created > a.created ? b : a));
+      }
+      return out;
+    },
+    // removes the record only; nothing on any disk is touched
+    async removeOrder(id) {
+      orders.removeOrder(db, id);
+      return { ok: true };
+    },
+    async getRemovable() {
+      return listRemovable();
+    },
+    // only a drive that is listed as removable right now can be ejected
+    async ejectDrive(root) {
+      const hit = (await listRemovable()).find((d) => d.root.toLowerCase() === String(root).toLowerCase());
+      return hit ? eject(hit.root) : { ok: false, error: 'not_removable' };
+    },
+    async addRequest(name) {
+      if (String(name ?? '').trim().length > 100) return { ok: false, error: 'too_long' };
+      const r = orders.addRequest(db, name, now());
+      if (!r) return { ok: false, error: 'empty' };
+      const key = orders.nameKey(r.name);
+      // already here: the same name as a title or other name, or inside a folder name
+      const inArchive = search.query({}).entries.filter((e) => e.kind !== 'collection' && [e.title, ...e.aliases].some((n) => orders.nameKey(n) === key)
+        || (key.length >= 4 && e.locations.some((l) => orders.nameKey(l.folderName).includes(key)))).map((e) => ({ key: e.key, title: e.title }));
+      return { ok: true, ...r, inArchive };
+    },
+    async getRequests() {
+      return orders.listRequests(db);
+    },
+    async removeRequest(id) {
+      orders.removeRequest(db, id);
+      return { ok: true };
     },
     // other names (Persian ones, mostly) the film can be found by; they stay with the folder like tags do
     async addAlias(key, text) {

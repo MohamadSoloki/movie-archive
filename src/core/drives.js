@@ -47,4 +47,39 @@ function toDriveRel(drives, absPath) {
   return { serial: hits[0].d.serial, relPath: rel };
 }
 
-module.exports = { listDrives, refreshDrives, toDriveRel };
+const REMOVABLE_CMD = 'Get-CimInstance Win32_LogicalDisk -Filter "DriveType=2" | Select-Object DeviceID,VolumeName,Size,FreeSpace | ConvertTo-Json';
+
+function psRun(command) {
+  return new Promise((resolve, reject) => {
+    execFile('powershell.exe', ['-NoProfile', '-Command', command], { windowsHide: true },
+      (err, stdout) => (err ? reject(err) : resolve(stdout)));
+  });
+}
+
+// Flash drives and other removable disks that are plugged in, with their size and free space. [] when they cannot be listed.
+async function listRemovable(run = () => psRun(REMOVABLE_CMD)) {
+  try {
+    const out = String(await run()).trim();
+    if (!out) return [];
+    return [].concat(JSON.parse(out)).filter((d) => /^[A-Za-z]:$/.test(d.DeviceID || ''))
+      .map((d) => ({ root: `${d.DeviceID.toUpperCase()}\\`, label: d.VolumeName || '', size: Number(d.Size) || 0, free: Number(d.FreeSpace) || 0 }));
+  } catch {
+    return [];
+  }
+}
+
+const isDriveRoot = (s) => typeof s === 'string' && /^[A-Za-z]:\\?$/.test(s);
+
+// "Safely remove": the Explorer eject verb, for one drive letter that passed isDriveRoot, so nothing from outside reaches the command.
+async function ejectDrive(root, run = psRun) {
+  if (!isDriveRoot(root)) return { ok: false, error: 'bad_drive' };
+  const letter = `${root[0].toUpperCase()}:`;
+  try {
+    await run(`(New-Object -comObject Shell.Application).Namespace(17).ParseName('${letter}').InvokeVerb('Eject')`);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'eject_failed' };
+  }
+}
+
+module.exports = { listDrives, refreshDrives, toDriveRel, listRemovable, ejectDrive, isDriveRoot };

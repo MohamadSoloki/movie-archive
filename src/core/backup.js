@@ -1,5 +1,6 @@
 'use strict';
 const { setSetting } = require('./db.js');
+const orders = require('./orders.js');
 
 const FORMAT = 'movie-archive-backup';
 // what the owner made by hand, so a new computer or a wiped database can get it back; the archive itself is rescanned.
@@ -22,6 +23,8 @@ function exportData(db, { now = Date.now() } = {}) {
     tags: byPlace('tags', 'tag'), aliases: byPlace('aliases', 'alias'),
     reminders: plain(db.prepare('SELECT title, key, weekday, time, episode, due, enabled FROM reminders ORDER BY id').all()),
     copies,
+    orders: orders.listOrders(db).map(({ id, ...o }) => o),
+    requests: plain(db.prepare('SELECT name, count, last FROM requests ORDER BY id').all()),
   };
 }
 
@@ -29,7 +32,7 @@ function exportData(db, { now = Date.now() } = {}) {
 // changes nothing. Tags and aliases go to the folder with the same drive and path; those this machine does not have are counted.
 function importData(db, data) {
   if (!data || typeof data !== 'object' || data.format !== FORMAT) throw new Error('not_a_backup');
-  const out = { tags: 0, aliases: 0, reminders: 0, copies: 0, skipped: 0 };
+  const out = { tags: 0, aliases: 0, reminders: 0, copies: 0, orders: 0, requests: 0, skipped: 0 };
   const arr = (v) => (Array.isArray(v) ? v : []);
   db.exec('BEGIN');
   try {
@@ -54,6 +57,18 @@ function importData(db, data) {
       if (!Number(made.changes)) continue;
       for (const f of arr(c.files)) fl.run(Number(made.lastInsertRowid), f.rel, f.size ?? 0, f.sha ?? null, f.title ?? null, f.driveSerial ?? null, f.srcRel ?? null);
       out.copies += 1;
+    }
+    // an order is the same one when customer and time match
+    const dup = db.prepare('SELECT 1 FROM orders WHERE customer_key = ? AND created = ?');
+    for (const o of arr(data.orders)) {
+      if (!Array.isArray(o?.items) || !Number.isFinite(o.created) || dup.get(orders.customerKey(o.customer), o.created)) continue;
+      orders.recordOrder(db, { customer: o.customer, phone: o.phone, note: o.note, items: o.items.filter((i) => typeof i?.ref === 'string' && typeof i.title === 'string'), bytes: o.bytes ?? 0, price: o.price ?? null }, o.created);
+      out.orders += 1;
+    }
+    const rq = db.prepare('INSERT INTO requests(name, key, count, last) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET count = MAX(count, excluded.count), last = MAX(last, excluded.last)');
+    for (const r of arr(data.requests)) {
+      const key = typeof r?.name === 'string' ? orders.nameKey(r.name) : '';
+      if (key && r.name.length <= 100) { rq.run(r.name, key, Math.max(1, Number(r.count) || 1), Number(r.last) || 0); out.requests += 1; }
     }
     db.exec('COMMIT');
   } catch (e) {
