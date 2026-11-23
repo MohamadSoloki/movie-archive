@@ -29,9 +29,10 @@ test('serves the page, the film list and posters, read-only', async () => {
     const page = await fetch(`${base}/`);
     assert.equal(page.status, 200);
     assert.match(await page.text(), /<html/);
-    assert.deepEqual((await (await fetch(`${base}/api/films?lang=en`)).json())[0].g, ['Horror']);
+    // the customer's page is Persian whatever the shop's language or the query says
+    assert.deepEqual((await (await fetch(`${base}/api/films?lang=en`)).json())[0].g, ['ترسناک']);
     assert.deepEqual((await (await fetch(`${base}/api/films`)).json())[0].g, ['ترسناک']);
-    assert.match(await (await fetch(`${base}/?lang=en`)).text(), /dir="ltr"/);
+    assert.match(await (await fetch(`${base}/?lang=en`)).text(), /<html lang="fa" dir="rtl"/);
     const img = await fetch(`${base}/poster/${encodeURIComponent('t:1')}`);
     assert.equal(img.headers.get('content-type'), 'image/jpeg');
     assert.equal((await img.text()), 'JPEG');

@@ -307,7 +307,7 @@ test('a collection folder with movie files is scanned into one entry per film an
 test('light entries carry only what a card needs; getEntry returns the whole entry by key', async () => {
   const { api, e } = await scanned();
   const light = (await api.getEntries({ light: true })).entries[0];
-  assert.deepEqual(Object.keys(light).sort(), ['attention', 'badges', 'genres', 'key', 'kind', 'members', 'posterFile', 'rating', 'reason', 'tags', 'title', 'year']);
+  assert.deepEqual(Object.keys(light).sort(), ['attention', 'badges', 'genres', 'key', 'kind', 'members', 'persianName', 'posterFile', 'rating', 'reason', 'tags', 'title', 'year']);
   assert.deepEqual([light.key, light.title, light.rating, light.attention, light.members], [e.key, e.title, e.rating, e.attention, 0]);
   assert.ok(JSON.stringify(light).length * 3 < JSON.stringify(e).length);
   assert.deepEqual(await api.getEntry(e.key), e);
@@ -856,19 +856,20 @@ test('getRecommendations answers network when MyAnimeList cannot be reached, and
   assert.ok(fetchCalls.length > before); // asked again, an error is not remembered
 });
 
-test('aliases: other names are added to the entry, searched, kept through a rescan and removed', async () => {
+test('setPersianName: one Persian name per film, replaced not added, searched, kept through a rescan, cleared with empty text', async () => {
   const { api, e } = await tagged();
-  assert.deepEqual(await api.addAlias(e.key, '  ديپارتد '), { ok: true });
-  assert.deepEqual(await api.addAlias(e.key, 'ديپارتد'), { ok: true });
-  assert.deepEqual((await api.getEntry(e.key)).aliases, ['ديپارتد']);
-  assert.equal((await api.getEntries({ query: 'دیپارتد' })).entries[0].key, e.key);
+  assert.deepEqual(await api.setPersianName(e.key, '  ديپارتد '), { ok: true });
+  assert.deepEqual(await api.setPersianName(e.key, 'رفتگان'), { ok: true });
+  const one = await api.getEntry(e.key);
+  assert.deepEqual([one.persianName, one.aliases], ['رفتگان', ['رفتگان']]);
+  assert.equal((await api.getEntries({ query: 'رفتگان', light: true })).entries[0].persianName, 'رفتگان');
+  assert.equal((await api.getEntries({ query: 'ديپارتد' })).entries.length, 0);
   await api.scan();
-  assert.deepEqual((await api.getEntry(e.key)).aliases, ['ديپارتد']);
-  assert.deepEqual(await api.removeAlias(e.key, 'ديپارتد'), { ok: true });
-  assert.deepEqual((await api.getEntry(e.key)).aliases, []);
-  assert.deepEqual(await api.addAlias(e.key, ' '), { ok: false, error: 'empty' });
-  assert.deepEqual(await api.addAlias(e.key, 'x'.repeat(81)), { ok: false, error: 'too_long' });
-  assert.deepEqual(await api.addAlias('t:99999', 'a'), { ok: false, error: 'unknown' });
+  assert.equal((await api.getEntry(e.key)).persianName, 'رفتگان');
+  assert.deepEqual(await api.setPersianName(e.key, ' '), { ok: true });
+  assert.deepEqual([(await api.getEntry(e.key)).persianName, (await api.getEntry(e.key)).aliases], [null, []]);
+  assert.deepEqual(await api.setPersianName(e.key, 'x'.repeat(81)), { ok: false, error: 'too_long' });
+  assert.deepEqual(await api.setPersianName('t:99999', 'a'), { ok: false, error: 'unknown' });
 });
 
 test('getSingleDrive lists what lives on one drive only', async () => {
@@ -887,7 +888,7 @@ test('getSeriesGaps answers with entry keys and counts', async () => {
 test('backup: exportBackup writes a file importBackup reads; a foreign file is refused', async () => {
   const { api, e, media } = await scanned();
   await api.addTag(e.key, 'Iranian');
-  await api.addAlias(e.key, 'بتمن');
+  await api.setPersianName(e.key, 'بتمن');
   const file = path.join(media, 'backup.json');
   assert.deepEqual(await api.exportBackup(file), { ok: true });
   await api.removeTag(e.key, 'Iranian');
@@ -1014,7 +1015,14 @@ test('phone catalog rows: persian genres, persian name from a folder, no paths; 
     const fa = await (await fetch(`${base}/api/films?lang=fa`)).json();
     const en = await (await fetch(`${base}/api/films?lang=en`)).json();
     assert.deepEqual(fa.find((f) => f.g.includes('اکشن'))?.g.slice(0, 1), ['اکشن']);
-    assert.ok(en.find((f) => f.g.includes('Action')));
+    assert.deepEqual(en, fa); // the phone page is Persian only
+    // the Persian name the owner set rides along as `f`, and is what a customer's search finds
+    const star = (await api.getEntries()).entries.find((x) => /dune/i.test(x.title));
+    assert.ok(star);
+    await api.setPersianName(star.key, 'تلماسه');
+    const named = await (await fetch(`${base}/api/films`)).json();
+    assert.equal(named.find((f) => f.k === star.key).f, 'تلماسه');
+    assert.ok(named.filter((f) => f.k !== star.key).every((f) => f.f === null));
     assert.ok(fa.some((f) => f.a.some((n) => n.includes('بتمن آغاز'))));
     assert.ok(!JSON.stringify(fa).match(/دوبله|Movies|media-/));
     assert.ok(fa.every((f) => ['movie', 'series', 'anime'].includes(f.kd) && Number.isInteger(f.o)));

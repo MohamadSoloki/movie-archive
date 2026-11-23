@@ -12,17 +12,6 @@ const TEXT = {
     askHave: 'این فیلم توی آرشیو هست:', empty: 'کاتالوگ هنوز خالیه.',
     badge: { '4K': '4K', '1080p': '1080p', dub: 'دوبله', sub: 'زیرنویس', hardsub: 'زیرنویس چسبیده' },
   },
-  en: {
-    dir: 'ltr', lang: 'en', other: 'فارسی', otherLang: 'fa', title: 'Film and series catalog', search: 'Title, actor or director…',
-    all: 'All', movie: 'Movies', series: 'Series', anime: 'Anime', pick: 'Choose', picked: 'Chosen', send: 'Send list', mine: 'My list',
-    name: 'Your name', phone: 'Phone (optional)', note: 'Note (optional)', submit: 'Send', close: 'Close', remove: 'Remove',
-    done: 'Your list was sent. Reference number:', fail: 'Could not send. Try again later.', slow: 'Too many in a row. Try again in a few minutes.',
-    full: 'We cannot take new lists right now. Ask at the shop.', none: 'Nothing found.', more: 'Show more', loadFail: 'The catalog did not load. Try again.', retry: 'Try again',
-    sortNew: 'Recently added', sortName: 'A–Z', sortRating: 'Rating', sortYear: 'Year', sort: 'Sort', seasons: 'seasons', stars: 'rating',
-    askTitle: 'Cannot find it?', askText: 'Type the name and we will get it for you.', askGo: 'Request', askThanks: 'Noted. We will tell you if we get it.',
-    askHave: 'This one is in the archive:', empty: 'The catalog is empty for now.',
-    badge: { '4K': '4K', '1080p': '1080p', dub: 'Persian dub', sub: 'Subs', hardsub: 'Burned-in subs' },
-  },
 };
 
 // One self-contained page: no outside files, so it works on a shop network with no internet.
@@ -84,7 +73,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 </head>
 <body>
 <header>
-  <div class="top"><h1>${x.title}</h1><a class="lang" href="/?lang=${x.otherLang}">${x.other}</a></div>
+  <div class="top"><h1>${x.title}</h1></div>
   <input id="q" type="search" placeholder="${x.search}" autocomplete="off" aria-label="${x.search}">
 </header>
 <section class="filters">
@@ -126,7 +115,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { /* private mode */ } return null; }
   var SORTS = {
     sortNew: function (a, b) { return b.o - a.o; },
-    sortName: function (a, b) { return a.t.localeCompare(b.t); },
+    sortName: function (a, b) { return (a.f || a.t).localeCompare(b.f || b.t, 'fa'); },
     sortRating: function (a, b) { return (parseFloat(b.r) || 0) - (parseFloat(a.r) || 0); },
     sortYear: function (a, b) { return (parseInt(b.y, 10) || 0) - (parseInt(a.y, 10) || 0); }
   };
@@ -135,7 +124,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     var list = films.filter(function (f) {
       return (!kind || f.kd === kind) && (!genre || f.g.indexOf(genre) >= 0) && words.every(function (w) { return f._n.indexOf(w) >= 0; });
     });
-    return list.sort(function (a, b) { return SORTS[$('sort').value](a, b) || a.t.localeCompare(b.t); });
+    return list.sort(function (a, b) { return SORTS[$('sort').value](a, b) || (a.f || a.t).localeCompare(b.f || b.t, 'fa'); });
   }
   function askBox(prefill) {
     var input = el('input', { maxlength: '100', 'aria-label': T.askText, placeholder: T.askText });
@@ -160,13 +149,13 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     grid.replaceChildren();
     list.slice(0, shown).forEach(function (f) {
       var on = !!chosen[f.k];
-      var img = f.p ? el('img', { src: '/poster/' + encodeURIComponent(f.k), alt: '', loading: 'lazy' }) : el('span', {}, [f.t]);
+      var img = f.p ? el('img', { src: '/poster/' + encodeURIComponent(f.k), alt: '', loading: 'lazy' }) : el('span', {}, [f.f || f.t]);
       var tags = f.b.map(function (b) { return T.badge[b] || b; });
       if (f.s) tags.unshift(f.s + ' ' + T.seasons);
       var meta = [f.y, f.r ? '★ ' + f.r : ''].concat(tags).filter(Boolean).join(' · ');
       var card = el('div', { 'class': 'film' + (on ? ' on' : '') }, [
         el('div', { 'class': 'img' }, [img]),
-        el('div', { 'class': 'body' }, [el('b', { dir: 'auto' }, [f.t]), el('small', {}, [meta]), f.d ? el('small', { dir: 'auto' }, [f.d]) : '',
+        el('div', { 'class': 'body' }, [el('b', { dir: 'auto' }, [f.f || f.t]), f.f ? el('small', { dir: 'ltr', 'class': 'orig' }, [f.t]) : '', el('small', {}, [meta]), f.d ? el('small', { dir: 'auto' }, [f.d]) : '',
           el('button', { type: 'button', 'aria-pressed': String(on) }, [on ? T.picked : T.pick])])]);
       card.querySelector('button').onclick = function () { if (chosen[f.k]) delete chosen[f.k]; else chosen[f.k] = f; save(); render(); };
       grid.append(card);
@@ -195,7 +184,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   }
   function load() {
     fetch('/api/films?lang=' + T.lang).then(function (r) { if (!r.ok) throw new Error('bad'); return r.json(); }).then(function (list) {
-      films = list.map(function (f) { f._n = norm([f.t].concat(f.a || []).join(' ') + ' ' + (f.y || '')); return f; });
+      films = list.map(function (f) { f._n = norm([f.t, f.f || ''].concat(f.a || []).join(' ') + ' ' + (f.y || '')); return f; });
       var kinds = [['', T.all]];
       ['movie', 'series', 'anime'].forEach(function (k) { if (films.some(function (f) { return f.kd === k; })) kinds.push([k, T[k]]); });
       chips($('kinds'), kinds, function () { return kind; }, function (v) { kind = v; });
@@ -224,7 +213,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     Object.keys(chosen).forEach(function (k) {
       var x = el('button', { type: 'button', 'aria-label': T.remove }, ['×']);
       x.onclick = function () { delete chosen[k]; save(); render(); if (Object.keys(chosen).length) listBox(); else $('dlg').close(); };
-      ul.append(el('li', { 'class': 'row' }, [el('span', { dir: 'auto' }, [chosen[k].t]), x]));
+      ul.append(el('li', { 'class': 'row' }, [el('span', { dir: 'auto' }, [chosen[k].f ? chosen[k].f + ' (' + chosen[k].t + ')' : chosen[k].t]), x]));
     });
   }
   $('open').onclick = function () { listBox(); $('msg').textContent = ''; $('msg').className = 'msg'; $('dlg').showModal(); };

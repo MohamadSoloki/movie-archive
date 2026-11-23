@@ -68,6 +68,7 @@ function listEntries(db) {
     const names = new Map();
     for (const l of e.locations) for (const a of aliasesByLoc.get(l.id) ?? []) if (!names.has(a.toLowerCase())) names.set(a.toLowerCase(), a);
     e.aliases = [...names.values()].sort((a, b) => collator.compare(a, b));
+    e.persianName = e.aliases[0] ?? null; // the one Persian name the owner gave (older data may hold several: the first is shown)
   }
   for (const e of entries) {
     e.attention = attentionOf(e);
@@ -116,7 +117,7 @@ function collectionEntries(entries) {
       key: `c:${l.driveSerial}|${l.collection}`, kind: 'collection', titleId: null, locationId: null,
       title: l.collection.split('/').pop(), year: null, type: 'collection', plot: null, genres: null, rating: null, runtime: null,
       actors: null, posterFile: list.find((m) => m.posterFile)?.posterFile ?? null, status: 'matched', guessed: false, locations: [],
-      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, countryList: [], totalSeasons: null, attention: 'ok', userTags: shared, aliases: [],
+      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, countryList: [], totalSeasons: null, attention: 'ok', userTags: shared, aliases: [], persianName: null,
       quality: mergeQuality(list.map((m) => m.quality)), qualityAuto: mergeQuality(list.map((m) => m.qualityAuto)), qualityMarks: {},
       addedOrder: Math.min(...locs.map((x) => x.id)),
       collection: { driveSerial: l.driveSerial, relPath: l.collection, online: l.online, missing: locs.every((x) => x.missing) },
@@ -148,7 +149,7 @@ function badgesOf(q) {
 // What a grid card needs. The whole entry (plot, cast, folders) is asked for when one is opened.
 function lightOf(e) {
   return {
-    key: e.key, title: e.title, year: e.year, rating: e.rating, posterFile: e.posterFile, kind: e.kind,
+    key: e.key, title: e.title, persianName: e.persianName ?? null, year: e.year, rating: e.rating, posterFile: e.posterFile, kind: e.kind,
     attention: e.attention, genres: e.genreList.slice(0, 2), tags: e.userTags.slice(0, 2), reason: reasonOf(e), badges: badgesOf(e.quality), members: e.members ? e.members.length : 0,
   };
 }

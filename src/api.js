@@ -58,7 +58,7 @@ function catalogRow(e, lang) {
   const seasons = new Set(e.locations.filter((l) => !l.missing && l.season).map((l) => String(l.season))).size;
   const na = (v) => (v && v !== 'N/A' ? v : null);
   return {
-    k: e.key, t: e.title, y: e.year ?? null, g: e.genreList.map((g) => genreLabel(lang, g)), r: na(e.rating), b: badgesOf(e.quality),
+    k: e.key, t: e.title, f: e.persianName ?? null, y: e.year ?? null, g: e.genreList.map((g) => genreLabel(lang, g)), r: na(e.rating), b: badgesOf(e.quality),
     a: [...e.aliases, ...persianNames(e), ...[na(e.director), na(e.actors)].filter(Boolean)], p: !!e.posterFile,
     kd: e.kind === 'other' ? 'anime' : e.kind, s: e.kind === 'series' ? seasons : 0, o: e.addedOrder, d: na(e.director),
   };
@@ -371,7 +371,6 @@ function createApi({
 
   // ---- phone catalog: a read-only page on the shop network, customers send back the films they want ----
   const catalogServer = createCatalogServer({
-    lang: () => getSetting(db, 'language'),
     films: (lang) => search.query({}).entries.filter((e) => e.kind !== 'collection').map((e) => catalogRow(e, lang)),
     posterFile: (k) => {
       const f = search.find(k)?.posterFile;
@@ -718,11 +717,21 @@ function createApi({
       return { ok: true };
     },
     // other names (Persian ones, mostly) the film can be found by; they stay with the folder like tags do
-    async addAlias(key, text) {
-      return changeTag(key, text, tags.addAlias, tags.ALIAS_MAX);
-    },
-    async removeAlias(key, text) {
-      return changeTag(key, text, tags.removeAlias, tags.ALIAS_MAX);
+    // the one Persian name of a film: replaces whatever was there; empty text removes it
+    async setPersianName(key, text) {
+      const name = tags.normalizeTag(text, tags.ALIAS_MAX);
+      if (name === 'too_long') return { ok: false, error: 'too_long' };
+      const e = search.find(key);
+      if (!e || e.kind === 'collection') return { ok: false, error: 'unknown' };
+      const ids = tagTargets(e);
+      db.exec('BEGIN');
+      try {
+        for (const id of ids) db.prepare('DELETE FROM aliases WHERE location_id = ?').run(id);
+        if (name) tags.addAlias(db, ids, name);
+        db.exec('COMMIT');
+      } catch (err) { db.exec('ROLLBACK'); throw err; }
+      search.invalidate();
+      return { ok: true };
     },
     planTransfer,
     startTransfer,

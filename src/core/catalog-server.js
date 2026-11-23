@@ -11,7 +11,7 @@ const clean = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, m
  * The phone catalog: a small read-only web server for the shop's local network. Customers browse the film list on their
  * phone and send back the list they want. No file path, drive or folder name ever leaves it; sent lists only reach `submit`.
  */
-function createCatalogServer({ films, posterFile, known, submit, ask, font = () => null, lang = () => 'fa', clock = Date.now }) {
+function createCatalogServer({ films, posterFile, known, submit, ask, font = () => null, clock = Date.now }) {
   let server = null;
   const sent = new Map(); // address -> times of its recent lists
 
@@ -24,7 +24,8 @@ function createCatalogServer({ films, posterFile, known, submit, ask, font = () 
     sent.set(id, [...recent, now]);
     return false;
   };
-  const langOf = (url) => (['fa', 'en'].includes(url.searchParams.get('lang')) ? url.searchParams.get('lang') : lang());
+  // the customer's page is always Persian; the shop's own language setting does not reach it
+  const langOf = () => 'fa';
 
   const reply = (res, status, type, body) => {
     res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });

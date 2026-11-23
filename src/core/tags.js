@@ -26,9 +26,4 @@ function addAlias(db, locationIds, alias) {
   for (const id of locationIds) ins.run(id, alias);
 }
 
-function removeAlias(db, locationIds, alias) {
-  const del = db.prepare('DELETE FROM aliases WHERE location_id = ? AND alias = ?');
-  for (const id of locationIds) del.run(id, alias);
-}
-
-module.exports = { normalizeTag, addTag, removeTag, addAlias, removeAlias, ALIAS_MAX };
+module.exports = { normalizeTag, addTag, removeTag, addAlias, ALIAS_MAX };

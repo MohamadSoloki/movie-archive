@@ -202,6 +202,9 @@
     return flags;
   }
 
+  // the title as the owner sees it: the Persian name when the UI is Persian and one was given
+  const shownTitle = (e) => (state.lang === 'fa' && e.persianName ? e.persianName : e.title);
+
   const posterUrl = (file) => `poster://x/${encodeURIComponent(file)}`;
 
   const hueOf = (text) => { let n = 0; for (const c of text) n = (n * 31 + c.codePointAt(0)) % 360; return n; };
@@ -209,7 +212,7 @@
   // A film without a poster gets a colour made from its title, so the wall never has grey holes.
   function posterEl(e) {
     if (e.posterFile) return h('img', { class: 'poster', src: posterUrl(e.posterFile), alt: '', loading: 'lazy', decoding: 'async' });
-    const el = h('div', { class: 'poster none', dir: 'auto' }, h('span', {}, e.title));
+    const el = h('div', { class: 'poster none', dir: 'auto' }, h('span', {}, shownTitle(e)));
     el.style.setProperty('--h', String(hueOf(e.title)));
     return el;
   }
@@ -256,7 +259,7 @@
       state.picked.has(e.key) ? h('span', { class: 'pick-mark' }, icon('check')) : null,
       e.kind === 'collection' ? h('span', { class: 'stack' }, icon('layers'), t('collection_n', { n: e.members })) : null),
     h('span', { class: 'info' },
-      h('span', { class: 'title-row' }, dotOf(e), h('span', { class: 'name', dir: 'auto' }, e.title), e.attention === 'guess' ? confirmTick(e) : null),
+      h('span', { class: 'title-row' }, dotOf(e), h('span', { class: 'name', dir: 'auto' }, shownTitle(e)), e.attention === 'guess' ? confirmTick(e) : null),
       e.year || genres.length || mine.length || marks.length ? h('span', { class: 'meta' }, e.year ? h('span', { class: 'year' }, String(e.year)) : null, ...marks, ...mine, ...genres) : null));
   }
 
@@ -904,30 +907,21 @@
     return box;
   }
 
-  // Other names of the film (Persian ones, mostly): searching any of them finds it. Same look and keys as the tags.
-  function aliasSection(e) {
+  // The one Persian name of a film. With the Persian UI it replaces the title on cards and in the drawer; the phone page shows it too.
+  function persianNameSection(e) {
     const box = h('section', { class: 'mytags' });
     const note = h('p', { class: 'msg', role: 'alert' });
-    const change = async (call, text) => {
-      const r = await call(e.key, text);
+    const input = h('input', { type: 'text', class: 'tag-input persian-name-input', maxlength: '80', dir: 'rtl', value: e.persianName ?? '', 'aria-label': t('persian_name'), placeholder: t('persian_name_placeholder') });
+    const save = async () => {
+      const text = input.value.trim();
+      if (text === (e.persianName ?? '')) return;
+      const r = await api.setPersianName(e.key, text);
       if (!r.ok) { note.textContent = t(`alias_${r.error}`); return; }
       await refresh(true);
-      document.querySelector('.alias-input')?.focus();
     };
-    const input = h('input', { type: 'text', class: 'tag-input alias-input', maxlength: '80', 'aria-label': t('aliases'), placeholder: t('alias_placeholder') });
-    const add = () => {
-      const text = input.value.replace(/[,،]+$/, '').trim();
-      input.value = '';
-      if (text) change(api.addAlias, text);
-    };
-    input.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter' || ev.key === ',' || ev.key === '،') { ev.preventDefault(); add(); }
-    });
-    box.append(h('h3', {}, t('aliases')),
-      h('div', { class: 'detail-tags' }, e.aliases.map((g) => h('span', { class: 'tag', dir: 'auto' }, g,
-        h('button', { type: 'button', class: 'x', 'aria-label': t('tag_remove', { tag: g }), title: t('tag_remove', { tag: g }), onclick: () => change(api.removeAlias, g) }, icon('x')))),
-      input),
-      note);
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); save(); } });
+    input.addEventListener('change', save);
+    box.append(h('h3', {}, t('persian_name')), input, note);
     return box;
   }
 
@@ -971,8 +965,8 @@
     // dir="auto": English titles and plots from OMDb stay left-to-right inside the right-to-left Persian UI
     d.replaceChildren(
       hero(e,
-        h('h2', { dir: 'auto' }, e.title),
-        h('p', { class: 'sub', dir: 'auto' }, [e.year, e.type].filter(Boolean).join(' · ')),
+        h('h2', { dir: 'auto' }, shownTitle(e)),
+        h('p', { class: 'sub', dir: 'auto' }, [shownTitle(e) !== e.title ? e.title : null, e.year, e.type].filter(Boolean).join(' · ')),
         e.rating ? h('span', { class: 'score', dir: 'ltr', title: t('rating') }, icon('star'), String(e.rating), h('small', {}, 'IMDb')) : null),
       h('div', { class: 'detail-body' }, ...[
         flags.length ? h('ul', { class: 'flags' }, flags.map((f) => h('li', { class: f.cls }, f.text))) : null,
@@ -981,7 +975,7 @@
           e.imdbId ? h('button', { type: 'button', class: 'btn', onclick: () => api.openImdb(e.titleId) }, icon('link'), t('open_imdb')) : null,
           cartButton(e)),
         myTagsSection(e),
-        aliasSection(e),
+        persianNameSection(e),
         qualitySection(e),
         e.genreList.length ? h('div', { class: 'detail-tags', 'aria-label': t('genres') }, e.genreList.map((g) => h('button', {
           type: 'button', class: 'tag', 'aria-pressed': String(hasGenre(g)), onclick: () => { toggleGenre(g); },
@@ -1310,7 +1304,7 @@
         .map((q) => t(`sim_${q.type}`, { v: q.values.slice(0, 2).map(shown[q.type] || ((v) => v)).join(sep) })).join(' · ');
       box.append(h('div', { class: 'sim-list' }, r.items.map((x) => h('button', { type: 'button', class: 'card sim', 'data-key': x.key, onclick: () => select(x.key) },
         frame(x, x.rating ? rateChip(x.rating) : null),
-        h('span', { class: 'info' }, h('span', { class: 'name', dir: 'auto' }, x.title), x.year ? h('span', { class: 'year' }, String(x.year)) : null),
+        h('span', { class: 'info' }, h('span', { class: 'name', dir: 'auto' }, shownTitle(x)), x.year ? h('span', { class: 'year' }, String(x.year)) : null),
         h('span', { class: 'why', dir: 'auto' }, why(x))))));
     });
     return box;
@@ -1329,7 +1323,7 @@
       if (!r.inArchive.length && !r.outside.length) return;
       const tile = (x, why, onclick, tip) => h('button', { type: 'button', class: 'card sim', title: tip || '', onclick },
         frame(x, x.rating ? rateChip(x.rating) : null),
-        h('span', { class: 'info' }, h('span', { class: 'name', dir: 'auto' }, x.title)),
+        h('span', { class: 'info' }, h('span', { class: 'name', dir: 'auto' }, shownTitle(x))),
         h('span', { class: 'why' }, why));
       box.append(h('h3', {}, t('rec_title')),
         h('div', { class: 'sim-list' },
