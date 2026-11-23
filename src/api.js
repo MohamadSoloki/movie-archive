@@ -67,8 +67,8 @@ function catalogRow(e, lang) {
 // "The Batman!" and "the batman" are the same name
 const nameKey = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
-const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate', 'pricePerGB', 'priceMovie', 'priceSeason', 'shopName', 'phoneCatalog', 'catalogPort'];
-const PRICE_KEYS = ['pricePerGB', 'priceMovie', 'priceSeason'];
+const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate', 'priceMovie', 'priceSeason', 'priceEpisode', 'shopName', 'phoneCatalog', 'catalogPort'];
+const PRICE_KEYS = ['priceMovie', 'priceSeason', 'priceEpisode'];
 
 function createApi({
   db, userDataDir, fetch = globalThis.fetch, listDrives = defaultListDrives, listRemovable = defaultListRemovable, eject = defaultEject,
@@ -126,7 +126,7 @@ function createApi({
   let translating = null;
   const sanitize = (text) => String(text).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/[. ]+$/, '') || '_';
 
-  const priceSettings = () => ({ pricePerGB: getSetting(db, 'pricePerGB'), priceMovie: getSetting(db, 'priceMovie'), priceSeason: getSetting(db, 'priceSeason') });
+  const priceSettings = () => ({ priceMovie: getSetting(db, 'priceMovie'), priceSeason: getSetting(db, 'priceSeason'), priceEpisode: getSetting(db, 'priceEpisode') });
 
   // How a title is told apart across rescans and fixes: imdb id, MyAnimeList id, or its name and year
   function refOfEntry(e) {
@@ -717,6 +717,15 @@ function createApi({
       return { ok: true };
     },
     // other names (Persian ones, mostly) the film can be found by; they stay with the folder like tags do
+    // the price calculator in the invoice settings: what would this many movies, seasons and single episodes cost
+    // `prices` (typed in the form, not saved yet) win over the saved ones; trying them saves nothing
+    async calcPrice(counts = {}, prices = {}) {
+      const n = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.floor(Number(v)) : 0);
+      const price = (k) => (prices[k] == null || prices[k] === '' ? getSetting(db, k) : (Number(prices[k]) > 0 ? Number(prices[k]) : 0));
+      const r = orders.priceCount({ movies: n(counts.movies), seasons: n(counts.seasons), episodes: n(counts.episodes) },
+        { priceMovie: price('priceMovie'), priceSeason: price('priceSeason'), priceEpisode: price('priceEpisode') });
+      return r ? { ok: true, ...r } : { ok: true, total: null };
+    },
     // the one Persian name of a film: replaces whatever was there; empty text removes it
     async setPersianName(key, text) {
       const name = tags.normalizeTag(text, tags.ALIAS_MAX);

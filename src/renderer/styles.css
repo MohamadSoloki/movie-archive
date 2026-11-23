@@ -320,6 +320,8 @@ dialog[open] { animation: pop 0.18s ease-out; }
 .sheet-body label { display: block; margin-block-start: 0.4rem; margin-block-end: 0.35rem; font-weight: 600; }
 .sheet-body .help { margin-block: 0.35rem 0.7rem; }
 #settings-dlg .sheet-body { gap: 0; }
+#settings-dlg .sheet-body > * { flex: none; } /* a flex column would squash the text areas to one line */
+#settings-dlg textarea { min-height: 4.6rem; }
 .sheet .btn.primary { min-width: 9rem; }
 .field-row, .row { display: flex; gap: 0.5rem; }
 .row { margin-block-start: 0.6rem; }
@@ -444,7 +446,14 @@ body.selecting main { padding-block-end: 6rem; }
 #copy-items li.dup { color: var(--yellow); }
 .dup-note { font-weight: 600; }
 .help.bad, #copy-cap.bad { color: var(--red); }
+.price-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.4rem 0.8rem; align-items: center; }
+.price-fields label { margin: 0; font-weight: 500; }
 .price-fields input { min-width: 0; }
+#settings-dlg .set-h { margin: 1.6rem 0 0.4rem; padding-top: 1.1rem; border-top: 1px solid var(--line); font-size: 1rem; font-weight: 700; color: var(--fg); }
+#settings-dlg .sheet-body > .set-h:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.calc { margin-block-start: 0.4rem; padding: 0.8rem 0.9rem; border: 1px dashed var(--line-strong); border-radius: 10px; display: grid; gap: 0.6rem; }
+.calc h4 { margin: 0; font-size: 0.9rem; font-weight: 600; }
+.calc-out { white-space: pre-line; font-weight: 700; font-variant-numeric: tabular-nums; min-height: 1.4em; }
 
 /* the invoice shows only on paper */
 .print-area { display: none; }

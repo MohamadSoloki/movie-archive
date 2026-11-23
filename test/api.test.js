@@ -904,7 +904,7 @@ test('backup: exportBackup writes a file importBackup reads; a foreign file is r
 
 test('a finished copy becomes an order with the customer, its films and the price; the plan shows the price first', async () => {
   const { api, keys, dest } = await withFilms({ now: () => 5000 });
-  await api.setSettings({ pricePerGB: 0, priceMovie: 7000, priceSeason: 0, shopName: 'Net' });
+  await api.setSettings({ priceMovie: 7000, priceSeason: 0, shopName: 'Net' });
   const plan = await api.planTransfer({ keys, destDir: dest, name: 'c' });
   assert.deepEqual([plan.price.movies, plan.price.total], [2, 14000]);
   const r = await api.startTransfer({ keys, destDir: dest, name: 'c', customer: ' Ali ', phone: '0912', note: 'flash' }, () => {});
@@ -925,9 +925,9 @@ test('a finished copy becomes an order with the customer, its films and the pric
 
 test('a copy that delivered nothing makes no order; price settings are numbers', async () => {
   const { api, keys, dest } = await withFilms();
-  await api.setSettings({ pricePerGB: 'abc', priceMovie: -5, priceSeason: '1500' });
+  await api.setSettings({ priceEpisode: 'abc', priceMovie: -5, priceSeason: '1500' });
   const s = await api.getSettings();
-  assert.deepEqual([s.pricePerGB, s.priceMovie, s.priceSeason], [0, 0, 1500]);
+  assert.deepEqual([s.priceEpisode, s.priceMovie, s.priceSeason, s.pricePerGB], [0, 0, 1500, undefined]);
   assert.deepEqual(await api.startTransfer({ keys, destDir: dest, name: '..' }, () => {}), { ok: false, error: 'bad_name' });
   assert.deepEqual(await api.getOrders(), []);
 });
@@ -1071,4 +1071,17 @@ test('confirmGuess: the tick makes a guessed match verified and pins it', async 
   assert.equal((await find()).attention, 'ok');
   assert.equal(db.prepare("SELECT pinned FROM locations WHERE folder_name LIKE 'dune%'").get().pinned, 1);
   assert.deepEqual(await api.confirmGuess('t:99999'), { ok: false, error: 'unknown' });
+});
+
+test('calcPrice: the price calculator answers from the saved prices, so the owner can test them', async () => {
+  const { api } = await scanned();
+  assert.equal((await api.calcPrice({ movies: 5, seasons: 3 })).total, null);
+  await api.setSettings({ priceMovie: 5000, priceSeason: 20000, priceEpisode: 2000 });
+  assert.deepEqual(await api.calcPrice({ movies: 5, seasons: 3, episodes: 4 }),
+    { ok: true, movies: 5, seasons: 3, episodes: 4, byMovies: 25000, bySeasons: 60000, byEpisodes: 8000, total: 93000 });
+  // nonsense counts are zero, never a negative or fractional bill
+  assert.equal((await api.calcPrice({ movies: -2, seasons: 'x', episodes: 1.9 })).total, 2000);
+  // prices typed in the form but not saved yet can be tried too, and they are not saved by trying
+  assert.equal((await api.calcPrice({ movies: 2 }, { priceMovie: '1000' })).total, 2000);
+  assert.equal((await api.getSettings()).priceMovie, 5000);
 });

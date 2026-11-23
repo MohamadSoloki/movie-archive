@@ -1,25 +1,34 @@
 'use strict';
 const { normalizeFa } = require('./persian.js');
 
-const GB = 1024 ** 3;
 const keyOf = (text) => normalizeFa(text).replace(/[^\p{L}\p{N}]+/gu, '');
 const clean = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
 // "Ali R." and "ali  r" are the same customer; so are Arabic and Persian spellings of a name
 const customerKey = keyOf;
 
-// What a copy costs: size × per-GB price, plus a price per movie and per season. null when no price is set.
+// What counts cost: a price per movie, per season and per single episode (a season copied only in part).
+// Size never counts. Without an episode price a partial season costs a whole season. null when no price is set.
+function priceCount({ movies = 0, seasons = 0, episodes = 0 }, { priceMovie = 0, priceSeason = 0, priceEpisode = 0 } = {}) {
+  if (!(priceMovie > 0 || priceSeason > 0 || priceEpisode > 0)) return null;
+  const byMovies = movies * priceMovie;
+  const bySeasons = seasons * priceSeason;
+  const byEpisodes = episodes * priceEpisode;
+  return { movies, seasons, episodes, byMovies, bySeasons, byEpisodes, total: byMovies + bySeasons + byEpisodes };
+}
+
+// The same for the jobs of a copy: a job with a season is a season; one that also lists `episodes` (a count) is a partial season.
 // A collection folder counts as one movie.
-function priceOf(jobs, { pricePerGB = 0, priceMovie = 0, priceSeason = 0 } = {}) {
-  if (!(pricePerGB > 0 || priceMovie > 0 || priceSeason > 0)) return null;
-  const bytes = jobs.reduce((n, j) => n + (j.bytes || 0), 0);
-  const seasons = jobs.filter((j) => j.season != null).length;
-  const movies = jobs.length - seasons;
-  const gb = Math.round((bytes / GB) * 100) / 100;
-  const bySize = Math.round(gb * (pricePerGB || 0));
-  const byMovies = movies * (priceMovie || 0);
-  const bySeasons = seasons * (priceSeason || 0);
-  return { gb, movies, seasons, bySize, byMovies, bySeasons, total: bySize + byMovies + bySeasons };
+function priceOf(jobs, prices = {}) {
+  const partial = jobs.filter((j) => j.season != null && j.episodes != null);
+  const wholeSeasons = jobs.filter((j) => j.season != null).length - partial.length;
+  const movies = jobs.length - wholeSeasons - partial.length;
+  const perEpisode = prices.priceEpisode > 0;
+  return priceCount({
+    movies,
+    seasons: wholeSeasons + (perEpisode ? 0 : partial.length),
+    episodes: perEpisode ? partial.reduce((n, j) => n + j.episodes, 0) : 0,
+  }, prices);
 }
 
 function recordOrder(db, { customer = '', phone = '', note = '', items, bytes = 0, price = null }, now) {
@@ -83,4 +92,4 @@ function removeRequest(db, id) {
   db.prepare('DELETE FROM requests WHERE id = ?').run(id);
 }
 
-module.exports = { customerKey, nameKey: keyOf, priceOf, recordOrder, listOrders, deliveredTo, customers, removeOrder, addRequest, listRequests, removeRequest };
+module.exports = { customerKey, nameKey: keyOf, priceCount, priceOf, recordOrder, listOrders, deliveredTo, customers, removeOrder, addRequest, listRequests, removeRequest };

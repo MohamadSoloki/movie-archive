@@ -9,7 +9,7 @@ const DEFAULTS = {
   omdbKey: '',
   translateEmail: '',
   autoTranslate: true,
-  pricePerGB: 0,
+  priceEpisode: 0,
   priceMovie: 0,
   priceSeason: 0,
   shopName: '',

@@ -7,13 +7,19 @@ const o = require('../src/core/orders.js');
 const GB = 1024 ** 3;
 const item = (ref, title, extra = {}) => ({ ref, title, year: '2020', kind: 'movie', detail: '', ...extra });
 
-test('price = size × per-GB + per movie + per season; nothing set means no price', () => {
-  const jobs = [{ bytes: 2 * GB, season: null }, { bytes: 1 * GB, season: null }, { bytes: 4 * GB, season: '1' }, { bytes: 4 * GB, season: '2' }];
-  assert.equal(o.priceOf(jobs, { pricePerGB: 0, priceMovie: 0, priceSeason: 0 }), null);
-  assert.deepEqual(o.priceOf(jobs, { pricePerGB: 1000, priceMovie: 5000, priceSeason: 20000 }),
-    { gb: 11, movies: 2, seasons: 2, bySize: 11000, byMovies: 10000, bySeasons: 40000, total: 61000 });
-  assert.equal(o.priceOf(jobs, { pricePerGB: 1000, priceMovie: 0, priceSeason: 0 }).total, 11000);
-  assert.equal(o.priceOf([{ bytes: 1.5 * GB }], { pricePerGB: 1000 }).total, 1500);
+test('price = per movie + per season + per single episode; size never counts; nothing set means no price', () => {
+  const jobs = [{ bytes: 2 * GB, season: null }, { bytes: 1 * GB, season: null }, { bytes: 4 * GB, season: '1' }, { bytes: 4 * GB, season: '2' },
+    { bytes: GB, season: '3', episodes: 3 }];
+  assert.equal(o.priceOf(jobs, { priceMovie: 0, priceSeason: 0, priceEpisode: 0 }), null);
+  assert.deepEqual(o.priceOf(jobs, { priceMovie: 5000, priceSeason: 20000, priceEpisode: 2000 }),
+    { movies: 2, seasons: 2, episodes: 3, byMovies: 10000, bySeasons: 40000, byEpisodes: 6000, total: 56000 });
+  // without an episode price a partial season costs a whole season
+  assert.deepEqual(o.priceOf(jobs, { priceMovie: 0, priceSeason: 20000 }),
+    { movies: 2, seasons: 3, episodes: 0, byMovies: 0, bySeasons: 60000, byEpisodes: 0, total: 60000 });
+  // the calculator asks the same question without any files
+  assert.deepEqual(o.priceCount({ movies: 5, seasons: 3, episodes: 4 }, { priceMovie: 5000, priceSeason: 20000, priceEpisode: 2000 }),
+    { movies: 5, seasons: 3, episodes: 4, byMovies: 25000, bySeasons: 60000, byEpisodes: 8000, total: 93000 });
+  assert.equal(o.priceCount({ movies: 5 }, {}), null);
 });
 
 test('customer names match ignoring letter forms, spaces and case', () => {

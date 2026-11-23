@@ -195,9 +195,11 @@
         <button id="settings-x" type="button" class="icon-btn" data-i18n-label="close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       </header>
       <div class="sheet-body">
+        <h3 class="set-h" data-i18n="set_g_source"></h3>
         <label for="set-key" data-i18n="settings_omdb_key"></label>
         <input id="set-key" type="password" autofocus dir="ltr" autocomplete="off">
         <p class="help" data-i18n="settings_omdb_hint"></p>
+        <h3 class="set-h" data-i18n="set_g_scan"></h3>
         <label for="set-patterns" data-i18n="settings_patterns"></label>
         <textarea id="set-patterns" rows="4" dir="ltr"></textarea>
         <p class="help" data-i18n="settings_patterns_hint"></p>
@@ -207,29 +209,46 @@
         <label for="set-collections" data-i18n="settings_collections"></label>
         <textarea id="set-collections" rows="3" dir="ltr"></textarea>
         <p class="help" data-i18n="settings_collections_hint"></p>
+        <h3 class="set-h" data-i18n="set_g_translate"></h3>
         <label for="set-email" data-i18n="translate_email"></label>
         <input id="set-email" type="text" dir="ltr" autocomplete="off">
         <p class="help" data-i18n="translate_email_hint"></p>
         <label class="check"><input id="set-auto-translate" type="checkbox"><span data-i18n="settings_auto_translate"></span></label>
         <p class="help" data-i18n="settings_auto_translate_hint"></p>
         <button id="translate-now" type="button" class="btn" data-i18n="translate_now"></button>
+        <h3 class="set-h" data-i18n="set_g_invoice"></h3>
         <label for="set-shop" data-i18n="price_shop"></label>
         <input id="set-shop" type="text" maxlength="80" dir="auto" autocomplete="off">
-        <label data-i18n="price_title"></label>
-        <div class="field-row price-fields">
-          <input id="set-price-gb" type="number" min="0" step="any" inputmode="decimal" dir="ltr" data-i18n-placeholder="price_per_gb" data-i18n-label="price_per_gb">
-          <input id="set-price-movie" type="number" min="0" step="any" inputmode="decimal" dir="ltr" data-i18n-placeholder="price_per_movie" data-i18n-label="price_per_movie">
-          <input id="set-price-season" type="number" min="0" step="any" inputmode="decimal" dir="ltr" data-i18n-placeholder="price_per_season" data-i18n-label="price_per_season">
+        <p class="help" data-i18n="price_title"></p>
+        <div class="price-fields">
+          <label for="set-price-movie" data-i18n="price_per_movie"></label>
+          <input id="set-price-movie" type="number" min="0" step="any" inputmode="decimal" dir="ltr">
+          <label for="set-price-season" data-i18n="price_per_season"></label>
+          <input id="set-price-season" type="number" min="0" step="any" inputmode="decimal" dir="ltr">
+          <label for="set-price-episode" data-i18n="price_per_episode"></label>
+          <input id="set-price-episode" type="number" min="0" step="any" inputmode="decimal" dir="ltr">
         </div>
         <p class="help" data-i18n="price_hint"></p>
-        <label data-i18n="backup_title"></label>
+        <div class="calc">
+          <h4 data-i18n="calc_title"></h4>
+          <div class="price-fields">
+            <label for="calc-movies" data-i18n="calc_movies"></label>
+            <input id="calc-movies" type="number" min="0" step="1" inputmode="numeric" dir="ltr" value="0">
+            <label for="calc-seasons" data-i18n="calc_seasons"></label>
+            <input id="calc-seasons" type="number" min="0" step="1" inputmode="numeric" dir="ltr" value="0">
+            <label for="calc-episodes" data-i18n="calc_episodes"></label>
+            <input id="calc-episodes" type="number" min="0" step="1" inputmode="numeric" dir="ltr" value="0">
+          </div>
+          <p id="calc-out" class="calc-out" role="status" aria-live="polite"></p>
+        </div>
+        <h3 class="set-h" data-i18n="set_g_backup"></h3>
         <div class="row">
           <button id="backup-export" type="button" class="btn" data-i18n="backup_export"></button>
           <button id="backup-import" type="button" class="btn" data-i18n="backup_import"></button>
         </div>
         <p class="help" data-i18n="backup_hint"></p>
         <p id="backup-note" class="help" role="status" hidden></p>
-        <label data-i18n="phone_title"></label>
+        <h3 class="set-h" data-i18n="phone_title"></h3>
         <div class="row"><button id="phone-toggle" type="button" class="btn"></button></div>
         <p class="help" data-i18n="phone_hint"></p>
         <div id="phone-box" class="phone-box" hidden>

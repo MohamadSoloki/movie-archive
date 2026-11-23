@@ -1598,12 +1598,25 @@
     $('set-email').value = s.translateEmail || '';
     $('set-auto-translate').checked = s.autoTranslate !== false;
     $('set-shop').value = s.shopName || '';
-    $('set-price-gb').value = s.pricePerGB || '';
+    $('set-price-episode').value = s.priceEpisode || '';
     $('set-price-movie').value = s.priceMovie || '';
     $('set-price-season').value = s.priceSeason || '';
     backupNote('');
+    paintCalc();
     $('settings-dlg').showModal();
   });
+  // The price calculator: tries the prices typed in the form (saved or not) on a number of movies, seasons and episodes.
+  async function paintCalc() {
+    const num = (id) => $(id).value;
+    const r = await api.calcPrice(
+      { movies: num('calc-movies'), seasons: num('calc-seasons'), episodes: num('calc-episodes') },
+      { priceMovie: num('set-price-movie'), priceSeason: num('set-price-season'), priceEpisode: num('set-price-episode') });
+    const out = $('calc-out');
+    if (r.total == null) { out.textContent = t('calc_none'); return; }
+    out.textContent = t('calc_result', { m: r.movies, mp: money(r.byMovies), s: r.seasons, sp: money(r.bySeasons), e: r.episodes, ep: money(r.byEpisodes), total: money(r.total) });
+  }
+  for (const id of ['calc-movies', 'calc-seasons', 'calc-episodes', 'set-price-movie', 'set-price-season', 'set-price-episode']) $(id).addEventListener('input', paintCalc);
+
   $('settings-cancel').addEventListener('click', () => $('settings-dlg').close());
   $('settings-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -1616,7 +1629,7 @@
       translateEmail: $('set-email').value.trim(),
       autoTranslate: $('set-auto-translate').checked,
       shopName: $('set-shop').value,
-      pricePerGB: $('set-price-gb').value,
+      priceEpisode: $('set-price-episode').value,
       priceMovie: $('set-price-movie').value,
       priceSeason: $('set-price-season').value,
     });
