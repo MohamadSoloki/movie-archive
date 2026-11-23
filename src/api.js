@@ -853,6 +853,25 @@ function createApi({
       search.invalidate();
       return { ok: true };
     },
+    // "Remove" from the archive view: only the app forgets to show it, the folder on the disk is never touched and a rescan keeps it hidden
+    async hideEntry(key) {
+      const e = search.find(key);
+      if (!e) return { ok: false, error: 'unknown' };
+      for (const id of tagTargets(e)) db.prepare('UPDATE locations SET hidden = 1 WHERE id = ?').run(id);
+      search.invalidate();
+      return { ok: true };
+    },
+    async getHidden() {
+      return db.prepare(`SELECT l.id, l.rel_path AS relPath, COALESCE(d.label, l.drive_serial) AS driveLabel, COALESCE(t.title, l.parsed_title, l.folder_name) AS title
+        FROM locations l LEFT JOIN drives d ON d.serial = l.drive_serial LEFT JOIN titles t ON t.id = l.title_id
+        WHERE l.hidden = 1 ORDER BY title COLLATE NOCASE`).all().map((r) => ({ ...r }));
+    },
+    async unhide(id) {
+      const r = db.prepare('UPDATE locations SET hidden = 0 WHERE id = ? AND hidden = 1').run(id);
+      if (!r.changes) return { ok: false, error: 'unknown' };
+      search.invalidate();
+      return { ok: true };
+    },
     // dub / sub set by hand on every folder of the entry (a collection: of every film in it). value true/false, or null = automatic again
     async setQualityMark(key, flag, value) {
       if (flag !== 'dub' && flag !== 'sub') return { ok: false, error: 'bad_flag' };

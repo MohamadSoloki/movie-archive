@@ -1258,3 +1258,21 @@ test('calcPrice: the price calculator answers from the saved prices, so the owne
   assert.equal((await api.calcPrice({ movies: 2 }, { priceMovie: '1000' })).total, 2000);
   assert.equal((await api.getSettings()).priceMovie, 5000);
 });
+
+test('hideEntry takes a title out of the archive view without touching the folder; a rescan keeps it hidden; unhide brings it back', async () => {
+  const { api, media } = await withFilms();
+  const [first] = (await api.getEntries()).entries;
+  assert.deepEqual(await api.hideEntry('nope'), { ok: false, error: 'unknown' });
+  assert.deepEqual(await api.hideEntry(first.key), { ok: true });
+  assert.equal((await api.getEntries()).entries.some((e) => e.key === first.key), false);
+  assert.ok(fs.existsSync(path.join(media, 'Movies', 'batman 2022', 'movie.mkv')) || fs.existsSync(path.join(media, 'Movies', 'dune 2021', 'movie.mkv')));
+  assert.equal((await api.scan()).added, 0);
+  assert.equal((await api.getEntries()).entries.length, 1);
+  const hidden = await api.getHidden();
+  assert.equal(hidden.length, 1);
+  assert.deepEqual(Object.keys(hidden[0]).sort(), ['driveLabel', 'id', 'relPath', 'title']);
+  assert.deepEqual(await api.unhide(hidden[0].id), { ok: true });
+  assert.equal((await api.getEntries()).entries.length, 2);
+  assert.deepEqual(await api.getHidden(), []);
+  assert.deepEqual(await api.unhide(99999), { ok: false, error: 'unknown' });
+});

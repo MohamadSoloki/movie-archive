@@ -90,6 +90,10 @@ function openDb(file = ':memory:') {
   if (!db.prepare('PRAGMA table_info(locations)').all().some((c) => c.name === 'collection')) {
     db.exec('ALTER TABLE locations ADD COLUMN collection TEXT');
   }
+  // taken out of the archive view by the owner; the folder itself is never touched and a rescan keeps it hidden
+  if (!db.prepare('PRAGMA table_info(locations)').all().some((c) => c.name === 'hidden')) {
+    db.exec('ALTER TABLE locations ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0');
+  }
   if (!db.prepare('PRAGMA table_info(roots)').all().some((c) => c.name === 'single')) {
     db.exec('ALTER TABLE roots ADD COLUMN single INTEGER NOT NULL DEFAULT 0');
   }

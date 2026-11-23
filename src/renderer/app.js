@@ -263,6 +263,77 @@
       e.year || genres.length || mine.length || marks.length ? h('span', { class: 'meta' }, e.year ? h('span', { class: 'year' }, String(e.year)) : null, ...marks, ...mine, ...genres) : null));
   }
 
+  // ---- right-click menu on a card (also the Menu key / Shift+F10) --------
+  // Everything here only changes the app's own data; hiding a title never touches its folder.
+  function closeMenu() { document.getElementById('ctx-menu')?.remove(); }
+  async function openMenu(ev, cardEl) {
+    ev.preventDefault();
+    closeMenu();
+    const key = cardEl.dataset.key;
+    const e = state.entries.find((x) => x.key === key);
+    if (!e) return;
+    const isCol = e.kind === 'collection';
+    const full = isCol ? null : await api.getEntry(key);
+    const showDetail = async () => { state.selected = key; for (const c of document.querySelectorAll('.card')) c.classList.toggle('sel', c.dataset.key === key); await renderDetail(); };
+    const focusIn = async (selector) => { await showDetail(); const el = document.querySelector(selector); el?.scrollIntoView({ block: 'center' }); el?.focus(); };
+    const loc = full?.locations.find((l) => l.online && !l.missing);
+    const items = [
+      [t('menu_details'), 'film', showDetail],
+      !isCol ? [t('open_folder'), 'folder', async () => { const r = await api.openLocation(loc.id); if (!r.ok) setStatus(errText(r.error)); }, !loc] : null,
+      [t(inCart(key) ? 'copy_remove' : 'copy_add'), 'layers', () => toggleCart(key, e.title)],
+      !isCol && e.attention === 'guess' ? [t('confirm_guess'), 'check', async () => { const r = await api.confirmGuess(key); if (r.ok) await refresh(true); }] : null,
+      !isCol ? [t('menu_edit_name'), 'tag', () => focusIn('.persian-name-input')] : null,
+      !isCol ? [t('online_info_fix'), 'search', () => focusIn('.fix-input')] : null,
+      'sep',
+      [t('menu_hide'), 'x', async () => {
+        if (!window.confirm(t('menu_hide_confirm', { title: shownTitle(e) }))) return;
+        const r = await api.hideEntry(key);
+        if (!r.ok) return;
+        if (state.selected === key) state.selected = null;
+        state.cart.delete(key);
+        renderCartBadge();
+        await refresh(true);
+        setStatus(t('menu_hidden'));
+      }, false, 'danger'],
+    ].filter(Boolean);
+    const menu = h('div', { id: 'ctx-menu', class: 'ctx-menu', role: 'menu', 'aria-label': shownTitle(e) });
+    for (const it of items) {
+      if (it === 'sep') { menu.append(h('hr', { role: 'separator' })); continue; }
+      const [label, ic, run, disabled, tone] = it;
+      menu.append(h('button', {
+        type: 'button', role: 'menuitem', class: tone || '', disabled: !!disabled,
+        onclick: () => { closeMenu(); run(); },
+      }, icon(ic), label));
+    }
+    document.body.append(menu);
+    const r = menu.getBoundingClientRect();
+    const fromKey = ev.clientX === 0 && ev.clientY === 0; // the Menu key reports no pointer position
+    const box = cardEl.getBoundingClientRect();
+    const x = fromKey ? box.left + 16 : ev.clientX;
+    const y = fromKey ? box.top + 16 : ev.clientY;
+    menu.style.setProperty('left', `${Math.max(4, Math.min(x, window.innerWidth - r.width - 4))}px`);
+    menu.style.setProperty('top', `${Math.max(4, Math.min(y, window.innerHeight - r.height - 4))}px`);
+    menu.querySelector('button:not([disabled])')?.focus();
+  }
+  document.addEventListener('contextmenu', (ev) => {
+    const cardEl = ev.target.closest?.('#grid .card');
+    if (cardEl) openMenu(ev, cardEl); else closeMenu();
+  });
+  document.addEventListener('click', (ev) => { if (!ev.target.closest?.('#ctx-menu')) closeMenu(); });
+  window.addEventListener('blur', closeMenu);
+  window.addEventListener('resize', closeMenu);
+  document.addEventListener('scroll', closeMenu, true);
+  document.addEventListener('keydown', (ev) => {
+    const menu = document.getElementById('ctx-menu');
+    if (!menu) return;
+    if (ev.key === 'Escape') { ev.preventDefault(); closeMenu(); return; }
+    if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;
+    ev.preventDefault();
+    const list = [...menu.querySelectorAll('button:not([disabled])')];
+    const at = list.indexOf(document.activeElement);
+    list[(at + (ev.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]?.focus();
+  });
+
   function appendChunk() {
     const next = state.entries.slice(state.shown, state.shown + CHUNK);
     $('grid').append(...next.map(card));
@@ -347,7 +418,7 @@
 
   function fixSection(e) {
     const target = e.titleId != null ? { titleId: e.titleId } : { locationId: e.locationId };
-    const input = h('input', { type: 'text', dir: 'ltr', placeholder: t('fix_placeholder'), 'aria-label': t('online_info_fix') });
+    const input = h('input', { type: 'text', class: 'fix-input', dir: 'ltr', placeholder: t('fix_placeholder'), 'aria-label': t('online_info_fix') });
     const msg = h('p', { class: 'msg', role: 'alert' });
     const form = h('form', {
       onsubmit: async (ev) => {
@@ -1683,8 +1754,17 @@
     $('set-price-season').value = s.priceSeason || '';
     backupNote('');
     paintCalc();
+    paintHidden();
     $('settings-dlg').showModal();
   });
+  // Titles the owner took out of the archive view (right-click → hide). Only the app's list: the folders were never touched.
+  async function paintHidden() {
+    const list = await api.getHidden();
+    $('hidden-list').replaceChildren(...list.map((x) => h('li', { class: 'loc' },
+      h('span', { class: 'where', dir: 'auto' }, x.title, ' ', h('span', { class: 'path' }, `${x.driveLabel} ${x.relPath}`)),
+      h('button', { type: 'button', class: 'btn', onclick: async () => { await api.unhide(x.id); await paintHidden(); await refresh(true); } }, t('hidden_restore')))));
+    $('hidden-none').hidden = list.length > 0;
+  }
   // The price calculator: tries the prices typed in the form (saved or not) on a number of movies, seasons and episodes.
   async function paintCalc() {
     const num = (id) => $(id).value;

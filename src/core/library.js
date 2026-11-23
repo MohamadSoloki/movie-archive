@@ -7,7 +7,7 @@ const compareTitles = (a, b) => collator.compare(a.title, b.title);
 
 function listEntries(db) {
   const locs = db.prepare(`SELECT l.*, d.label AS drive_label, COALESCE(d.online, 0) AS drive_online
-    FROM locations l LEFT JOIN drives d ON d.serial = l.drive_serial ORDER BY l.id`).all();
+    FROM locations l LEFT JOIN drives d ON d.serial = l.drive_serial WHERE l.hidden = 0 ORDER BY l.id`).all();
   const titles = new Map(db.prepare('SELECT * FROM titles').all().map((t) => [t.id, t]));
   const tagsByLoc = new Map();
   for (const r of db.prepare('SELECT location_id, tag FROM tags').all()) {
