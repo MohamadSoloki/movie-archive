@@ -2,6 +2,7 @@
 const { DatabaseSync } = require('node:sqlite');
 
 const DEFAULTS = {
+  copySpeeds: {}, // bytes per second of the last copy, per destination drive (internal: used to guess the time of the next one)
   patterns: ['{title} {year}*'],
   ignore: [],
   collections: [],

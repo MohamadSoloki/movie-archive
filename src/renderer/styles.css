@@ -378,7 +378,11 @@ dialog[open] { animation: pop 0.18s ease-out; }
 #copy-items li { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.45rem 0; border-block-end: 1px solid var(--line); }
 #copy-items .x { flex: none; }
 #copy-skipped li { color: var(--yellow); font-size: 0.88rem; }
-#copy-bar { width: 100%; height: 0.6rem; accent-color: var(--accent); }
+#copy-bar { width: 100%; height: 0.9rem; appearance: none; border: 0; border-radius: 999px; overflow: hidden; background: var(--line); accent-color: var(--accent); }
+#copy-bar::-webkit-progress-bar { background: var(--line); }
+#copy-bar::-webkit-progress-value { background: var(--accent); border-radius: 999px; transition: width 0.25s linear; }
+.price-lines { margin: 0 0 0.3rem; font-variant-numeric: tabular-nums; }
+.price-lines li { padding: 0.1rem 0; }
 #copy-msg { min-height: 1.2em; font-size: 0.9rem; }
 #copy-msg.bad { color: var(--red); }
 #copy-info.bad { color: var(--red); }

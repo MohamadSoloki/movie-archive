@@ -474,6 +474,16 @@ test('copy progress carries the current speed and the time left', async () => {
   assert.equal(copyEvents.at(-1).etaSec, 0); // the closing event: all bytes are there
 });
 
+test('estimateSize guesses the copy time from the speed of the last copy to the same drive', async () => {
+  let t = 0;
+  const { api, keys, dest } = await withFilms({ clock: () => (t += 1000) });
+  assert.equal((await api.estimateSize(keys, dest)).etaSec, null); // never copied here yet: no guess
+  await api.startTransfer({ keys, destDir: dest, name: 'claude' }, () => {});
+  const est = await api.estimateSize(keys, dest);
+  assert.ok(Number.isInteger(est.etaSec) && est.etaSec > 0);
+  assert.equal((await api.estimateSize(keys)).etaSec, null); // no destination chosen: no guess
+});
+
 test('startTransfer does nothing when the plan is refused, and refuses a second run at the same time', async () => {
   const { api, keys, dest } = await withFilms();
   assert.deepEqual(await api.startTransfer({ keys, destDir: dest, name: '..' }, () => {}), { ok: false, error: 'bad_name' });

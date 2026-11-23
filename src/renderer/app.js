@@ -598,15 +598,28 @@
   async function updateCapacity() {
     const mine = ++capToken;
     const keys = [...state.cart.keys()];
-    const est = keys.length ? await api.estimateSize(keys) : null;
+    const est = keys.length ? await api.estimateSize(keys, state.copyDest) : null;
     const free = est && state.copyDest ? await api.getFreeSpace(state.copyDest) : null;
     if (mine !== capToken) return;
     const bad = est && free !== null && est.bytes > free;
     $('copy-cap').classList.toggle('bad', !!bad);
     $('copy-cap').textContent = !est ? '' : bad ? t('copy_cap_bad', { size: size(est.bytes), free: size(free) })
       : free !== null ? t('copy_cap', { size: size(est.bytes), free: size(free) }) : t('copy_cap_nodest', { size: size(est.bytes) });
-    $('copy-price').hidden = !est?.price;
-    if (est?.price) $('copy-price').textContent = t('price_total', { n: money(est.price.total) });
+    if (est) state.holdPrice = false;
+    if (!state.holdPrice) paintPrice(est?.price);
+    $('copy-eta').hidden = !est?.etaSec;
+    if (est?.etaSec) $('copy-eta').textContent = t('copy_eta', { time: duration(est.etaSec) });
+  }
+
+  // What the customer pays, by kind: "5 movies × 10,000", "3 seasons × 25,000", then the total.
+  // After a finished copy the same block stays (state.holdPrice) until the next list is started, so it is still there beside Print invoice.
+  function paintPrice(price) {
+    $('copy-price').hidden = !price;
+    if (!price) return;
+    const lines = [['movies', 'byMovies'], ['seasons', 'bySeasons'], ['episodes', 'byEpisodes']].filter(([n]) => price[n] > 0)
+      .map(([n, by]) => h('li', {}, t(`price_${n}`, { n: price[n], each: money(price[by] / price[n]) }), ' = ', h('b', {}, money(price[by]))));
+    $('copy-price-lines').replaceChildren(...lines);
+    $('copy-price-total').textContent = t('price_total', { n: money(price.total) });
   }
 
   // films this customer already received (delivery history); the warning names them and each is marked in the list
@@ -711,6 +724,8 @@
     } else {
       copyMsg(t(v?.repaired ? 'copy_verify_fixed' : 'copy_verify_ok', { n: r.done, size: size(r.bytes), files: v?.checked ?? 0, r: v?.repaired ?? 0 }));
       afterCopy(r);
+      state.holdPrice = !!r.price;
+      paintPrice(r.price);
       for (const key of [...state.cart.keys()]) toggleCart(key, '');
       for (const id of ['copy-customer', 'copy-phone', 'copy-note']) $(id).value = ''; // the next customer starts empty
     }

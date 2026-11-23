@@ -211,6 +211,9 @@ function createApi({
     }
   }
 
+  // the drive a folder lives on, the key of the speed memory
+  const driveOf = (dir) => path.parse(path.resolve(dir)).root.toLowerCase();
+
   const startTransfer = (request, onProgress = () => {}) => exclusive((ac) => runTransfer(request, onProgress, ac));
 
   async function runTransfer(request, onProgress, ac) {
@@ -223,6 +226,7 @@ function createApi({
     let doneBytes = 0;
     let last = 0;
     const rate = createRate();
+    const startedAt = clock();
     const emit = (index, title, force) => {
       const at = clock();
       if (!force && at - last < 250) return;
@@ -248,9 +252,14 @@ function createApi({
     }
     result.cancelled = ac.signal.aborted;
     result.bytes = doneBytes;
+    const seconds = (clock() - startedAt) / 1000;
+    if (!result.cancelled && doneBytes > 0 && seconds > 0) {
+      setSetting(db, 'copySpeeds', { ...getSetting(db, 'copySpeeds'), [driveOf(plan.target)]: Math.round(doneBytes / seconds) });
+    }
     onProgress({ type: 'copy', index: plan.jobs.length, total: plan.jobs.length, title: '', doneBytes, totalBytes: plan.bytes, ...rate.sample(clock(), doneBytes, plan.bytes) });
     if (okJobs.length) {
       const price = orders.priceOf(okJobs, priceSettings());
+      result.price = price;
       result.orderId = orders.recordOrder(db, { customer: request.customer, phone: request.phone, note: request.note,
         items: okJobs.flatMap(itemsOfJob), bytes: doneBytes, price: price ? price.total : null }, now());
     }
@@ -616,7 +625,7 @@ function createApi({
       }
     },
     // the size and price of a list before a destination exists: the same copy choice the plan makes, without a destination
-    async estimateSize(keys = []) {
+    async estimateSize(keys = [], destDir = '') {
       const drives = await getDrives();
       search.invalidate();
       const rootOf = new Map(drives.map((d) => [d.serial, d.root]));
@@ -635,7 +644,10 @@ function createApi({
           if (fs.existsSync(src)) jobs.push({ bytes: transfer.treeSize(src), season: l.season ?? null });
         }
       }
-      return { bytes: jobs.reduce((n, j) => n + j.bytes, 0), count: jobs.length, price: jobs.length ? orders.priceOf(jobs, priceSettings()) : null };
+      const bytes = jobs.reduce((n, j) => n + j.bytes, 0);
+      if (!jobs.length) return { bytes, count: 0, price: null };
+      const speed = destDir ? getSetting(db, 'copySpeeds')[driveOf(destDir)] : 0;
+      return { bytes, count: jobs.length, price: orders.priceOf(jobs, priceSettings()), etaSec: speed > 0 ? Math.max(1, Math.round(bytes / speed)) : null };
     },
     // free bytes of the folder's disk, null when the folder is not there
     async getFreeSpace(dir) {
