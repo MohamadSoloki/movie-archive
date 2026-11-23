@@ -728,6 +728,7 @@
       paintPrice(r.price);
       for (const key of [...state.cart.keys()]) toggleCart(key, '');
       for (const id of ['copy-customer', 'copy-phone', 'copy-note']) $(id).value = ''; // the next customer starts empty
+      if (currentList()) { currentList().customer = ''; currentList().phoneKeys = new Set(); saveLists(); }
     }
     refreshCustomers();
     await updateCopyPlan();
@@ -778,17 +779,17 @@
 
   function saveLists() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => api.saveCopyLists(state.lists.map((l) => ({ id: l.id, name: l.name, dest: l.dest, items: [...l.cart] }))), 400);
+    saveTimer = setTimeout(() => api.saveCopyLists(state.lists.map((l) => ({ id: l.id, name: l.name, dest: l.dest, items: [...l.cart], customer: l.customer, phoneKeys: [...l.phoneKeys] }))), 400);
   }
 
   function makeList(name) {
-    const l = { id: newId(), name: name || t('copy_list_default', { n: state.lists.length + 1 }), dest: '', cart: new Map() };
+    const l = { id: newId(), name: name || t('copy_list_default', { n: state.lists.length + 1 }), dest: '', cart: new Map(), customer: '', phoneKeys: new Set(), changed: false };
     state.lists.push(l);
     return l;
   }
 
   function renderListSelect() {
-    $('copy-list').replaceChildren(...state.lists.map((l) => h('option', { value: l.id, selected: l.id === state.listId }, `${l.name} (${l.cart.size})`)));
+    $('copy-list').replaceChildren(...state.lists.map((l) => h('option', { value: l.id, selected: l.id === state.listId }, `${l.changed ? '● ' : ''}${l.name} (${l.cart.size})`)));
     $('copy-del').disabled = state.copying || state.lists.length < 2;
     $('copy-new').disabled = state.copying;
     $('copy-list').disabled = state.copying;
@@ -797,10 +798,12 @@
   function selectList(id) {
     const l = state.lists.find((x) => x.id === id) || state.lists[0];
     state.listId = l.id;
+    l.changed = false;
     state.cart = l.cart;
     state.copyDest = l.dest;
     $('copy-name').value = l.name;
     $('copy-dest').value = l.dest;
+    for (const id of ['copy-customer', 'copy-phone', 'copy-note']) $(id).value = id === 'copy-customer' ? l.customer : ''; // each list keeps its own customer
     renderCartBadge();
     renderGrid(); // the check marks on the cards belong to the list on screen
     renderCopy();
@@ -808,7 +811,7 @@
   }
 
   async function loadLists() {
-    for (const x of await api.getCopyLists()) state.lists.push({ id: x.id, name: x.name, dest: x.dest, cart: new Map(x.items) });
+    for (const x of await api.getCopyLists()) state.lists.push({ id: x.id, name: x.name, dest: x.dest, cart: new Map(x.items), customer: x.customer ?? '', phoneKeys: new Set(x.phoneKeys ?? []), changed: false });
     if (!state.lists.length) makeList();
     selectList(state.lists[0].id);
   }
@@ -1169,7 +1172,7 @@
   $('sel-tag').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); tagPicked(false); } });
   $('sel-copy').addEventListener('click', copyPicked);
   $('copy-btn').addEventListener('click', async () => { renderCopy(); $('copy-dlg').showModal(); updateCopyPlan(); loadRemovable(); refreshCustomers(); await loadCopies(); });
-  $('copy-customer').addEventListener('input', () => { clearTimeout(deliveredTimer); deliveredTimer = setTimeout(updateDelivered, 250); });
+  $('copy-customer').addEventListener('input', () => { if (currentList()) { currentList().customer = $('copy-customer').value.trim(); saveLists(); } clearTimeout(deliveredTimer); deliveredTimer = setTimeout(updateDelivered, 250); });
   $('copy-x').addEventListener('click', () => { if (!state.copying) $('copy-dlg').close(); });
   $('copy-dlg').addEventListener('cancel', (ev) => { if (state.copying) ev.preventDefault(); }); // Esc must not hide a running copy
   $('copy-name').addEventListener('input', () => {
@@ -1441,10 +1444,51 @@
     if (seenWishes === null) { seenWishes = top; return; }
     const fresh = rows.filter((w) => w.id > seenWishes);
     paintWishBadge(fresh.length);
-    if (fresh.length && top > (pollWishes.told ?? 0)) { pollWishes.told = top; setStatus(t('wish_new', { name: fresh[0].name, n: fresh.length })); }
+    if (fresh.length && top > (pollWishes.told ?? 0)) {
+      pollWishes.told = top;
+      // a customer who already has a list is told apart: the new selection is a change of that list
+      const mine = await listOfCustomer(fresh[0].name);
+      if (mine) { mine.changed = mine.id !== state.listId; renderListSelect(); }
+      setStatus(t(mine ? 'wish_changed' : 'wish_new', { name: fresh[0].name, n: fresh.length, list: mine?.name }));
+    }
   }
 
-  // lists customers sent from their phones; one tap moves a list into the copy list, with the customer's name
+  // The list made for a customer (found by name, the way the order history tells customers apart), if there is one.
+  async function listOfCustomer(name) {
+    const key = await api.customerKey(name);
+    for (const l of state.lists) if (l.customer && await api.customerKey(l.customer) === key) return l;
+    return null;
+  }
+
+  // Put a customer's phone selection into THEIR list (made on the first time, found again after): two customers never share a list,
+  // and a second selection from the same customer is added to the first one. The owner confirms what it changes.
+  async function applyWish(w) {
+    const wanted = w.items.map((i) => i.key);
+    const titleOf = new Map(w.items.map((i) => [i.key, i.title]));
+    let l = await listOfCustomer(w.name);
+    if (!l) { l = makeList(w.name); l.customer = w.name; }
+    const known = await Promise.all(wanted.map(async (k) => [k, !!(await api.getEntry(k))]));
+    const here = new Set(known.filter(([, ok]) => ok).map(([k]) => k));
+    const diff = await api.diffWish({ have: [...l.cart.keys()], fromPhone: [...l.phoneKeys], wanted: wanted.filter((k) => here.has(k)) });
+    if (!diff.add.length && !diff.remove.length) { setStatus(t('wish_nochange', { list: l.name })); return; }
+    const names = (keys) => joinList(keys.map((k) => titleOf.get(k) ?? l.cart.get(k) ?? k));
+    if (l.cart.size && !window.confirm([t('wish_confirm', { list: l.name }),
+      diff.add.length ? t('wish_confirm_add', { titles: names(diff.add) }) : '', diff.remove.length ? t('wish_confirm_remove', { titles: names(diff.remove) }) : ''].filter(Boolean).join('\n'))) return;
+    const running = state.copying && l.id === state.listId;
+    for (const k of diff.add) l.cart.set(k, titleOf.get(k) ?? k);
+    for (const k of diff.remove) l.cart.delete(k);
+    l.phoneKeys = new Set(wanted.filter((k) => l.phoneKeys.has(k) || diff.add.includes(k)));
+    l.changed = l.id !== state.listId;
+    if (l.id === state.listId) { state.cart = l.cart; renderCartBadge(); renderGrid(); if ($('copy-dlg').open) { renderCopy(); updateCopyPlan(); } }
+    saveLists();
+    renderListSelect();
+    const live = running ? await api.updateTransfer({ add: diff.add, remove: diff.remove }) : null;
+    setStatus(live?.ok ? t('wish_live', { list: l.name, a: live.added, r: live.removed, k: live.kept.length })
+      : t('wish_applied', { list: l.name, a: diff.add.length, r: diff.remove.length }));
+    if (l.id === state.listId) $('copy-customer').value = w.name;
+  }
+
+  // lists customers sent from their phones; one tap moves a list into the customer's own copy list
   REPORTS.wishes = async (body) => {
     const list = h('ul', { class: 'plain orders' });
     const paint = async () => {
@@ -1460,12 +1504,7 @@
           w.delivered[i.key] ? h('span', { class: 'help' }, ` · ${t('wish_had', { date: dateOf(w.delivered[i.key].created) })}`) : null))),
         h('div', { class: 'row' },
           h('button', { type: 'button', class: 'btn primary', onclick: async () => {
-            let added = 0;
-            for (const i of w.items) {
-              if (!state.cart.has(i.key) && await api.getEntry(i.key)) { toggleCart(i.key, i.title); added += 1; }
-            }
-            $('copy-customer').value = w.name;
-            setStatus(t('wish_added', { n: added }));
+            await applyWish(w);
           } }, t('wish_add')),
           h('button', { type: 'button', class: 'btn', onclick: async () => { await api.removeWish(w.id); paint(); } }, t('wish_delete')))))
         : [h('li', { class: 'help' }, t('wish_empty'))]));

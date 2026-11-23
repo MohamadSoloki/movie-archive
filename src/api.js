@@ -28,6 +28,7 @@ const { seriesGaps } = require('./core/gaps.js');
 const { singleDrive, catalogByGenre } = require('./core/reports.js');
 const { exportData, importData } = require('./core/backup.js');
 const orders = require('./core/orders.js');
+const { diffWish } = require('./core/lists.js');
 const { ProviderError } = require('./core/errors.js');
 // the first private-network address of this computer: what a phone on the same Wi-Fi can reach
 function defaultLanAddress() {
@@ -144,7 +145,7 @@ function createApi({
     return [item(e, j.season != null ? path.basename(j.src) : '')];
   }
 
-  async function planTransfer({ keys = [], destDir, name }) {
+  async function planTransfer({ keys = [], destDir, name, skipSpaceCheck = false }) {
     const folder = transfer.cleanName(name);
     if (!folder) return { ok: false, error: 'bad_name' };
     if (!destDir || !fs.existsSync(destDir) || !fs.statSync(destDir).isDirectory()) return { ok: false, error: 'bad_dest' };
@@ -195,9 +196,26 @@ function createApi({
     jobs.sort((a, b) => a.driveSerial.localeCompare(b.driveSerial)); // read one disk at a time, front to back
     const bytes = jobs.reduce((n, j) => n + j.bytes, 0);
     const free = freeSpace(destDir);
-    if (bytes > free) return { ok: false, error: 'no_space', needed: bytes, free };
+    if (!skipSpaceCheck && bytes > free) return { ok: false, error: 'no_space', needed: bytes, free };
     return { ok: true, target, jobs, skipped, bytes, free, price: orders.priceOf(jobs, priceSettings()) };
   }
+
+  // remove the empty folders left under `dir` (children first), then `dir` itself and its empty parents up to, not including, `stop`
+  function pruneEmpty(dir, stop) {
+    const walk = (d) => {
+      let names;
+      try { names = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+      for (const n of names) {
+        if (!n.isDirectory()) continue;
+        walk(path.join(d, n.name));
+        try { fs.rmdirSync(path.join(d, n.name)); } catch { /* not empty */ }
+      }
+    };
+    walk(dir);
+    for (let d = dir; d.length > stop.length; d = path.dirname(d)) { try { fs.rmdirSync(d); } catch { break; } }
+  }
+
+  let liveTransfer = null; // the running copy's list, see updateTransfer
 
   // Copy, verify and repair share one slot: only one of them runs at a time, and cancelTransfer stops whichever it is.
   async function exclusive(run) {
@@ -227,36 +245,95 @@ function createApi({
     let last = 0;
     const rate = createRate();
     const startedAt = clock();
+    // The list of jobs can change while the copy runs (updateTransfer): `queue` is what is still to do, `current` the one being copied.
+    const queue = plan.jobs.slice();
+    const doneKeys = new Set();
+    let totalBytes = plan.bytes;
+    let finished = 0;
+    let current = null;
+    const pending = new Set();
     const emit = (index, title, force) => {
       const at = clock();
       if (!force && at - last < 250) return;
       last = at;
-      onProgress({ type: 'copy', index, total: plan.jobs.length, title, doneBytes, totalBytes: plan.bytes, ...rate.sample(at, doneBytes, plan.bytes) });
+      onProgress({ type: 'copy', index, total: finished + queue.length + (current ? 1 : 0), title, doneBytes, totalBytes, ...rate.sample(at, doneBytes, totalBytes) });
+    };
+    liveTransfer = {
+      request,
+      remove(keys) {
+        const gone = new Set(keys);
+        let removed = 0;
+        const kept = [];
+        for (let i = queue.length - 1; i >= 0; i -= 1) {
+          if (gone.has(queue[i].key)) { totalBytes -= queue[i].bytes; queue.splice(i, 1); removed += 1; }
+        }
+        if (current && gone.has(current.job.key)) { current.stop.abort(); current.removed = true; removed += 1; }
+        for (const k of gone) if (doneKeys.has(k)) kept.push(k);
+        return { removed, kept };
+      },
+      async add(keys) {
+        const have = new Set([...doneKeys, ...queue.map((j) => j.key), ...(current ? [current.job.key] : [])]);
+        const fresh = keys.filter((k) => !have.has(k));
+        // planned together with the films already in this copy, so folder names are chosen the same way and never collide
+        const planned = await planTransfer({ ...request, keys: [...have, ...fresh], skipSpaceCheck: true });
+        if (!planned.ok) return 0;
+        const jobs = planned.jobs.filter((j) => fresh.includes(j.key));
+        queue.push(...jobs);
+        totalBytes += jobs.reduce((n, j) => n + j.bytes, 0);
+        return new Set(jobs.map((j) => j.key)).size;
+      },
+      track(promise) { pending.add(promise); promise.finally(() => pending.delete(promise)).catch(() => {}); return promise; },
     };
     fs.mkdirSync(plan.target, { recursive: true });
-    for (const [i, j] of plan.jobs.entries()) {
+    for (;;) {
+      if (!queue.length) {
+        if (!pending.size) break;
+        await Promise.allSettled([...pending]); // an update that is still being planned may add films
+        continue;
+      }
+      const j = queue.shift();
       if (ac.signal.aborted) break;
+      const stop = new AbortController();
+      const onAbort = () => stop.abort();
+      ac.signal.addEventListener('abort', onAbort);
+      current = { job: j, stop, removed: false };
+      const i = finished;
       emit(i, j.title, true);
+      let copiedHere = 0;
       try {
-        const r = await transfer.copyTree(j.src, j.dest, { signal: ac.signal, onBytes: (n) => { doneBytes += n; emit(i, j.title, false); } });
+        const r = await transfer.copyTree(j.src, j.dest, { signal: stop.signal, onBytes: (n) => { doneBytes += n; copiedHere += n; emit(i, j.title, false); } });
+        if (current.removed) { // taken off the list while it was being copied: what this job wrote is taken away again
+          for (const f of r.files) fs.rmSync(f.dest, { force: true });
+          doneBytes -= copiedHere;
+          totalBytes -= j.bytes;
+          pruneEmpty(j.dest, plan.target);
+          continue;
+        }
         for (const f of r.files) {
           manifest.push({ rel: path.relative(plan.target, f.dest).split(path.sep).join('/'), size: f.size, sha: f.sha, title: j.title,
             driveSerial: j.driveSerial, srcRel: path.relative(j.srcRoot, f.src).split(path.sep).join('/') });
         }
         if (r.cancelled) break;
         result.done += 1;
+        finished += 1;
+        doneKeys.add(j.key);
         okJobs.push(j);
       } catch (e) {
         result.failed.push({ key: j.key, title: j.title, error: e.code || 'error' });
+        finished += 1;
+      } finally {
+        ac.signal.removeEventListener('abort', onAbort);
+        current = null;
       }
     }
+    liveTransfer = null;
     result.cancelled = ac.signal.aborted;
     result.bytes = doneBytes;
     const seconds = (clock() - startedAt) / 1000;
     if (!result.cancelled && doneBytes > 0 && seconds > 0) {
       setSetting(db, 'copySpeeds', { ...getSetting(db, 'copySpeeds'), [driveOf(plan.target)]: Math.round(doneBytes / seconds) });
     }
-    onProgress({ type: 'copy', index: plan.jobs.length, total: plan.jobs.length, title: '', doneBytes, totalBytes: plan.bytes, ...rate.sample(clock(), doneBytes, plan.bytes) });
+    onProgress({ type: 'copy', index: finished, total: finished, title: '', doneBytes, totalBytes, ...rate.sample(clock(), doneBytes, totalBytes) });
     if (okJobs.length) {
       const price = orders.priceOf(okJobs, priceSettings());
       result.price = price;
@@ -769,7 +846,8 @@ function createApi({
         const items = (Array.isArray(l.items) ? l.items : []).slice(0, 5000)
           .filter((x) => Array.isArray(x) && str(x[0], 300) && typeof x[1] === 'string')
           .map((x) => [x[0], x[1].slice(0, 200)]);
-        return [{ id, name, dest: str(l.dest, 500) ?? '', items }];
+        const phoneKeys = (Array.isArray(l.phoneKeys) ? l.phoneKeys : []).slice(0, 5000).filter((k) => str(k, 300));
+        return [{ id, name, dest: str(l.dest, 500) ?? '', items, customer: str(l.customer, 80) ?? '', phoneKeys }];
       });
       setSetting(db, 'copyLists', clean);
       return { ok: true };
@@ -801,6 +879,19 @@ function createApi({
       copies.removeCopy(db, id);
       return { ok: true };
     },
+    // while a copy runs: films added to / taken off its list. Not yet copied ones are dropped, the one being copied is stopped
+    // and its files removed; a film already on the drive stays there (`kept`).
+    async updateTransfer({ add = [], remove = [] } = {}) {
+      if (!liveTransfer) return { ok: false, error: 'idle' };
+      const live = liveTransfer;
+      const { removed, kept } = live.remove(remove);
+      const added = add.length ? await live.track(live.add(add)) : 0;
+      return { ok: true, added, removed, kept };
+    },
+    // the same customer? (name compared the way the order history does)
+    async customerKey(name) { return orders.customerKey(String(name ?? '')); },
+    // what a customer's new selection changes in the list already made for them
+    async diffWish(arg) { return diffWish(arg ?? {}); },
     async cancelTransfer() {
       transferAbort?.abort();
     },

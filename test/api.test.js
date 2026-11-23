@@ -484,6 +484,42 @@ test('estimateSize guesses the copy time from the speed of the last copy to the 
   assert.equal((await api.estimateSize(keys)).etaSec, null); // no destination chosen: no guess
 });
 
+test('updateTransfer: nothing to update while no copy runs', async () => {
+  const { api, keys } = await withFilms();
+  assert.deepEqual(await api.updateTransfer({ add: keys }), { ok: false, error: 'idle' });
+});
+
+test('updateTransfer: films added to a running copy are copied too', async () => {
+  const { api, keys, dest } = await withFilms();
+  let update;
+  const r = await api.startTransfer({ keys: [keys[0]], destDir: dest, name: 'claude' }, () => { update ||= api.updateTransfer({ add: [keys[1]] }); });
+  assert.deepEqual(await update, { ok: true, added: 1, removed: 0, kept: [] });
+  assert.equal(r.done, 2);
+  assert.deepEqual(fs.readdirSync(path.join(dest, 'claude')).sort(), ['batman 2022', 'dune 2021']);
+});
+
+test('updateTransfer: films removed from a running copy are not copied; the one being copied is stopped and its files taken away', async () => {
+  const { api, keys, dest } = await withFilms();
+  const plan = await api.planTransfer({ keys, destDir: dest, name: 'claude' });
+  const [first, second] = plan.jobs.map((j) => j.key);
+  let update;
+  const r = await api.startTransfer({ keys, destDir: dest, name: 'claude' }, (p) => { if (p.index === 0) update ||= api.updateTransfer({ remove: [first, second] }); });
+  assert.deepEqual(await update, { ok: true, added: 0, removed: 2, kept: [] });
+  assert.equal(r.done, 0);
+  assert.deepEqual(fs.readdirSync(path.join(dest, 'claude')), []);
+});
+
+test('updateTransfer: a film that is already copied stays on the drive and is reported as kept', async () => {
+  const { api, keys, dest } = await withFilms();
+  const plan = await api.planTransfer({ keys, destDir: dest, name: 'claude' });
+  const [first, second] = plan.jobs.map((j) => j.key);
+  let update;
+  const r = await api.startTransfer({ keys, destDir: dest, name: 'claude' }, (p) => { if (p.index === 1) update ||= api.updateTransfer({ remove: [first, second] }); });
+  assert.deepEqual(await update, { ok: true, added: 0, removed: 1, kept: [first] });
+  assert.equal(r.done, 1);
+  assert.deepEqual(fs.readdirSync(path.join(dest, 'claude')).length, 1);
+});
+
 test('startTransfer does nothing when the plan is refused, and refuses a second run at the same time', async () => {
   const { api, keys, dest } = await withFilms();
   assert.deepEqual(await api.startTransfer({ keys, destDir: dest, name: '..' }, () => {}), { ok: false, error: 'bad_name' });
@@ -767,6 +803,20 @@ test('copy lists are saved and come back; junk in them is dropped, not stored', 
   const saved = await api.getCopyLists();
   assert.deepEqual(saved.map((l) => l.id), ['a1', 'c3']);
   assert.deepEqual([saved[1].dest, saved[1].items], ['', [['t:2', 'A']]]);
+});
+
+test('a copy list remembers its customer and which films came from that customer\'s phone', async () => {
+  const { api } = setup();
+  await api.saveCopyLists([{ id: 'a1', name: 'Ali', dest: '', items: [], customer: 'Ali', phoneKeys: ['t:1', 7, 't:2'] }, { id: 'b2', name: 'x', items: [] }]);
+  const [a, b] = await api.getCopyLists();
+  assert.deepEqual([a.customer, a.phoneKeys], ['Ali', ['t:1', 't:2']]);
+  assert.deepEqual([b.customer, b.phoneKeys], ['', []]);
+});
+
+test('customerKey and diffWish are available to the renderer', async () => {
+  const { api } = setup();
+  assert.equal(await api.customerKey('  علي  رضایی '), await api.customerKey('علی رضایی'));
+  assert.deepEqual(await api.diffWish({ have: ['a'], fromPhone: ['a'], wanted: ['b'] }), { add: ['b'], remove: ['a'] });
 });
 
 test('getVersion returns the version the app was started with', async () => {
