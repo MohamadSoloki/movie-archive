@@ -29,6 +29,7 @@ const { singleDrive, catalogByGenre } = require('./core/reports.js');
 const { exportData, importData } = require('./core/backup.js');
 const orders = require('./core/orders.js');
 const { diffWish } = require('./core/lists.js');
+const { episodesIn, episodeFilter } = require('./core/seasons.js');
 const { ProviderError } = require('./core/errors.js');
 // the first private-network address of this computer: what a phone on the same Wi-Fi can reach
 function defaultLanAddress() {
@@ -142,10 +143,35 @@ function createApi({
     if (!e) return [];
     const item = (x, detail) => ({ ref: refOfEntry(x), title: x.title, year: x.year, kind: x.kind, detail });
     if (e.kind === 'collection') return e.members.map((m) => search.find(m.key)).filter(Boolean).map((x) => item(x, ''));
-    return [item(e, j.season != null ? path.basename(j.src) : '')];
+    return [item(e, j.season != null ? path.basename(j.src) + (j.only ? ` (E${j.only.join(',')})` : '') : '')];
   }
 
-  async function planTransfer({ keys = [], destDir, name, skipSpaceCheck = false }) {
+  // What the customer chose of a series: { seasons: [1, 2], episodes: { 3: [1, 2, 5] } }. No choice = everything.
+  // Returns the locations to copy, each with `only` (episode numbers) when just some episodes of that season are wanted.
+  const cleanPick = (p) => {
+    const nums = (a) => [...new Set((Array.isArray(a) ? a : []).filter((n) => Number.isInteger(n) && n > 0 && n < 10000))].slice(0, 1000);
+    const episodes = {};
+    for (const [s, list] of Object.entries(p?.episodes && typeof p.episodes === 'object' ? p.episodes : {})) if (/^\d{1,4}$/.test(s) && nums(list).length) episodes[Number(s)] = nums(list);
+    return { seasons: nums(p?.seasons), episodes };
+  };
+  function chosenLocations(e, picks, destDrive, rootOf) {
+    const { picks: locs, reason } = transfer.pickLocations(e.locations, destDrive);
+    const sel = picks?.[e.key] ? cleanPick(picks[e.key]) : null;
+    if (!sel) return { chosen: locs.map((l) => ({ l, only: null })), reason };
+    const chosen = [];
+    for (const l of locs) {
+      if (l.season == null) { chosen.push({ l, only: null }); continue; }
+      const n = Number(l.season);
+      if (sel.seasons.includes(n)) { chosen.push({ l, only: null }); continue; }
+      if (!sel.episodes[n]) continue;
+      const have = rootOf.has(l.driveSerial) ? episodesIn(path.join(rootOf.get(l.driveSerial), l.relPath)) : null;
+      const only = have ? sel.episodes[n].filter((x) => have.includes(x)) : [];
+      if (only.length) chosen.push({ l, only });
+    }
+    return { chosen, reason };
+  }
+
+  async function planTransfer({ keys = [], destDir, name, skipSpaceCheck = false, picks = null }) {
     const folder = transfer.cleanName(name);
     if (!folder) return { ok: false, error: 'bad_name' };
     if (!destDir || !fs.existsSync(destDir) || !fs.statSync(destDir).isDirectory()) return { ok: false, error: 'bad_dest' };
@@ -176,16 +202,17 @@ function createApi({
         jobs.push({ key, title: e.title, locationId: null, season: null, driveSerial: c.driveSerial, srcRoot: rootOf.get(c.driveSerial), src, dest: path.join(target, rel), bytes: transfer.treeSize(src) });
         continue;
       }
-      const { picks, reason } = transfer.pickLocations(e.locations, destDrive);
-      if (!picks.length) { skipped.push({ key, title: e.title, reason }); continue; }
-      for (const l of picks) {
+      const { chosen, reason } = chosenLocations(e, picks, destDrive, rootOf);
+      if (!chosen.length) { skipped.push({ key, title: e.title, reason: reason ?? 'no_episodes' }); continue; } // a choice nothing on disk matches is said, not dropped
+      for (const { l, only } of chosen) {
         const src = path.join(rootOf.get(l.driveSerial), l.relPath);
         if (!fs.existsSync(src)) { skipped.push({ key, title: e.title, reason: 'missing' }); continue; }
         if (transfer.isInside(src, target)) { skipped.push({ key, title: e.title, reason: 'dest_inside_source' }); continue; }
         let rel = l.season == null ? path.basename(l.relPath) : path.join(sanitize(e.title), path.basename(l.relPath));
         for (let n = 2; used.has(rel.toLowerCase()); n += 1) rel = `${rel.replace(/ \(\d+\)$/, '')} (${n})`;
         used.add(rel.toLowerCase());
-        jobs.push({ key, title: e.title, locationId: l.id, season: l.season ?? null, driveSerial: l.driveSerial, srcRoot: rootOf.get(l.driveSerial), src, dest: path.join(target, rel), bytes: transfer.treeSize(src) });
+        jobs.push({ key, title: e.title, locationId: l.id, season: l.season ?? null, driveSerial: l.driveSerial, srcRoot: rootOf.get(l.driveSerial), src, dest: path.join(target, rel),
+          bytes: transfer.treeSize(src, only ? episodeFilter(only) : undefined), ...(only ? { only, episodes: only.length } : {}) });
       }
     }
     if (!jobs.length && !skipped.length) return { ok: false, error: 'nothing' };
@@ -271,11 +298,11 @@ function createApi({
         for (const k of gone) if (doneKeys.has(k)) kept.push(k);
         return { removed, kept };
       },
-      async add(keys) {
+      async add(keys, picks = null) {
         const have = new Set([...doneKeys, ...queue.map((j) => j.key), ...(current ? [current.job.key] : [])]);
         const fresh = keys.filter((k) => !have.has(k));
         // planned together with the films already in this copy, so folder names are chosen the same way and never collide
-        const planned = await planTransfer({ ...request, keys: [...have, ...fresh], skipSpaceCheck: true });
+        const planned = await planTransfer({ ...request, keys: [...have, ...fresh], picks: { ...request.picks, ...picks }, skipSpaceCheck: true });
         if (!planned.ok) return 0;
         const jobs = planned.jobs.filter((j) => fresh.includes(j.key));
         queue.push(...jobs);
@@ -301,7 +328,7 @@ function createApi({
       emit(i, j.title, true);
       let copiedHere = 0;
       try {
-        const r = await transfer.copyTree(j.src, j.dest, { signal: stop.signal, onBytes: (n) => { doneBytes += n; copiedHere += n; emit(i, j.title, false); } });
+        const r = await transfer.copyTree(j.src, j.dest, { signal: stop.signal, filter: j.only ? episodeFilter(j.only) : undefined, onBytes: (n) => { doneBytes += n; copiedHere += n; emit(i, j.title, false); } });
         if (current.removed) { // taken off the list while it was being copied: what this job wrote is taken away again
           for (const f of r.files) fs.rmSync(f.dest, { force: true });
           doneBytes -= copiedHere;
@@ -455,6 +482,23 @@ function createApi({
 
   const manyTags = (keys, text, apply) => (keys.length ? changeTags(keys, text, apply) : { ok: false, error: 'nothing' });
 
+  // the seasons of an entry that the archive holds, with the episode numbers read from file names (null: only the whole season can be chosen)
+  async function seasonsOf(key) {
+    const e = search.find(key);
+    if (!e || e.kind === 'collection') return { ok: false, error: 'unknown' };
+    const rootOf = new Map((await getDrives()).map((d) => [d.serial, d.root]));
+    const seasons = new Map();
+    for (const l of e.locations) {
+      if (l.season == null || l.missing) continue;
+      const n = Number(l.season);
+      const src = rootOf.has(l.driveSerial) ? path.join(rootOf.get(l.driveSerial), l.relPath) : null;
+      const have = seasons.get(n);
+      if (have?.episodes && have.bytes !== null) continue; // one readable copy of the season is enough
+      seasons.set(n, { season: n, episodes: src ? episodesIn(src) : null, bytes: src && fs.existsSync(src) ? transfer.treeSize(src) : null });
+    }
+    return { ok: true, seasons: [...seasons.values()].sort((a, b) => a.season - b.season) };
+  }
+
   // ---- phone catalog: a read-only page on the shop network, customers send back the films they want ----
   const catalogServer = createCatalogServer({
     films: (lang) => search.query({}).entries.filter((e) => e.kind !== 'collection').map((e) => catalogRow(e, lang)),
@@ -471,6 +515,9 @@ function createApi({
       return Number(db.prepare('INSERT INTO wishes(name, phone, note, created, items) VALUES(?,?,?,?,?)')
         .run(w.name, w.phone || null, w.note || null, now(), JSON.stringify(w.items)).lastInsertRowid);
     },
+    info: () => ({ prices: { movie: getSetting(db, 'priceMovie'), season: getSetting(db, 'priceSeason'), episode: getSetting(db, 'priceEpisode') }, shop: getSetting(db, 'shopName') }),
+    // only a film that has season folders answers; the page then offers the seasons and episodes to pick from
+    seasons: async (k) => { const r = await seasonsOf(k); return r.ok && r.seasons.length ? r.seasons : null; },
     // a film that is already in the archive is not demand: only a missing one is counted in the request list
     ask: (name) => {
       const found = inArchiveNamed(name);
@@ -702,7 +749,7 @@ function createApi({
       }
     },
     // the size and price of a list before a destination exists: the same copy choice the plan makes, without a destination
-    async estimateSize(keys = [], destDir = '') {
+    async estimateSize(keys = [], destDir = '', picks = null) {
       const drives = await getDrives();
       search.invalidate();
       const rootOf = new Map(drives.map((d) => [d.serial, d.root]));
@@ -716,9 +763,9 @@ function createApi({
           if (src && fs.existsSync(src)) jobs.push({ bytes: transfer.treeSize(src), season: null });
           continue;
         }
-        for (const l of transfer.pickLocations(e.locations, undefined).picks) {
+        for (const { l, only } of chosenLocations(e, picks, undefined, rootOf).chosen) {
           const src = path.join(rootOf.get(l.driveSerial), l.relPath);
-          if (fs.existsSync(src)) jobs.push({ bytes: transfer.treeSize(src), season: l.season ?? null });
+          if (fs.existsSync(src)) jobs.push({ bytes: transfer.treeSize(src, only ? episodeFilter(only) : undefined), season: l.season ?? null, ...(only ? { episodes: only.length } : {}) });
         }
       }
       const bytes = jobs.reduce((n, j) => n + j.bytes, 0);
@@ -847,7 +894,13 @@ function createApi({
           .filter((x) => Array.isArray(x) && str(x[0], 300) && typeof x[1] === 'string')
           .map((x) => [x[0], x[1].slice(0, 200)]);
         const phoneKeys = (Array.isArray(l.phoneKeys) ? l.phoneKeys : []).slice(0, 5000).filter((k) => str(k, 300));
-        return [{ id, name, dest: str(l.dest, 500) ?? '', items, customer: str(l.customer, 80) ?? '', phoneKeys }];
+        // the seasons / episodes the customer chose, per film (see cleanPick)
+        const picks = {};
+        for (const [k, v] of Object.entries(l.picks && typeof l.picks === 'object' ? l.picks : {}).slice(0, 5000)) {
+          const p = cleanPick(v);
+          if (str(k, 300) && (p.seasons.length || Object.keys(p.episodes).length)) picks[k] = p;
+        }
+        return [{ id, name, dest: str(l.dest, 500) ?? '', items, customer: str(l.customer, 80) ?? '', phoneKeys, picks }];
       });
       setSetting(db, 'copyLists', clean);
       return { ok: true };
@@ -881,13 +934,15 @@ function createApi({
     },
     // while a copy runs: films added to / taken off its list. Not yet copied ones are dropped, the one being copied is stopped
     // and its files removed; a film already on the drive stays there (`kept`).
-    async updateTransfer({ add = [], remove = [] } = {}) {
+    async updateTransfer({ add = [], remove = [], picks = null } = {}) {
       if (!liveTransfer) return { ok: false, error: 'idle' };
       const live = liveTransfer;
       const { removed, kept } = live.remove(remove);
-      const added = add.length ? await live.track(live.add(add)) : 0;
+      const added = add.length ? await live.track(live.add(add, picks)) : 0;
       return { ok: true, added, removed, kept };
     },
+    // see seasonsOf
+    async getSeasons(key) { return seasonsOf(key); },
     // the same customer? (name compared the way the order history does)
     async customerKey(name) { return orders.customerKey(String(name ?? '')); },
     // what a customer's new selection changes in the list already made for them

@@ -447,6 +447,59 @@ test('every season of a series is copied under the series name, so two series wi
     ['Alpha Show/Season 1', 'Alpha Show/Season 2', 'Beta Show/Season 1', 'Beta Show/Season 2'].map((x) => x.split('/').join(path.sep)));
 });
 
+async function withShow(opts) {
+  const ctx = setup(opts);
+  const { media, api } = ctx;
+  const files = { 'Season 1': ['Gamma.S01E01.mkv', 'Gamma.S01E02.mkv'], 'Season 2': ['Gamma.S02E01.mkv', 'Gamma.S02E01.srt', 'Gamma.S02E02.mkv', 'Gamma.S02E03.mkv', 'Gamma.S02E04.mkv'], 'Season 3': ['Gamma.S03E01.mkv'] };
+  for (const [season, names] of Object.entries(files)) {
+    fs.mkdirSync(path.join(media, 'Series', 'Gamma', season), { recursive: true });
+    for (const n of names) fs.writeFileSync(path.join(media, 'Series', 'Gamma', season, n), 'x'.repeat(10));
+  }
+  await api.addRoot(path.join(media, 'Series'));
+  await api.scan();
+  await api.setSettings({ omdbKey: 'K' });
+  await api.startQueue(() => {}); // matched: the three season folders become one title
+  const key = (await api.getEntries()).entries[0].key;
+  return { ...ctx, key, dest: fs.mkdtempSync(path.join(os.tmpdir(), 'dest-')) };
+}
+
+test('getSeasons lists the seasons of a series with the episode numbers read from the file names', async () => {
+  const { api, key } = await withShow();
+  assert.deepEqual(await api.getSeasons(key), { ok: true, seasons: [
+    { season: 1, episodes: [1, 2], bytes: 20 }, { season: 2, episodes: [1, 2, 3, 4], bytes: 50 }, { season: 3, episodes: [1], bytes: 10 }] });
+  assert.deepEqual(await api.getSeasons('nope'), { ok: false, error: 'unknown' });
+});
+
+test('picks: only the chosen seasons are planned, a season with chosen episodes is a partial season priced per episode', async () => {
+  const { api, key, dest } = await withShow();
+  await api.setSettings({ priceSeason: 1000, priceEpisode: 100 });
+  const base = { keys: [key], destDir: dest, name: 'c' };
+  const only2 = await api.planTransfer({ ...base, picks: { [key]: { seasons: [2] } } });
+  assert.deepEqual(only2.jobs.map((j) => [j.season, j.episodes]), [['2', undefined]]);
+  const mixed = await api.planTransfer({ ...base, picks: { [key]: { seasons: [1], episodes: { 2: [2, 3, 9] } } } });
+  assert.deepEqual(mixed.jobs.map((j) => [j.season, j.episodes, j.bytes]), [['1', undefined, 20], ['2', 2, 20]]); // 9 does not exist: not counted
+  assert.deepEqual([mixed.price.seasons, mixed.price.episodes, mixed.price.total], [1, 2, 1200]);
+  const all = await api.planTransfer(base); // no pick = the whole series
+  assert.equal(all.jobs.length, 3);
+});
+
+test('estimateSize honours the picks: size and price of the chosen episodes only', async () => {
+  const { api, key, dest } = await withShow();
+  await api.setSettings({ priceSeason: 1000, priceEpisode: 100 });
+  const est = await api.estimateSize([key], dest, { [key]: { seasons: [1], episodes: { 2: [1, 2] } } });
+  assert.deepEqual([est.bytes, est.price.seasons, est.price.episodes, est.price.total], [20 + 30, 1, 2, 1200]);
+});
+
+test('a partial season copies only the chosen episodes and their subtitles', async () => {
+  const { api, key, dest, media } = await withShow();
+  const r = await api.startTransfer({ keys: [key], destDir: dest, name: 'c', picks: { [key]: { episodes: { 2: [1, 3] } } } }, () => {});
+  assert.equal(r.ok, true);
+  const out = path.join(dest, 'c', 'Gamma', 'Season 2');
+  assert.deepEqual(fs.readdirSync(out).sort(), ['Gamma.S02E01.mkv', 'Gamma.S02E01.srt', 'Gamma.S02E03.mkv']);
+  assert.equal(fs.existsSync(path.join(media, 'Series', 'Gamma', 'Season 2', 'Gamma.S02E02.mkv')), true);
+  assert.deepEqual((await api.getOrders())[0].items.map((i) => i.detail), ['Season 2 (E1,3)']);
+});
+
 test('startTransfer copies the films into the new folder, reports progress and never changes the media folders', async () => {
   const { api, keys, dest, media } = await withFilms();
   const before = snapshot(media);
@@ -813,6 +866,15 @@ test('a copy list remembers its customer and which films came from that customer
   assert.deepEqual([b.customer, b.phoneKeys], ['', []]);
 });
 
+test('a copy list keeps the seasons and episodes the customer chose, cleaned', async () => {
+  const { api } = setup();
+  await api.saveCopyLists([{ id: 'a1', name: 'Ali', dest: '', items: [], picks: {
+    't:1': { seasons: [1, 'x', 2, 2], episodes: { 3: [1, 5, -4, 2.5], abc: [1], 4: [] } }, 't:2': { seasons: [], episodes: {} }, 't:3': 'junk' } }, { id: 'b2', name: 'x', items: [] }]);
+  const [a, b] = await api.getCopyLists();
+  assert.deepEqual(a.picks, { 't:1': { seasons: [1, 2], episodes: { 3: [1, 5] } } });
+  assert.deepEqual(b.picks, {});
+});
+
 test('customerKey and diffWish are available to the renderer', async () => {
   const { api } = setup();
   assert.equal(await api.customerKey('  علي  رضایی '), await api.customerKey('علی رضایی'));
@@ -1050,6 +1112,22 @@ test('phone catalog: off by default, serves films without paths, takes customer 
     assert.deepEqual(await api.stopCatalog(), { ok: true });
   }
   assert.equal((await api.getSettings()).phoneCatalog, false);
+});
+
+test('phone catalog: prices, the seasons of a series and a list that names seasons and episodes', async () => {
+  const { api, key } = await withShow({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  await api.setSettings({ catalogPort: 0, priceMovie: 5000, priceSeason: 20000, priceEpisode: 2000, shopName: 'Net' });
+  const r = await api.startCatalog();
+  try {
+    const base = `http://127.0.0.1:${new URL(r.url).port}`;
+    assert.deepEqual(await (await fetch(`${base}/api/info`)).json(), { prices: { movie: 5000, season: 20000, episode: 2000 }, shop: 'Net' });
+    const seasons = await (await fetch(`${base}/api/seasons?k=${encodeURIComponent(key)}`)).json();
+    assert.deepEqual(seasons.seasons.map((x) => [x.season, x.episodes]), [[1, [1, 2]], [2, [1, 2, 3, 4]], [3, [1]]]);
+    const sent = await fetch(`${base}/api/wish`, { method: 'POST', body: JSON.stringify({ name: 'Ali', keys: [key], picks: { [key]: { seasons: [1], episodes: { 2: [3, 4] } } } }) });
+    assert.equal(sent.status, 200);
+    const [w] = await api.getWishes();
+    assert.deepEqual(w.items[0].sel, { seasons: [1], episodes: { 2: [3, 4] } });
+  } finally { await api.stopCatalog(); }
 });
 
 test('phone catalog starts at launch only when it was left on', async () => {

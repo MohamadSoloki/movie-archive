@@ -12,7 +12,9 @@ function make(over = {}) {
     font: () => Buffer.from('WOFF'),
     ask: (name) => (name === 'known' ? { ok: true, inArchive: ['Alien'] } : { ok: true, inArchive: [] }),
     posterFile: (k) => (k === 't:1' ? Buffer.from('JPEG') : null),
-    known: (k) => (k === 't:1' ? { key: k, title: 'Alien', year: '1979' } : null),
+    known: (k) => (k === 't:1' ? { key: k, title: 'Alien', year: '1979' } : k === 't:2' ? { key: k, title: 'Show', year: '2020' } : null),
+    info: () => ({ prices: { movie: 5000, season: 20000, episode: 2000 }, shop: 'Net' }),
+    seasons: (k) => (k === 't:2' ? [{ season: 1, episodes: [1, 2, 3], bytes: 123 }, { season: 2, episodes: null, bytes: 5 }] : null),
     submit: (w) => { wishes.push(w); return wishes.length; },
     clock: () => t,
     ...over,
@@ -96,5 +98,28 @@ test('a full inbox says so instead of storing more', async () => {
   const { port } = await srv.start(0, '127.0.0.1');
   try {
     assert.equal((await post(`http://127.0.0.1:${port}/api/wish`, { name: 'Ali', keys: ['t:1'] })).status, 503);
+  } finally { await srv.stop(); }
+});
+
+test('the page can read the prices and the seasons of a series (no sizes), and nothing else', async () => {
+  const { srv } = make();
+  const { port } = await srv.start(0, '127.0.0.1');
+  try {
+    const base = `http://127.0.0.1:${port}`;
+    assert.deepEqual(await (await fetch(`${base}/api/info`)).json(), { prices: { movie: 5000, season: 20000, episode: 2000 }, shop: 'Net' });
+    assert.deepEqual(await (await fetch(`${base}/api/seasons?k=${encodeURIComponent('t:2')}`)).json(),
+      { ok: true, seasons: [{ season: 1, episodes: [1, 2, 3] }, { season: 2, episodes: null }] });
+    assert.equal((await fetch(`${base}/api/seasons?k=nope`)).status, 404);
+  } finally { await srv.stop(); }
+});
+
+test('a list can name seasons and episodes of a series; the choice is cleaned and only kept for films in the list', async () => {
+  const { srv, wishes } = make();
+  const { port } = await srv.start(0, '127.0.0.1');
+  try {
+    const r = await post(`http://127.0.0.1:${port}/api/wish`, { name: 'Ali', keys: ['t:1', 't:2'],
+      picks: { 't:2': { seasons: [1, 'x', -3, 1], episodes: { 2: [1, 2, 'y', 2], abc: [1] } }, 't:1': { seasons: [1] }, 't:9': { seasons: [1] } } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(wishes[0].items.map((i) => [i.key, i.sel]), [['t:1', undefined], ['t:2', { seasons: [1], episodes: { 2: [1, 2] } }]]);
   } finally { await srv.stop(); }
 });

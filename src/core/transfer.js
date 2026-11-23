@@ -39,12 +39,13 @@ function pickLocations(locations, destDrive) {
   return { picks };
 }
 
-function treeSize(p) {
+// `filter(relPath)` (optional) keeps only the files it accepts; relPath is inside the folder, with `/`.
+function treeSize(p, filter, rel = '') {
   const st = fs.lstatSync(p);
-  if (st.isFile()) return st.size;
+  if (st.isFile()) return !filter || filter(rel) ? st.size : 0;
   if (!st.isDirectory()) return 0;
   let n = 0;
-  for (const d of fs.readdirSync(p)) n += treeSize(path.join(p, d));
+  for (const d of fs.readdirSync(p)) n += treeSize(path.join(p, d), filter, rel ? `${rel}/${d}` : d);
   return n;
 }
 
@@ -67,12 +68,13 @@ async function copyFile(src, dst, st, { onBytes, signal }) {
 // `files` lists what was handled: the source size and the SHA-256 of the bytes read (null for a skipped file, whose content was not read).
 async function copyTree(src, dst, opts = {}) {
   const r = { copied: 0, skipped: 0, bytes: 0, cancelled: false, files: [] };
-  const walk = async (from, to) => {
+  const walk = async (from, to, rel = '') => {
     const st = fs.lstatSync(from);
     if (st.isDirectory()) {
-      fs.mkdirSync(to, { recursive: true });
-      for (const d of fs.readdirSync(from)) await walk(path.join(from, d), path.join(to, d));
+      if (!opts.filter) fs.mkdirSync(to, { recursive: true }); // with a filter, folders are made when a file needs them
+      for (const d of fs.readdirSync(from)) await walk(path.join(from, d), path.join(to, d), rel ? `${rel}/${d}` : d);
     } else if (st.isFile()) {
+      if (opts.filter && !opts.filter(rel)) return;
       if (fs.existsSync(to)) { r.skipped += 1; r.files.push({ src: from, dest: to, size: st.size, sha: null }); return; }
       fs.mkdirSync(path.dirname(to), { recursive: true });
       const sha = await copyFile(from, to, st, opts);

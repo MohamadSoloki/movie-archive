@@ -569,7 +569,7 @@
   }
 
   function toggleCart(key, title) {
-    if (state.cart.has(key)) state.cart.delete(key); else state.cart.set(key, title);
+    if (state.cart.has(key)) { state.cart.delete(key); delete currentList()?.picks[key]; } else state.cart.set(key, title);
     renderCartBadge();
     saveLists();
     const cardEl = [...document.querySelectorAll('.card')].find((c) => c.dataset.key === key);
@@ -598,7 +598,7 @@
   async function updateCapacity() {
     const mine = ++capToken;
     const keys = [...state.cart.keys()];
-    const est = keys.length ? await api.estimateSize(keys, state.copyDest) : null;
+    const est = keys.length ? await api.estimateSize(keys, state.copyDest, picksNow()) : null;
     const free = est && state.copyDest ? await api.getFreeSpace(state.copyDest) : null;
     if (mine !== capToken) return;
     const bad = est && free !== null && est.bytes > free;
@@ -663,7 +663,7 @@
     $('copy-info').classList.remove('bad');
     $('copy-skipped').replaceChildren();
     if (!state.cart.size || !name || !state.copyDest) { $('copy-info').textContent = ''; renderCopy(); return; }
-    const plan = await api.planTransfer({ keys: [...state.cart.keys()], destDir: state.copyDest, name });
+    const plan = await api.planTransfer({ keys: [...state.cart.keys()], destDir: state.copyDest, name, picks: picksNow() });
     if ($('copy-name').value.trim() !== name) return; // typing went on while the plan was computed
     state.copyPlan = plan;
     if (!plan.ok) {
@@ -676,10 +676,20 @@
     renderCopy();
   }
 
+  // the customer's choice of seasons / episodes, for the films that are in the list on screen
+  const picksNow = () => Object.fromEntries(Object.entries(currentList()?.picks ?? {}).filter(([k]) => state.cart.has(k)));
+  function pickText(p) {
+    if (!p) return '';
+    const parts = [];
+    if (p.seasons?.length) parts.push(t('pick_seasons', { list: joinList(p.seasons.map(String)) }));
+    for (const [s, eps] of Object.entries(p.episodes ?? {})) if (!p.seasons?.includes(Number(s))) parts.push(t('pick_episodes', { s, list: joinList(eps.map(String)) }));
+    return parts.join(' · ');
+  }
+
   function renderCopy() {
     renderListSelect();
     $('copy-items').replaceChildren(...[...state.cart].map(([key, title]) => h('li', { class: state.delivered[key] ? 'dup' : '' },
-      h('span', { dir: 'auto' }, title, state.delivered[key] ? h('small', { class: 'dup-note' }, ` · ${t('order_dup_item', { date: dateOf(state.delivered[key].created) })}`) : null),
+      h('span', { dir: 'auto' }, title, currentList()?.picks[key] ? h('small', { class: 'dup-note' }, ` · ${pickText(currentList().picks[key])}`) : null, state.delivered[key] ? h('small', { class: 'dup-note' }, ` · ${t('order_dup_item', { date: dateOf(state.delivered[key].created) })}`) : null),
       h('button', { type: 'button', class: 'icon-btn x', 'aria-label': t('copy_item_remove', { title }), title: t('copy_item_remove', { title }),
         onclick: () => { toggleCart(key, title); updateCopyPlan(); } }, icon('x')))));
     $('copy-empty').hidden = state.cart.size > 0;
@@ -706,7 +716,7 @@
     };
     let r;
     try {
-      r = await api.startTransfer({ keys: [...state.cart.keys()], destDir: state.copyDest, name: $('copy-name').value.trim(),
+      r = await api.startTransfer({ keys: [...state.cart.keys()], destDir: state.copyDest, name: $('copy-name').value.trim(), picks: picksNow(),
         customer: $('copy-customer').value.trim(), phone: $('copy-phone').value.trim(), note: $('copy-note').value.trim() });
     } catch { r = { ok: false, error: 'busy' }; }
     state.copying = false;
@@ -779,11 +789,11 @@
 
   function saveLists() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => api.saveCopyLists(state.lists.map((l) => ({ id: l.id, name: l.name, dest: l.dest, items: [...l.cart], customer: l.customer, phoneKeys: [...l.phoneKeys] }))), 400);
+    saveTimer = setTimeout(() => api.saveCopyLists(state.lists.map((l) => ({ id: l.id, name: l.name, dest: l.dest, items: [...l.cart], customer: l.customer, phoneKeys: [...l.phoneKeys], picks: l.picks }))), 400);
   }
 
   function makeList(name) {
-    const l = { id: newId(), name: name || t('copy_list_default', { n: state.lists.length + 1 }), dest: '', cart: new Map(), customer: '', phoneKeys: new Set(), changed: false };
+    const l = { id: newId(), name: name || t('copy_list_default', { n: state.lists.length + 1 }), dest: '', cart: new Map(), customer: '', phoneKeys: new Set(), picks: {}, changed: false };
     state.lists.push(l);
     return l;
   }
@@ -811,7 +821,7 @@
   }
 
   async function loadLists() {
-    for (const x of await api.getCopyLists()) state.lists.push({ id: x.id, name: x.name, dest: x.dest, cart: new Map(x.items), customer: x.customer ?? '', phoneKeys: new Set(x.phoneKeys ?? []), changed: false });
+    for (const x of await api.getCopyLists()) state.lists.push({ id: x.id, name: x.name, dest: x.dest, cart: new Map(x.items), customer: x.customer ?? '', phoneKeys: new Set(x.phoneKeys ?? []), picks: x.picks ?? {}, changed: false });
     if (!state.lists.length) makeList();
     selectList(state.lists[0].id);
   }
@@ -1470,19 +1480,22 @@
     const known = await Promise.all(wanted.map(async (k) => [k, !!(await api.getEntry(k))]));
     const here = new Set(known.filter(([, ok]) => ok).map(([k]) => k));
     const diff = await api.diffWish({ have: [...l.cart.keys()], fromPhone: [...l.phoneKeys], wanted: wanted.filter((k) => here.has(k)) });
-    if (!diff.add.length && !diff.remove.length) { setStatus(t('wish_nochange', { list: l.name })); return; }
+    const chosen = new Map(w.items.filter((i) => i.sel && here.has(i.key)).map((i) => [i.key, i.sel]));
+    const picksChanged = [...chosen].some(([k, s]) => JSON.stringify(l.picks[k]) !== JSON.stringify(s)) || [...l.cart.keys()].some((k) => l.picks[k] && here.has(k) && wanted.includes(k) && !chosen.has(k));
+    if (!diff.add.length && !diff.remove.length && !picksChanged) { setStatus(t('wish_nochange', { list: l.name })); return; }
     const names = (keys) => joinList(keys.map((k) => titleOf.get(k) ?? l.cart.get(k) ?? k));
     if (l.cart.size && !window.confirm([t('wish_confirm', { list: l.name }),
       diff.add.length ? t('wish_confirm_add', { titles: names(diff.add) }) : '', diff.remove.length ? t('wish_confirm_remove', { titles: names(diff.remove) }) : ''].filter(Boolean).join('\n'))) return;
     const running = state.copying && l.id === state.listId;
     for (const k of diff.add) l.cart.set(k, titleOf.get(k) ?? k);
-    for (const k of diff.remove) l.cart.delete(k);
+    for (const k of diff.remove) { l.cart.delete(k); delete l.picks[k]; }
+    for (const k of wanted) { if (!l.cart.has(k)) continue; if (chosen.has(k)) l.picks[k] = chosen.get(k); else delete l.picks[k]; }
     l.phoneKeys = new Set(wanted.filter((k) => l.phoneKeys.has(k) || diff.add.includes(k)));
     l.changed = l.id !== state.listId;
     if (l.id === state.listId) { state.cart = l.cart; renderCartBadge(); renderGrid(); if ($('copy-dlg').open) { renderCopy(); updateCopyPlan(); } }
     saveLists();
     renderListSelect();
-    const live = running ? await api.updateTransfer({ add: diff.add, remove: diff.remove }) : null;
+    const live = running ? await api.updateTransfer({ add: diff.add, remove: diff.remove, picks: Object.fromEntries(diff.add.filter((k) => l.picks[k]).map((k) => [k, l.picks[k]])) }) : null;
     setStatus(live?.ok ? t('wish_live', { list: l.name, a: live.added, r: live.removed, k: live.kept.length })
       : t('wish_applied', { list: l.name, a: diff.add.length, r: diff.remove.length }));
     if (l.id === state.listId) $('copy-customer').value = w.name;

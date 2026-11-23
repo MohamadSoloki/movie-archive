@@ -10,6 +10,9 @@ const TEXT = {
     sortNew: 'تازه‌اضافه‌شده', sortName: 'الفبا', sortRating: 'امتیاز', sortYear: 'سال', sort: 'مرتب‌سازی', seasons: 'فصل', stars: 'امتیاز',
     askTitle: 'پیدا نکردی؟', askText: 'اسم فیلم رو بنویس تا برات تهیه کنیم.', askGo: 'درخواست', askThanks: 'ثبت شد. اگه تهیه کردیم بهت خبر می‌دیم.',
     askHave: 'این فیلم توی آرشیو هست:', empty: 'کاتالوگ هنوز خالیه.',
+    tariff: 'تعرفه', perMovie: 'هر فیلم', perSeason: 'هر فصل سریال', perEpisode: 'هر قسمت', currency: 'تومان', total: 'مبلغ کل',
+    pickSeasons: 'فصل و قسمت', seasonN: 'فصل', epWord: 'قسمت', episodesHint: 'یا فقط این قسمت‌ها: ۱-۵ یا ۲ ۵ ۷', apply: 'تأیید انتخاب', noSeasons: 'فصل‌ها الان در دسترس نیست.',
+    clearAll: 'پاک کردن همهٔ انتخاب‌ها', doneNote: 'می‌تونی لیستت رو تغییر بدی و دوباره بفرستی؛ همین لیست به‌روز می‌شه.', whole: 'همهٔ فصل‌ها', onlyEps: 'قسمت',
     badge: { '4K': '4K', '1080p': '1080p', dub: 'دوبله', sub: 'زیرنویس', hardsub: 'زیرنویس چسبیده' },
   },
 };
@@ -63,6 +66,14 @@ form { display: grid; gap: 0.6rem; }
 ul { margin: 0; padding: 0; list-style: none; max-height: 30vh; overflow: auto; }
 li.row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.2rem 0; }
 li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--muted); font-size: 1.2rem; }
+.tariff { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.85rem; }
+.film button.alt { margin-top: 0.3rem; border-style: dashed; }
+.srow { display: grid; gap: 0.3rem; padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
+.srow label { display: flex; align-items: center; gap: 0.5rem; min-height: 44px; }
+.srow input[type=checkbox] { width: 22px; height: 22px; min-height: 0; flex: none; }
+.sum { margin: 0.2rem 0 0; display: grid; gap: 0.15rem; font-size: 0.95rem; }
+.sum b { color: var(--accent); }
+.price { color: var(--accent); font-size: 0.85rem; white-space: nowrap; }
 .msg { color: var(--ok); font-weight: 600; margin: 0; }
 .msg.bad { color: #d83a2b; }
 .wide { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 1.2rem 0; display: grid; gap: 0.6rem; justify-items: center; }
@@ -74,6 +85,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 <body>
 <header>
   <div class="top"><h1>${x.title}</h1></div>
+  <p class="tariff" id="tariff" hidden></p>
   <input id="q" type="search" placeholder="${x.search}" autocomplete="off" aria-label="${x.search}">
 </header>
 <section class="filters">
@@ -87,19 +99,27 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   <form id="form" method="dialog">
     <h2 style="margin:0;font-size:1.05rem">${x.mine}</h2>
     <ul id="mine"></ul>
+    <div class="sum" id="sum"></div>
     <input id="name" maxlength="80" placeholder="${x.name}" aria-label="${x.name}" autocomplete="name" required>
     <input id="phone" maxlength="30" inputmode="tel" placeholder="${x.phone}" aria-label="${x.phone}" autocomplete="tel">
     <textarea id="note" maxlength="200" rows="2" placeholder="${x.note}" aria-label="${x.note}"></textarea>
     <p class="msg" id="msg" role="status"></p>
     <button type="submit" id="submit" class="big">${x.submit}</button>
+    <button type="button" id="clearAll" class="big quiet">${x.clearAll}</button>
     <button type="button" id="close" class="big quiet">${x.close}</button>
   </form>
+</dialog>
+<dialog id="sdlg">
+  <h2 id="stitle" style="margin:0;font-size:1.05rem" dir="auto"></h2>
+  <div id="sbody"></div>
+  <button type="button" id="sapply" class="big">${x.apply}</button>
+  <button type="button" id="sclose" class="big quiet">${x.close}</button>
 </dialog>
 <script>
 (function () {
   var T = ${client};
   var PAGE = 60;
-  var films = [], kind = '', genre = '', shown = PAGE, chosen = {};
+  var films = [], kind = '', genre = '', shown = PAGE, chosen = {}, sel = {}, P = { movie: 0, season: 0, episode: 0 };
   var $ = function (id) { return document.getElementById(id); };
   function norm(s) {
     return String(s || '').toLowerCase().replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[آأإ]/g, 'ا').replace(/[ةۀ]/g, 'ه')
@@ -111,6 +131,47 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     for (var k in attrs || {}) e.setAttribute(k, attrs[k]);
     (kids || []).forEach(function (c) { e.append(c); });
     return e;
+  }
+  function fa(n) { return Number(n).toLocaleString('fa-IR'); }
+  function money(n) { return fa(n) + ' ' + T.currency; }
+  function hasPrice() { return P.movie > 0 || P.season > 0 || P.episode > 0; }
+  // "1-5, 7 9" -> [1,2,3,4,5,7,9]
+  function parseEps(text) {
+    var out = {};
+    norm(text).split(/[,،\s]+/).forEach(function (p) {
+      var m = /^(\d{1,4})(?:[-–](\d{1,4}))?$/.exec(p);
+      if (!m) return;
+      var a = +m[1], b = m[2] === undefined ? a : +m[2], t;
+      if (a > b) { t = a; a = b; b = t; }
+      for (var n = Math.max(a, 1); n <= Math.min(b, 999); n++) out[n] = 1;
+    });
+    return Object.keys(out).map(Number).sort(function (x, y) { return x - y; });
+  }
+  // what one chosen film costs by kind: a film, whole seasons, single episodes (a partial season costs a whole season when there is no episode price)
+  function itemCounts(k) {
+    var f = chosen[k], s = sel[k], c = { movies: 0, seasons: 0, episodes: 0 };
+    if (!(f.s > 0)) { c.movies = 1; return c; }
+    if (!s) { c.seasons = f.s; return c; }
+    c.seasons = s.seasons.length;
+    Object.keys(s.episodes).forEach(function (n) {
+      if (s.seasons.indexOf(Number(n)) >= 0) return;
+      if (P.episode > 0) c.episodes += s.episodes[n].length; else c.seasons += 1;
+    });
+    return c;
+  }
+  function priceOfCounts(c) { return c.movies * P.movie + c.seasons * P.season + c.episodes * P.episode; }
+  function totals() {
+    var c = { movies: 0, seasons: 0, episodes: 0 };
+    Object.keys(chosen).forEach(function (k) { var x = itemCounts(k); c.movies += x.movies; c.seasons += x.seasons; c.episodes += x.episodes; });
+    return c;
+  }
+  function selText(k) {
+    var s = sel[k];
+    if (!s) return '';
+    var parts = [];
+    if (s.seasons.length) parts.push(T.seasonN + ' ' + s.seasons.map(fa).join('، '));
+    Object.keys(s.episodes).forEach(function (n) { if (s.seasons.indexOf(Number(n)) < 0) parts.push(T.seasonN + ' ' + fa(n) + ': ' + T.onlyEps + ' ' + s.episodes[n].map(fa).join('، ')); });
+    return parts.join(' · ');
   }
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { /* private mode */ } return null; }
   var SORTS = {
@@ -157,7 +218,12 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
         el('div', { 'class': 'img' }, [img]),
         el('div', { 'class': 'body' }, [el('b', { dir: 'auto' }, [f.f || f.t]), f.f ? el('small', { dir: 'ltr', 'class': 'orig' }, [f.t]) : '', el('small', {}, [meta]), f.d ? el('small', { dir: 'auto' }, [f.d]) : '',
           el('button', { type: 'button', 'aria-pressed': String(on) }, [on ? T.picked : T.pick])])]);
-      card.querySelector('button').onclick = function () { if (chosen[f.k]) delete chosen[f.k]; else chosen[f.k] = f; save(); render(); };
+      card.querySelector('button').onclick = function () { if (chosen[f.k]) { delete chosen[f.k]; delete sel[f.k]; } else chosen[f.k] = f; save(); render(); };
+      if (f.s > 0) {
+        var alt = el('button', { type: 'button', 'class': 'alt' }, [T.pickSeasons]);
+        alt.onclick = function () { openSeasons(f); };
+        card.querySelector('.body').append(alt);
+      }
       grid.append(card);
     });
     var tail = el('div', { 'class': 'wide' }, []);
@@ -171,9 +237,9 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     grid.append(tail);
     var n = Object.keys(chosen).length;
     $('bar').className = 'bar' + (n ? ' show' : '');
-    $('open').textContent = T.send + ' (' + n + ')';
+    $('open').textContent = T.send + ' (' + n + ')' + (hasPrice() ? ' · ' + money(priceOfCounts(totals())) : '');
   }
-  function save() { store('pick', JSON.stringify(Object.keys(chosen))); }
+  function save() { store('pick', JSON.stringify(Object.keys(chosen))); store('sel', JSON.stringify(sel)); }
   function chips(box, items, current, set) {
     box.replaceChildren();
     items.forEach(function (it) {
@@ -182,7 +248,58 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       box.append(b);
     });
   }
+  // prices are read once; without them the page shows no money at all
+  function loadPrices() {
+    fetch('/api/info').then(function (r) { return r.json(); }).then(function (j) {
+      P = { movie: +j.prices.movie || 0, season: +j.prices.season || 0, episode: +j.prices.episode || 0 };
+      var t = $('tariff');
+      var parts = [];
+      if (P.movie > 0) parts.push(T.perMovie + ' ' + money(P.movie));
+      if (P.season > 0) parts.push(T.perSeason + ' ' + money(P.season));
+      if (P.episode > 0) parts.push(T.perEpisode + ' ' + money(P.episode));
+      t.hidden = !parts.length;
+      t.textContent = T.tariff + ': ' + parts.join(' · ');
+      render();
+    }).catch(function () { /* no prices: no money shown */ });
+  }
+  // the seasons (and episodes) of a series to choose from; only what the shop has
+  function openSeasons(f) {
+    var body = $('sbody');
+    $('stitle').textContent = f.f || f.t;
+    body.replaceChildren(el('p', {}, ['…']));
+    $('sdlg').showModal();
+    fetch('/api/seasons?k=' + encodeURIComponent(f.k)).then(function (r) { if (!r.ok) throw new Error('bad'); return r.json(); }).then(function (j) {
+      var cur = sel[f.k] || null; // null = the whole series
+      var rows = j.seasons.map(function (s) {
+        var whole = el('input', { type: 'checkbox' });
+        whole.checked = !chosen[f.k] ? false : (!cur || cur.seasons.indexOf(s.season) >= 0);
+        var eps = s.episodes ? el('input', { type: 'text', inputmode: 'numeric', placeholder: T.episodesHint, 'aria-label': T.episodesHint }) : null;
+        if (eps && cur && cur.episodes[s.season] && !whole.checked) eps.value = cur.episodes[s.season].join(' ');
+        whole.onchange = function () { if (whole.checked && eps) eps.value = ''; };
+        if (eps) eps.oninput = function () { if (eps.value.trim()) whole.checked = false; };
+        var label = el('label', {}, [whole, el('span', {}, [T.seasonN + ' ' + fa(s.season) + (s.episodes ? ' (' + fa(s.episodes.length) + ' ' + T.epWord + ')' : '')])]);
+        return { season: s.season, have: s.episodes, whole: whole, eps: eps, node: el('div', { 'class': 'srow' }, [label, eps || '']) };
+      });
+      body.replaceChildren.apply(body, rows.map(function (r) { return r.node; }));
+      $('sapply').onclick = function () {
+        var out = { seasons: [], episodes: {} };
+        rows.forEach(function (r) {
+          if (r.whole.checked) { out.seasons.push(r.season); return; }
+          var want = r.eps ? parseEps(r.eps.value).filter(function (n) { return r.have.indexOf(n) >= 0; }) : [];
+          if (want.length) out.episodes[r.season] = want;
+        });
+        var any = out.seasons.length || Object.keys(out.episodes).length;
+        if (!any) { delete chosen[f.k]; delete sel[f.k]; }
+        else {
+          chosen[f.k] = f;
+          if (out.seasons.length === rows.length) delete sel[f.k]; else sel[f.k] = out;
+        }
+        save(); render(); $('sdlg').close();
+      };
+    }).catch(function () { body.replaceChildren(el('p', { 'class': 'msg bad' }, [T.noSeasons])); });
+  }
   function load() {
+    loadPrices();
     fetch('/api/films?lang=' + T.lang).then(function (r) { if (!r.ok) throw new Error('bad'); return r.json(); }).then(function (list) {
       films = list.map(function (f) { f._n = norm([f.t, f.f || ''].concat(f.a || []).join(' ') + ' ' + (f.y || '')); return f; });
       var kinds = [['', T.all]];
@@ -193,6 +310,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       var gs = [['', T.all]].concat(Object.keys(count).sort(function (a, b) { return count[b] - count[a]; }).slice(0, 24).map(function (g) { return [g, g]; }));
       chips($('genres'), gs, function () { return genre; }, function (v) { genre = v; });
       try { JSON.parse(store('pick') || '[]').forEach(function (k) { var f = films.filter(function (x) { return x.k === k; })[0]; if (f) chosen[k] = f; }); } catch (e) { /* nothing saved */ }
+      try { var old = JSON.parse(store('sel') || '{}'); Object.keys(old).forEach(function (k) { if (chosen[k]) sel[k] = old[k]; }); } catch (e) { /* nothing saved */ }
       render();
     }).catch(function () {
       var g = $('grid');
@@ -212,24 +330,38 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     ul.replaceChildren();
     Object.keys(chosen).forEach(function (k) {
       var x = el('button', { type: 'button', 'aria-label': T.remove }, ['×']);
-      x.onclick = function () { delete chosen[k]; save(); render(); if (Object.keys(chosen).length) listBox(); else $('dlg').close(); };
-      ul.append(el('li', { 'class': 'row' }, [el('span', { dir: 'auto' }, [chosen[k].f ? chosen[k].f + ' (' + chosen[k].t + ')' : chosen[k].t]), x]));
+      x.onclick = function () { delete chosen[k]; delete sel[k]; save(); render(); if (Object.keys(chosen).length) listBox(); else $('dlg').close(); };
+      var what = selText(k);
+      var cost = hasPrice() ? el('span', { 'class': 'price' }, [money(priceOfCounts(itemCounts(k)))]) : '';
+      ul.append(el('li', { 'class': 'row' }, [el('span', { dir: 'auto' }, [chosen[k].f ? chosen[k].f + ' (' + chosen[k].t + ')' : chosen[k].t, what ? el('small', { style: 'display:block;color:var(--muted)' }, [what]) : '']), cost, x]));
     });
+    // the price by kind, so the customer sees how it is made up
+    var c = totals();
+    var lines = [];
+    if (hasPrice()) {
+      if (c.movies) lines.push(fa(c.movies) + ' ' + T.movie + ' × ' + money(P.movie) + ' = ' + money(c.movies * P.movie));
+      if (c.seasons) lines.push(fa(c.seasons) + ' ' + T.seasonN + ' ' + T.series + ' × ' + money(P.season) + ' = ' + money(c.seasons * P.season));
+      if (c.episodes) lines.push(fa(c.episodes) + ' ' + T.epWord + ' × ' + money(P.episode) + ' = ' + money(c.episodes * P.episode));
+      lines.push(T.total + ': ' + money(priceOfCounts(c)));
+    }
+    $('sum').replaceChildren.apply($('sum'), lines.map(function (l, i) { return el(i === lines.length - 1 ? 'b' : 'span', {}, [l]); }));
   }
   $('open').onclick = function () { listBox(); $('msg').textContent = ''; $('msg').className = 'msg'; $('dlg').showModal(); };
   $('close').onclick = function () { $('dlg').close(); };
+  $('sclose').onclick = function () { $('sdlg').close(); };
+  $('clearAll').onclick = function () { chosen = {}; sel = {}; save(); render(); $('dlg').close(); };
   $('form').onsubmit = function (ev) {
     ev.preventDefault();
     var sendBtn = $('submit');
     sendBtn.disabled = true;
-    var body = { name: $('name').value, phone: $('phone').value, note: $('note').value, keys: Object.keys(chosen) };
+    var body = { name: $('name').value, phone: $('phone').value, note: $('note').value, keys: Object.keys(chosen), picks: sel };
     store('name', $('name').value); store('phone', $('phone').value);
     fetch('/api/wish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) { return [r.status, j]; });
     }).then(function (a) {
       if (a[0] === 200) {
-        chosen = {}; save(); render(); $('mine').replaceChildren(); $('note').value = '';
-        $('msg').className = 'msg'; $('msg').textContent = T.done + ' ' + a[1].id;
+        $('note').value = ''; // the selection stays: sending again after a change updates the same list at the shop
+        $('msg').className = 'msg'; $('msg').textContent = T.done + ' ' + a[1].id + ' · ' + T.doneNote;
         setTimeout(function () { sendBtn.disabled = false; }, 4000);
       } else {
         $('msg').className = 'msg bad'; $('msg').textContent = a[0] === 429 ? T.slow : a[0] === 503 ? T.full : T.fail;

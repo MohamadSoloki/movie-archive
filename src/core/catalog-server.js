@@ -11,7 +11,7 @@ const clean = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, m
  * The phone catalog: a small read-only web server for the shop's local network. Customers browse the film list on their
  * phone and send back the list they want. No file path, drive or folder name ever leaves it; sent lists only reach `submit`.
  */
-function createCatalogServer({ films, posterFile, known, submit, ask, font = () => null, clock = Date.now }) {
+function createCatalogServer({ films, posterFile, known, submit, ask, info = () => ({ prices: {}, shop: '' }), seasons = () => null, font = () => null, clock = Date.now }) {
   let server = null;
   const sent = new Map(); // address -> times of its recent lists
 
@@ -45,14 +45,29 @@ function createCatalogServer({ films, posterFile, known, submit, ask, font = () 
     req.on('end', () => (over ? json(res, 413, { ok: false, error: 'too_big' }) : done(Buffer.concat(chunks).toString('utf8'))));
   }
 
+  // what the customer chose of a series: { seasons: [1, 2], episodes: { 3: [1, 2, 5] } }, numbers only; null when nothing usable is left
+  const nums = (a, max) => [...new Set((Array.isArray(a) ? a : []).filter((n) => Number.isInteger(n) && n > 0 && n < 10000))].slice(0, max);
+  function cleanSel(p) {
+    const episodes = {};
+    for (const [s, list] of Object.entries(p?.episodes && typeof p.episodes === 'object' ? p.episodes : {}).slice(0, 200)) {
+      if (/^\d{1,4}$/.test(s) && nums(list, 1000).length) episodes[Number(s)] = nums(list, 1000);
+    }
+    const sel = { seasons: nums(p?.seasons, 200), episodes };
+    return sel.seasons.length || Object.keys(episodes).length ? sel : null;
+  }
+
   function onWish(req, res) {
-    readBody(req, res, (text) => {
+    readBody(req, res, async (text) => {
       let b;
       try { b = JSON.parse(text); } catch { json(res, 400, { ok: false, error: 'bad_json' }); return; }
       const name = clean(b?.name, 80);
       const keys = Array.isArray(b?.keys) ? b.keys.filter((k) => typeof k === 'string') : [];
       if (!name || !keys.length || keys.length > MAX_ITEMS) { json(res, 400, { ok: false, error: 'bad_list' }); return; }
-      const items = [...new Set(keys)].map((k) => known(k)).filter(Boolean).map((e) => ({ key: e.key, title: e.title, year: e.year ?? null }));
+      const picks = b.picks && typeof b.picks === 'object' ? b.picks : {};
+      const items = await Promise.all([...new Set(keys)].map((k) => known(k)).filter(Boolean).map(async (e) => {
+        const sel = (await seasons(e.key))?.length ? cleanSel(picks[e.key]) : null; // a choice only makes sense for a film that has seasons
+        return { key: e.key, title: e.title, year: e.year ?? null, ...(sel ? { sel } : {}) };
+      }));
       if (!items.length) { json(res, 400, { ok: false, error: 'bad_list' }); return; }
       if (limited(req.socket.remoteAddress, 'wish')) { json(res, 429, { ok: false, error: 'slow_down' }); return; }
       const id = submit({ name, phone: clean(b.phone, 30), note: clean(b.note, 200), items });
@@ -78,7 +93,7 @@ function createCatalogServer({ films, posterFile, known, submit, ask, font = () 
   function handle(req, res) {
     const url = new URL(req.url, 'http://x');
     const path = url.pathname;
-    const routes = ['/', '/api/films', '/api/wish', '/api/ask', '/font.woff2'];
+    const routes = ['/', '/api/films', '/api/info', '/api/seasons', '/api/wish', '/api/ask', '/font.woff2'];
     const poster = path.startsWith('/poster/');
     if (!routes.includes(path) && !poster) { json(res, 404, { ok: false }); return; }
     if (path === '/api/wish' || path === '/api/ask') {
@@ -93,6 +108,13 @@ function createCatalogServer({ films, posterFile, known, submit, ask, font = () 
       if (!f) json(res, 404, { ok: false });
       else { res.writeHead(200, { 'content-type': 'font/woff2', 'cache-control': 'max-age=86400' }); res.end(f); }
     } else if (path === '/api/films') json(res, 200, films(langOf(url)));
+    else if (path === '/api/info') json(res, 200, info());
+    else if (path === '/api/seasons') {
+      Promise.resolve(seasons(url.searchParams.get('k') ?? '')).then((list) => {
+        if (!list) json(res, 404, { ok: false });
+        else json(res, 200, { ok: true, seasons: list.map((s) => ({ season: s.season, episodes: s.episodes })) });
+      }, () => json(res, 500, { ok: false }));
+    }
     else {
       let key = '';
       try { key = decodeURIComponent(path.slice('/poster/'.length)); } catch { /* bad escape */ }
