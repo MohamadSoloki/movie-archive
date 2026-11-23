@@ -177,3 +177,29 @@ test('a collection carries the tags that every one of its films has', () => {
   db.prepare("INSERT INTO tags(location_id, tag) VALUES(?, 'Classic')").run(a);
   assert.deepEqual(listEntries(db).find((e) => e.kind === 'collection').userTags, ['Iranian']);
 });
+
+test('manual quality marks add or remove dub and sub on top of what the folder name says', () => {
+  const { qualityOf } = require('../src/core/quality.js');
+  assert.ok(qualityOf);
+  const db = openDb();
+  const t = upsertTitle(db, info('tq9', 'Marked'), null);
+  const a = addLoc(db, { titleId: t, status: 'matched', folder: 'Marked 1080p دوبله' });
+  db.prepare('INSERT INTO quality_marks(location_id, flag, value) VALUES(?, ?, ?)').run(a, 'dub', 0);
+  db.prepare('INSERT INTO quality_marks(location_id, flag, value) VALUES(?, ?, ?)').run(a, 'sub', 1);
+  const e = listEntries(db).find((x) => x.titleId === t);
+  assert.deepEqual(e.quality, { res: '1080p', dub: false, sub: true, hardsub: false });
+  assert.deepEqual(e.qualityMarks, { dub: false, sub: true });
+  assert.deepEqual(e.qualityAuto, { res: '1080p', dub: true, sub: false, hardsub: false });
+});
+
+test('removing sub by hand also removes burned-in subtitles; dub and sub can both be on', () => {
+  const db = openDb();
+  const t = upsertTitle(db, info('tq10', 'Both'), null);
+  const a = addLoc(db, { titleId: t, status: 'matched', folder: 'Both زیرنویس چسبیده' });
+  db.prepare('INSERT INTO quality_marks(location_id, flag, value) VALUES(?, ?, ?)').run(a, 'dub', 1);
+  let e = listEntries(db).find((x) => x.titleId === t);
+  assert.deepEqual([e.quality.dub, e.quality.sub, e.quality.hardsub], [true, true, true]);
+  db.prepare('INSERT INTO quality_marks(location_id, flag, value) VALUES(?, ?, ?)').run(a, 'sub', 0);
+  e = listEntries(db).find((x) => x.titleId === t);
+  assert.deepEqual([e.quality.dub, e.quality.sub, e.quality.hardsub], [true, false, false]);
+});

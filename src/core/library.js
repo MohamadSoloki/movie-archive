@@ -19,6 +19,11 @@ function listEntries(db) {
     if (!aliasesByLoc.has(r.location_id)) aliasesByLoc.set(r.location_id, []);
     aliasesByLoc.get(r.location_id).push(r.alias);
   }
+  const marksByLoc = new Map();
+  for (const r of db.prepare('SELECT location_id, flag, value FROM quality_marks').all()) {
+    if (!marksByLoc.has(r.location_id)) marksByLoc.set(r.location_id, {});
+    marksByLoc.get(r.location_id)[r.flag] = !!r.value;
+  }
   const shape = (l) => ({
     id: l.id, driveSerial: l.drive_serial, driveLabel: l.drive_label || '', online: !!l.drive_online,
     relPath: l.rel_path, folderName: l.folder_name, season: l.season, isEmpty: !!l.is_empty, missing: !!l.missing,
@@ -66,10 +71,20 @@ function listEntries(db) {
   }
   for (const e of entries) {
     e.attention = attentionOf(e);
-    e.quality = mergeQuality(e.locations.map((l) => qualityOf(l.relPath)));
+    const auto = e.locations.map((l) => qualityOf(l.relPath));
+    const marks = e.locations.map((l) => marksByLoc.get(l.id) ?? {});
+    e.qualityAuto = mergeQuality(auto);
+    e.quality = mergeQuality(auto.map((q, i) => applyMarks(q, marks[i])));
+    e.qualityMarks = Object.assign({}, ...marks);
   }
   entries.push(...collectionEntries(entries));
   return entries.sort(compareTitles);
+}
+
+// What the owner said by hand wins over the folder name; no sub left means no burned-in sub either.
+function applyMarks(q, marks) {
+  const sub = marks.sub ?? q.sub;
+  return { res: q.res, dub: marks.dub ?? q.dub, sub, hardsub: sub && q.hardsub };
 }
 
 // What the owner should look at: 'problem' (unsure or broken), 'guess' (auto-picked, check it), 'ok' (verified).
@@ -102,7 +117,7 @@ function collectionEntries(entries) {
       title: l.collection.split('/').pop(), year: null, type: 'collection', plot: null, genres: null, rating: null, runtime: null,
       actors: null, posterFile: list.find((m) => m.posterFile)?.posterFile ?? null, status: 'matched', guessed: false, locations: [],
       imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, countryList: [], totalSeasons: null, attention: 'ok', userTags: shared, aliases: [],
-      quality: mergeQuality(list.map((m) => m.quality)),
+      quality: mergeQuality(list.map((m) => m.quality)), qualityAuto: mergeQuality(list.map((m) => m.qualityAuto)), qualityMarks: {},
       addedOrder: Math.min(...locs.map((x) => x.id)),
       collection: { driveSerial: l.driveSerial, relPath: l.collection, online: l.online, missing: locs.every((x) => x.missing) },
       members: list.map((m) => ({ key: m.key, title: m.title, year: m.year, posterFile: m.posterFile, status: m.status, kind: m.kind })),

@@ -21,6 +21,8 @@ function exportData(db, { now = Date.now() } = {}) {
   return {
     format: FORMAT, version: 1, exportedAt: now, settings,
     tags: byPlace('tags', 'tag'), aliases: byPlace('aliases', 'alias'),
+    qualityMarks: db.prepare(`SELECT l.drive_serial AS driveSerial, l.rel_path AS relPath, x.flag AS flag, x.value AS value
+      FROM quality_marks x JOIN locations l ON l.id = x.location_id ORDER BY l.drive_serial, l.rel_path, x.flag`).all().map((r) => ({ ...r })),
     reminders: plain(db.prepare('SELECT title, key, weekday, time, episode, due, enabled FROM reminders ORDER BY id').all()),
     copies,
     orders: orders.listOrders(db).map(({ id, ...o }) => o),
@@ -32,7 +34,7 @@ function exportData(db, { now = Date.now() } = {}) {
 // changes nothing. Tags and aliases go to the folder with the same drive and path; those this machine does not have are counted.
 function importData(db, data) {
   if (!data || typeof data !== 'object' || data.format !== FORMAT) throw new Error('not_a_backup');
-  const out = { tags: 0, aliases: 0, reminders: 0, copies: 0, orders: 0, requests: 0, skipped: 0 };
+  const out = { tags: 0, aliases: 0, qualityMarks: 0, reminders: 0, copies: 0, orders: 0, requests: 0, skipped: 0 };
   const arr = (v) => (Array.isArray(v) ? v : []);
   db.exec('BEGIN');
   try {
@@ -45,6 +47,13 @@ function importData(db, data) {
         if (!loc) { out.skipped += 1; continue; }
         out[counter] += Number(ins.run(loc.id, r[col]).changes);
       }
+    }
+    // a mark already set on this machine is kept: the backup only fills in what is missing
+    const mark = db.prepare('INSERT OR IGNORE INTO quality_marks(location_id, flag, value) VALUES(?, ?, ?)');
+    for (const r of arr(data.qualityMarks)) {
+      const loc = ['dub', 'sub'].includes(r?.flag) ? find.get(String(r.driveSerial), String(r.relPath)) : null;
+      if (!loc) { out.skipped += 1; continue; }
+      out.qualityMarks += Number(mark.run(loc.id, r.flag, r.value ? 1 : 0).changes);
     }
     const rem = db.prepare(`INSERT INTO reminders(title, key, weekday, time, episode, due, enabled) VALUES(?,?,?,?,?,?,?)
       ON CONFLICT(key) DO NOTHING`);

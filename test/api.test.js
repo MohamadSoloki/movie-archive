@@ -1025,3 +1025,27 @@ test('phone catalog rows: persian genres, persian name from a folder, no paths; 
     assert.deepEqual((await api.getRequests()).map((x) => [x.name, x.count]), [['Some Film We Lack', 1]]);
   } finally { await api.stopCatalog(); }
 });
+
+test('setQualityMark: dub and sub can be added or removed by hand, together, and reset to automatic', async () => {
+  const { api, media } = await withFilms();
+  fs.mkdirSync(path.join(media, 'Movies', 'rocky 1976 دوبله فارسی'), { recursive: true });
+  fs.writeFileSync(path.join(media, 'Movies', 'rocky 1976 دوبله فارسی', 'a.mkv'), 'x');
+  await api.scan();
+  const find = async () => (await api.getEntries()).entries.find((e) => e.locations.some((l) => l.folderName.includes('rocky')));
+  const e = await find();
+  assert.equal(e.quality.dub, true);
+  assert.deepEqual(await api.setQualityMark(e.key, 'dub', false), { ok: true });
+  assert.deepEqual([(await find()).quality.dub, (await find()).qualityMarks], [false, { dub: false }]);
+  assert.equal((await api.getEntries({ quality: ['dub'] })).entries.some((x) => x.key === e.key), false);
+  await api.setQualityMark(e.key, 'sub', true);
+  await api.setQualityMark(e.key, 'dub', true);
+  assert.deepEqual([(await find()).quality.dub, (await find()).quality.sub], [true, true]);
+  assert.equal((await api.getEntries({ quality: ['dub', 'sub'] })).entries.some((x) => x.key === e.key), true);
+  assert.deepEqual(await api.setQualityMark(e.key, 'dub', null), { ok: true });
+  assert.deepEqual((await find()).qualityMarks, { sub: true });
+  // marks stay with the folder through a rescan
+  await api.scan();
+  assert.deepEqual((await find()).qualityMarks, { sub: true });
+  assert.deepEqual(await api.setQualityMark(e.key, 'loud', true), { ok: false, error: 'bad_flag' });
+  assert.deepEqual(await api.setQualityMark('t:99999', 'dub', true), { ok: false, error: 'unknown' });
+});

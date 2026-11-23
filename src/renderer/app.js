@@ -917,6 +917,27 @@
     return box;
   }
 
+  // Dub / subtitles set by hand: two toggles that show what the card says now. Choosing what the folder name already says
+  // clears the mark (back to automatic); anything else is saved as a mark that survives rescans.
+  function qualitySection(e) {
+    const box = h('section', { class: 'mytags' });
+    const toggle = (flag) => {
+      const on = !!e.quality[flag];
+      const marked = e.qualityMarks[flag] != null;
+      return h('button', {
+        type: 'button', class: 'chip', 'aria-pressed': String(on),
+        title: marked ? t('qmark_manual') : t('qmark_auto'),
+        onclick: async () => {
+          // wanting what the folder name already says = no mark
+          const r = await api.setQualityMark(e.key, flag, !on === !!e.qualityAuto[flag] ? null : !on);
+          if (r.ok) await refresh(true);
+        },
+      }, t(`q_${flag}`), marked ? h('small', { class: 'n' }, t('qmark_manual')) : null);
+    };
+    box.append(h('h3', {}, t('qmark_title')), h('div', { class: 'detail-tags' }, toggle('dub'), toggle('sub')));
+    return box;
+  }
+
   // The whole entry is fetched only for the open card. Without `force` an already open detail is left alone,
   // so typing in the search box does not rebuild it (and collapse its seasons).
   async function renderDetail(force = true) {
@@ -946,6 +967,7 @@
           cartButton(e)),
         myTagsSection(e),
         aliasSection(e),
+        qualitySection(e),
         e.genreList.length ? h('div', { class: 'detail-tags', 'aria-label': t('genres') }, e.genreList.map((g) => h('button', {
           type: 'button', class: 'tag', 'aria-pressed': String(hasGenre(g)), onclick: () => { toggleGenre(g); },
         }, genreName(g)))) : null,

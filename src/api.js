@@ -478,6 +478,7 @@ function createApi({
         db.exec('DELETE FROM episodes WHERE title_id NOT IN (SELECT id FROM titles)');
         db.exec('DELETE FROM tags WHERE location_id NOT IN (SELECT id FROM locations)');
         db.exec('DELETE FROM aliases WHERE location_id NOT IN (SELECT id FROM locations)');
+        db.exec('DELETE FROM quality_marks WHERE location_id NOT IN (SELECT id FROM locations)');
         db.prepare('DELETE FROM roots WHERE id = ?').run(id);
         db.exec('COMMIT');
       } catch (e) {
@@ -686,6 +687,21 @@ function createApi({
     },
     async removeRequest(id) {
       orders.removeRequest(db, id);
+      return { ok: true };
+    },
+    // dub / sub set by hand on every folder of the entry (a collection: of every film in it). value true/false, or null = automatic again
+    async setQualityMark(key, flag, value) {
+      if (flag !== 'dub' && flag !== 'sub') return { ok: false, error: 'bad_flag' };
+      const e = search.find(key);
+      if (!e) return { ok: false, error: 'unknown' };
+      const ids = tagTargets(e);
+      if (!ids.length) return { ok: false, error: 'unknown' };
+      const del = db.prepare('DELETE FROM quality_marks WHERE location_id = ? AND flag = ?');
+      const put = db.prepare('INSERT OR REPLACE INTO quality_marks(location_id, flag, value) VALUES(?, ?, ?)');
+      for (const id of ids) {
+        if (value === null || value === undefined) del.run(id, flag); else put.run(id, flag, value ? 1 : 0);
+      }
+      search.invalidate();
       return { ok: true };
     },
     // other names (Persian ones, mostly) the film can be found by; they stay with the folder like tags do

@@ -63,3 +63,17 @@ test('tags of a folder this machine does not know are counted as skipped; a fore
   assert.throws(() => importData(db, { format: 'nope' }), /not_a_backup/);
   assert.throws(() => importData(db, null), /not_a_backup/);
 });
+
+test('manual dub and sub marks go into the backup and come back on the same folder', () => {
+  const a = seed();
+  const id = a.prepare('SELECT id FROM locations').get().id;
+  a.prepare('INSERT INTO quality_marks(location_id, flag, value) VALUES(?,?,?)').run(id, 'dub', 1);
+  a.prepare('INSERT INTO quality_marks(location_id, flag, value) VALUES(?,?,?)').run(id, 'sub', 0);
+  const data = JSON.parse(JSON.stringify(exportData(a, { now: 1 })));
+  assert.deepEqual(data.qualityMarks, [{ driveSerial: 'D1', relPath: 'Movies/A', flag: 'dub', value: 1 }, { driveSerial: 'D1', relPath: 'Movies/A', flag: 'sub', value: 0 }]);
+  const b = openDb();
+  b.prepare("INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, status) VALUES('D1','Movies/A','A','A','pending')").run();
+  assert.equal(importData(b, data).qualityMarks, 2);
+  assert.deepEqual(b.prepare('SELECT flag, value FROM quality_marks ORDER BY flag').all().map((x) => [x.flag, x.value]), [['dub', 1], ['sub', 0]]);
+  assert.equal(importData(b, data).qualityMarks, 0);
+});
