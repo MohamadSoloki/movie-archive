@@ -476,3 +476,4 @@ body.selecting main { padding-block-end: 6rem; }
   .catalog section { break-inside: auto; }
   .invoice .total { font-size: 15pt; font-weight: 700; }
 }
+#tabs { max-width: 100%; overflow-x: auto; }

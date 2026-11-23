@@ -1025,7 +1025,7 @@ test('phone catalog rows: persian genres, persian name from a folder, no paths; 
     assert.ok(named.filter((f) => f.k !== star.key).every((f) => f.f === null));
     assert.ok(fa.some((f) => f.a.some((n) => n.includes('بتمن آغاز'))));
     assert.ok(!JSON.stringify(fa).match(/دوبله|Movies|media-/));
-    assert.ok(fa.every((f) => ['movie', 'series', 'anime'].includes(f.kd) && Number.isInteger(f.o)));
+    assert.ok(fa.every((f) => ['movie', 'series', 'animation', 'anime'].includes(f.kd) && Number.isInteger(f.o)));
     const ask = (name) => fetch(`${base}/api/ask`, { method: 'POST', body: JSON.stringify({ name }) }).then((x) => x.json());
     assert.deepEqual(await ask('Dune'), { ok: true, inArchive: [fa.find((f) => /dune/i.test(f.t)).t] });
     assert.deepEqual(await api.getRequests(), []);

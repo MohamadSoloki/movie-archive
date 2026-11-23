@@ -227,3 +227,27 @@ test('persian alias names are searchable and kept on the entry', () => {
   assert.deepEqual(hit.aliases, ['ديپارتد', 'رفتگان']);
   assert.equal(s.query({ query: 'zzzzqq' }).entries.length, 0);
 });
+
+test('animation and anime have their own tabs and are not in the movie or series tabs', () => {
+  const db = openDb();
+  const add = (over, folder, season = null) => {
+    const t = upsertTitle(db, { ...info(over.imdbId ?? null, over.title), ...over }, null);
+    n += 1;
+    db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, title_id, status, season)
+      VALUES('S1', ?, ?, 'x', ?, 'matched', ?)`).run(`Lib/${folder}${n}`, folder, t, season);
+  };
+  add({ imdbId: 'tt11', title: 'Heat', genres: 'Action, Crime' }, 'heat');
+  add({ imdbId: 'tt12', title: 'Dexter', type: 'series', genres: 'Crime' }, 'dexter', '01');
+  add({ imdbId: 'tt13', title: 'Shrek', genres: 'Animation, Comedy', country: 'United States' }, 'shrek');
+  add({ imdbId: 'tt14', title: 'Rick and Morty', type: 'series', genres: 'Animation, Comedy', country: 'United States' }, 'rick', '01');
+  add({ imdbId: 'tt15', title: 'Spirited Away', genres: 'Animation, Fantasy', country: 'Japan' }, 'spirited');
+  add({ imdbId: null, malId: 20, source: 'jikan', title: 'Naruto', type: 'anime', genres: 'Action' }, 'naruto', '01');
+  const s = createSearch(db);
+  const tab = (name) => s.query({ tab: name }).entries.map((e) => e.title).sort();
+  assert.deepEqual(tab('movie'), ['Heat']);
+  assert.deepEqual(tab('series'), ['Dexter']);
+  assert.deepEqual(tab('animation'), ['Rick and Morty', 'Shrek']);
+  // from Jikan, or an animated film made in Japan
+  assert.deepEqual(tab('anime'), ['Naruto', 'Spirited Away']);
+  assert.equal(tab('all').length, 6);
+});

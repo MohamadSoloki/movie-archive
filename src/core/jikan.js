@@ -1,5 +1,6 @@
 'use strict';
 const { ProviderError } = require('./errors.js');
+const { sameName } = require('./match.js');
 
 const BASE = 'https://api.jikan.moe/v4/anime';
 const defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -25,7 +26,8 @@ function createJikan({ fetch = globalThis.fetch, sleep = defaultSleep, minGap = 
     if (wait) await sleep(wait);
   }
 
-  async function get(url, canRetry = true) {
+  // Jikan allows about 3 requests a second and 60 a minute: a busy answer waits 1 s, then 2 s, then 3 s before giving up
+  async function get(url, retry = 0) {
     await throttle();
     let res;
     try {
@@ -34,9 +36,9 @@ function createJikan({ fetch = globalThis.fetch, sleep = defaultSleep, minGap = 
       throw new ProviderError('network', e.message);
     }
     if (res.status === 429) {
-      if (!canRetry) throw new ProviderError('network', 'Jikan rate limit');
-      await sleep(1000);
-      return get(url, false);
+      if (retry >= 3) throw new ProviderError('network', 'Jikan rate limit');
+      await sleep(1000 * (retry + 1));
+      return get(url, retry + 1);
     }
     if (res.status === 404) return { data: null };
     if (!res.ok) throw new ProviderError('network', `HTTP ${res.status}`);
@@ -47,7 +49,10 @@ function createJikan({ fetch = globalThis.fetch, sleep = defaultSleep, minGap = 
     async searchAnime(title, year = null) {
       const body = await get(`${BASE}?q=${encodeURIComponent(title)}&limit=5`);
       const list = body.data || [];
-      const hit = (year && list.find((a) => String(a.year) === String(year))) || list[0];
+      // only a hit that carries the folder's name under one of its names; the first search result alone proves nothing
+      const names = (a) => [a.title, a.title_english, a.title_japanese, ...(a.title_synonyms || []), ...(a.titles || []).map((x) => x.title)];
+      const same = list.filter((a) => names(a).some((n) => sameName(title, n)));
+      const hit = (year && same.find((a) => String(a.year) === String(year))) || same[0];
       return hit ? toInfo(hit) : null;
     },
     // Anime that MyAnimeList users recommend after this one, the most voted first

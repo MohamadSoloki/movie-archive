@@ -18,6 +18,13 @@ function edits(a, b) {
   return prev[b.length];
 }
 
+// two titles are the same name when they match ignoring case, accents and punctuation, give or take 15% edits
+function sameName(a, b) {
+  const x = norm(a || '');
+  const y = norm(b || '');
+  return !!x && !!y && edits(x, y) <= Math.floor(y.length * 0.15);
+}
+
 /**
  * The search hit that clearly is the folder's title, or null.
  * A hit qualifies when its type fits (a season folder needs a series; episodes never qualify), its start year
@@ -38,4 +45,4 @@ function pickConfident({ title, year, season }, candidates) {
   return hits[0] ?? null;
 }
 
-module.exports = { pickConfident };
+module.exports = { pickConfident, sameName };

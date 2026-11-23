@@ -30,6 +30,12 @@ function listEntries(db) {
     collection: l.collection,
   });
 
+  // anime: found through Jikan, or an animated title made in Japan; animation: any other animated title
+  const sectionOf = (t, genreList, countryList) => {
+    if (t.mal_id != null || t.type === 'anime') return 'anime';
+    if (!genreList.some((g) => g.toLowerCase() === 'animation')) return null;
+    return countryList.some((c) => c.toLowerCase() === 'japan') ? 'anime' : 'animation';
+  };
   const kindOf = (type) => (type === 'movie' || type === 'series' ? type : 'other');
   const entries = [];
   const byTitle = new Map();
@@ -41,7 +47,7 @@ function listEntries(db) {
         type: null, plot: null, genres: null, rating: null, runtime: null, actors: null, posterFile: null,
         status: l.status, guessed: !!l.guessed, locations: [shape(l)],
         imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, countryList: [], totalSeasons: null,
-        kind: l.season ? 'series' : 'movie', addedOrder: l.id, userTags: [],
+        kind: l.season ? 'series' : 'movie', section: null, addedOrder: l.id, userTags: [],
       });
       continue;
     }
@@ -54,6 +60,7 @@ function listEntries(db) {
         imdbId: t.imdb_id, genreList: t.genres ? t.genres.split(', ') : [], director: t.director, awards: t.awards,
         rated: t.rated, country: t.country, countryList: t.country ? t.country.split(', ') : [], totalSeasons: t.total_seasons, kind: kindOf(t.type), addedOrder: l.id, userTags: [],
       };
+      e.section = sectionOf(t, e.genreList, e.countryList);
       byTitle.set(t.id, e);
       entries.push(e);
     }
@@ -117,7 +124,7 @@ function collectionEntries(entries) {
       key: `c:${l.driveSerial}|${l.collection}`, kind: 'collection', titleId: null, locationId: null,
       title: l.collection.split('/').pop(), year: null, type: 'collection', plot: null, genres: null, rating: null, runtime: null,
       actors: null, posterFile: list.find((m) => m.posterFile)?.posterFile ?? null, status: 'matched', guessed: false, locations: [],
-      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, countryList: [], totalSeasons: null, attention: 'ok', userTags: shared, aliases: [], persianName: null,
+      imdbId: null, genreList: [], director: null, awards: null, rated: null, country: null, countryList: [], totalSeasons: null, attention: 'ok', userTags: shared, aliases: [], persianName: null, section: null,
       quality: mergeQuality(list.map((m) => m.quality)), qualityAuto: mergeQuality(list.map((m) => m.qualityAuto)), qualityMarks: {},
       addedOrder: Math.min(...locs.map((x) => x.id)),
       collection: { driveSerial: l.driveSerial, relPath: l.collection, online: l.online, missing: locs.every((x) => x.missing) },

@@ -53,7 +53,9 @@ function createSearch(db) {
       if (!all) build();
       const q = query.trim();
       let list = q ? fuzzy().search(normalizeFa(q)).map((r) => r.item.e) : [...all];
-      if (tab !== 'all') list = list.filter((e) => e.kind === tab);
+      // animation and anime are tabs of their own; the movie and series tabs keep what is left
+      if (tab === 'animation' || tab === 'anime') list = list.filter((e) => e.section === tab);
+      else if (tab !== 'all') list = list.filter((e) => e.kind === tab && !e.section);
 
       const wanted = genres.map((g) => g.toLowerCase());
       const hasGenres = (e) => wanted.every((g) => e.genreList.some((x) => x.toLowerCase() === g));

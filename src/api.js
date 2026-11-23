@@ -60,7 +60,7 @@ function catalogRow(e, lang) {
   return {
     k: e.key, t: e.title, f: e.persianName ?? null, y: e.year ?? null, g: e.genreList.map((g) => genreLabel(lang, g)), r: na(e.rating), b: badgesOf(e.quality),
     a: [...e.aliases, ...persianNames(e), ...[na(e.director), na(e.actors)].filter(Boolean)], p: !!e.posterFile,
-    kd: e.kind === 'other' ? 'anime' : e.kind, s: e.kind === 'series' ? seasons : 0, o: e.addedOrder, d: na(e.director),
+    kd: e.section ?? (e.kind === 'other' ? 'anime' : e.kind), s: e.kind === 'series' ? seasons : 0, o: e.addedOrder, d: na(e.director),
   };
 }
 

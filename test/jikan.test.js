@@ -25,7 +25,16 @@ test('maps the best Jikan hit to TitleInfo', async () => {
 
 test('prefers the result with the requested year', async () => {
   const jikan = createJikan({ fetch: async () => resp([A({ mal_id: 1, year: 2000 }), A({ mal_id: 2, year: 2013 })]), sleep: noSleep });
-  assert.equal((await jikan.searchAnime('x', '2013')).malId, 2);
+  assert.equal((await jikan.searchAnime('attack on titan', '2013')).malId, 2);
+});
+
+test('a hit whose names are nothing like the folder title is not taken (a film OMDb lacks must not become a random anime)', async () => {
+  const jikan = createJikan({ fetch: async () => resp([A()]), sleep: noSleep });
+  assert.equal(await jikan.searchAnime('Heat'), null);
+  // any of its names counts: English, romaji, Japanese, synonyms
+  assert.equal((await jikan.searchAnime('Shingeki no Kyojin')).malId, 16498);
+  const syn = createJikan({ fetch: async () => resp([A({ title: 'Boku no Hero Academia', title_english: null, titles: [{ type: 'Synonym', title: 'My Hero Academia' }] })]), sleep: noSleep });
+  assert.equal((await syn.searchAnime('my hero academia')).malId, 16498);
 });
 
 test('no results gives null', async () => {
@@ -37,13 +46,23 @@ test('429 is retried once after a pause', async () => {
   const answers = [resp(null, 429), resp([A()])];
   let calls = 0;
   const jikan = createJikan({ fetch: async () => { calls++; return answers.shift(); }, sleep: noSleep });
-  assert.equal((await jikan.searchAnime('x')).malId, 16498);
+  assert.equal((await jikan.searchAnime('attack on titan')).malId, 16498);
   assert.equal(calls, 2);
 });
 
-test('two 429s in a row and thrown fetches map to network', async () => {
-  const limited = createJikan({ fetch: async () => resp(null, 429), sleep: noSleep });
+test('Jikan allows about 60 requests a minute: a busy 429 is retried three times with longer pauses before it counts as network', async () => {
+  const pauses = [];
+  let calls = 0;
+  const limited = createJikan({ fetch: async () => { calls++; return resp(null, 429); }, sleep: async (ms) => { pauses.push(ms); } });
   await assert.rejects(limited.searchAnime('x'), (e) => e.kind === 'network');
+  assert.equal(calls, 4);
+  assert.deepEqual(pauses, [1000, 2000, 3000]);
+  const later = [resp(null, 429), resp(null, 429), resp([A()])];
+  const ok = createJikan({ fetch: async () => later.shift(), sleep: noSleep });
+  assert.equal((await ok.searchAnime('attack on titan')).malId, 16498);
+});
+
+test('thrown fetches map to network', async () => {
   const down = createJikan({ fetch: async () => { throw new Error('down'); }, sleep: noSleep });
   await assert.rejects(down.searchAnime('x'), (e) => e.kind === 'network');
 });
