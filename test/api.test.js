@@ -1049,3 +1049,18 @@ test('setQualityMark: dub and sub can be added or removed by hand, together, and
   assert.deepEqual(await api.setQualityMark(e.key, 'loud', true), { ok: false, error: 'bad_flag' });
   assert.deepEqual(await api.setQualityMark('t:99999', 'dub', true), { ok: false, error: 'unknown' });
 });
+
+test('confirmGuess: the tick makes a guessed match verified and pins it', async () => {
+  const { api, db } = await withFilms();
+  await api.setSettings({ omdbKey: 'K' });
+  await api.startQueue(() => {});
+  const find = async () => (await api.getEntries()).entries.find((e) => e.locations.some((l) => l.folderName.includes('dune')));
+  const e = await find();
+  db.prepare("UPDATE locations SET guessed = 1 WHERE folder_name LIKE 'dune%'").run();
+  await api.scan(); // a scan drops the cached list
+  assert.equal((await find()).attention, 'guess');
+  assert.deepEqual(await api.confirmGuess(e.key), { ok: true });
+  assert.equal((await find()).attention, 'ok');
+  assert.equal(db.prepare("SELECT pinned FROM locations WHERE folder_name LIKE 'dune%'").get().pinned, 1);
+  assert.deepEqual(await api.confirmGuess('t:99999'), { ok: false, error: 'unknown' });
+});

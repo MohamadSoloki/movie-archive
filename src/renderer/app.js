@@ -224,6 +224,20 @@
     return dot('red', t(`badge_${e.reason || 'review'}`));
   }
 
+  // The tick beside a guessed film: the guess was right, so it becomes the verified info. A span, because a card is a button.
+  function confirmTick(e) {
+    const go = async (ev) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      const r = await api.confirmGuess(e.key);
+      if (r.ok) await refresh(true);
+    };
+    return h('span', {
+      class: 'confirm', role: 'button', tabindex: '0', title: t('confirm_guess'), 'aria-label': t('confirm_guess'),
+      onclick: go, onkeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') go(ev); },
+    }, icon('check'));
+  }
+
   const inCart = (key) => state.cart.has(key);
 
   function card(e) {
@@ -242,7 +256,7 @@
       state.picked.has(e.key) ? h('span', { class: 'pick-mark' }, icon('check')) : null,
       e.kind === 'collection' ? h('span', { class: 'stack' }, icon('layers'), t('collection_n', { n: e.members })) : null),
     h('span', { class: 'info' },
-      h('span', { class: 'title-row' }, dotOf(e), h('span', { class: 'name', dir: 'auto' }, e.title)),
+      h('span', { class: 'title-row' }, dotOf(e), h('span', { class: 'name', dir: 'auto' }, e.title), e.attention === 'guess' ? confirmTick(e) : null),
       e.year || genres.length || mine.length || marks.length ? h('span', { class: 'meta' }, e.year ? h('span', { class: 'year' }, String(e.year)) : null, ...marks, ...mine, ...genres) : null));
   }
 
@@ -962,6 +976,7 @@
         e.rating ? h('span', { class: 'score', dir: 'ltr', title: t('rating') }, icon('star'), String(e.rating), h('small', {}, 'IMDb')) : null),
       h('div', { class: 'detail-body' }, ...[
         flags.length ? h('ul', { class: 'flags' }, flags.map((f) => h('li', { class: f.cls }, f.text))) : null,
+        e.attention === 'guess' ? h('button', { type: 'button', class: 'btn confirm-btn', onclick: async () => { if ((await api.confirmGuess(e.key)).ok) await refresh(true); } }, icon('check'), t('confirm_guess')) : null,
         h('div', { class: 'hero-actions' },
           e.imdbId ? h('button', { type: 'button', class: 'btn', onclick: () => api.openImdb(e.titleId) }, icon('link'), t('open_imdb')) : null,
           cartButton(e)),

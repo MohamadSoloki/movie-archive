@@ -689,6 +689,19 @@ function createApi({
       orders.removeRequest(db, id);
       return { ok: true };
     },
+    // the owner ticks a guessed match: it becomes verified and is pinned, so no later rescan or queue run touches it
+    async confirmGuess(key) {
+      const e = search.find(key);
+      if (!e || e.kind === 'collection') return { ok: false, error: 'unknown' };
+      const ids = tagTargets(e);
+      db.exec('BEGIN');
+      try {
+        for (const id of ids) db.prepare('UPDATE locations SET guessed = 0, pinned = 1 WHERE id = ?').run(id);
+        db.exec('COMMIT');
+      } catch (err) { db.exec('ROLLBACK'); throw err; }
+      search.invalidate();
+      return { ok: true };
+    },
     // dub / sub set by hand on every folder of the entry (a collection: of every film in it). value true/false, or null = automatic again
     async setQualityMark(key, flag, value) {
       if (flag !== 'dub' && flag !== 'sub') return { ok: false, error: 'bad_flag' };
