@@ -1010,6 +1010,7 @@
         }, genreName(g)))) : null,
         facts.length ? h('dl', { class: 'facts' }, facts.flatMap(([k, v]) => [h('dt', {}, k), h('dd', { dir: 'auto' }, v)])) : null,
         h('section', {}, h('h3', {}, t('plot')), ...plotBlock(e)),
+        e.titleId != null && e.kind !== 'collection' ? relatedSection(e) : null,
         e.titleId != null && e.kind !== 'collection' ? similarSection(e) : null,
         e.titleId != null && e.kind !== 'collection' ? recommendSection(e) : null,
         e.titleId != null && e.kind !== 'movie' ? airingSection(e) : null,
@@ -1320,6 +1321,18 @@
   // "Airing" on a series card: the weekly day and time, which become a reminder named after the series.
   // Films of the archive that resemble the open one, each with the reason (director, actor, genre, tag, country).
   const SIM_ORDER = ['director', 'actor', 'genre', 'tag', 'country'];
+  // The same series or franchise, oldest first. Shown only when the archive has more than this film.
+  function relatedSection(e) {
+    const box = h('section', { class: 'similar' });
+    api.getRelated(e.key).then((r) => {
+      if (state.selected !== e.key || !r.ok || !r.items.length) return;
+      box.append(h('h3', {}, t('rel_title')), h('div', { class: 'sim-list' }, r.items.map((x) => h('button', { type: 'button', class: 'card sim', 'data-key': x.key, onclick: () => select(x.key) },
+        frame(x, x.rating ? rateChip(x.rating) : null),
+        h('span', { class: 'info' }, h('span', { class: 'name', dir: 'auto' }, shownTitle(x)), x.year ? h('span', { class: 'year' }, String(x.year)) : null)))));
+    });
+    return box;
+  }
+
   function similarSection(e) {
     const box = h('section', { class: 'similar' });
     api.getSimilar(e.key).then((r) => {

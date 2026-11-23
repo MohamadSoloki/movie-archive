@@ -916,6 +916,24 @@ test('getSimilar lists the other films that share genre or people, as card-sized
   assert.deepEqual(await api.getSimilar('t:99999'), { ok: false, error: 'unknown' });
 });
 
+test('getRelated lists the films of the same series, oldest first; similar films leave them out', async () => {
+  const { api, db } = await withFilms();
+  await api.setSettings({ omdbKey: 'K' });
+  await api.startQueue(() => {});
+  const rows = db.prepare('SELECT id FROM titles ORDER BY id').all();
+  db.prepare("UPDATE titles SET title = 'Dune', year = '1984' WHERE id = ?").run(rows[0].id);
+  db.prepare("UPDATE titles SET title = 'Dune: Part Two', year = '2024' WHERE id = ?").run(rows[1].id);
+  const all = (await api.getEntries()).entries;
+  const first = all.find((x) => x.title === 'Dune');
+  const second = all.find((x) => x.title === 'Dune: Part Two');
+  const r = await api.getRelated(first.key);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.items.map((x) => x.key), [second.key]);
+  assert.equal('plot' in r.items[0], false);
+  assert.deepEqual((await api.getSimilar(first.key)).items.map((x) => x.key), []);
+  assert.deepEqual(await api.getRelated('t:99999'), { ok: false, error: 'unknown' });
+});
+
 // two matched titles; the first is anime 100 on MyAnimeList, the second anime 200
 async function withAnime(opts = {}) {
   const ctx = await withFilms(opts);
@@ -1112,6 +1130,23 @@ test('phone catalog: off by default, serves films without paths, takes customer 
     assert.deepEqual(await api.stopCatalog(), { ok: true });
   }
   assert.equal((await api.getSettings()).phoneCatalog, false);
+});
+
+test('phone catalog: a film of a series lists the keys of its related films (rl), unrelated films have none', async () => {
+  const { api, db } = await withFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  await api.setSettings({ omdbKey: 'K', catalogPort: 0 });
+  await api.startQueue(() => {});
+  const ids = db.prepare('SELECT id FROM titles ORDER BY id').all();
+  db.prepare("UPDATE titles SET title = 'Dune', year = '1984' WHERE id = ?").run(ids[0].id);
+  db.prepare("UPDATE titles SET title = 'Dune: Part Two', year = '2024' WHERE id = ?").run(ids[1].id);
+  const r = await api.startCatalog();
+  try {
+    const films = await (await fetch(`http://127.0.0.1:${new URL(r.url).port}/api/films`)).json();
+    const one = films.find((f) => f.t === 'Dune');
+    const two = films.find((f) => f.t === 'Dune: Part Two');
+    assert.deepEqual(one.rl, [two.k]);
+    assert.deepEqual(two.rl, [one.k]);
+  } finally { await api.stopCatalog(); }
 });
 
 test('phone catalog: prices, the seasons of a series and a list that names seasons and episodes', async () => {

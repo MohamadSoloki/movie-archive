@@ -123,3 +123,13 @@ test('a list can name seasons and episodes of a series; the choice is cleaned an
     assert.deepEqual(wishes[0].items.map((i) => [i.key, i.sel]), [['t:1', undefined], ['t:2', { seasons: [1], episodes: { 2: [1, 2] } }]]);
   } finally { await srv.stop(); }
 });
+
+test('phone page: its script parses, and it offers the related films of a series (rl) with a way back', () => {
+  const { pageHtml } = require('../src/core/catalog-page.js');
+  const html = pageHtml('fa');
+  const script = html.match(/<script>([\s\S]*)<\/script>/)[1];
+  assert.doesNotThrow(() => new Function(script));
+  assert.match(html, /id="relbar"/);
+  assert.match(html, /فیلم‌های مرتبط/);
+  assert.match(html, /f\.rl/);
+});

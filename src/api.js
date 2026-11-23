@@ -24,6 +24,7 @@ const copies = require('./core/copies.js');
 const { verifyFiles } = require('./core/verify.js');
 const { createRate } = require('./core/rate.js');
 const { similarTo } = require('./core/similar.js');
+const { relatedTo, relatedMap } = require('./core/related');
 const { seriesGaps } = require('./core/gaps.js');
 const { singleDrive, catalogByGenre } = require('./core/reports.js');
 const { exportData, importData } = require('./core/backup.js');
@@ -501,7 +502,15 @@ function createApi({
 
   // ---- phone catalog: a read-only page on the shop network, customers send back the films they want ----
   const catalogServer = createCatalogServer({
-    films: (lang) => search.query({}).entries.filter((e) => e.kind !== 'collection').map((e) => catalogRow(e, lang)),
+    films: (lang) => {
+      const list = search.query({}).entries.filter((e) => e.kind !== 'collection');
+      const rel = relatedMap(list);
+      return list.map((e) => {
+        const row = catalogRow(e, lang);
+        const rl = (rel.get(e.key) || []).slice(0, 12).map((x) => x.key); // keys only: the page filters its own list
+        return rl.length ? { ...row, rl } : row;
+      });
+    },
     posterFile: (k) => {
       const f = search.find(k)?.posterFile;
       if (!f) return null;
@@ -660,11 +669,18 @@ function createApi({
       return search.find(key);
     },
     // films of the archive that resemble this one, with why (genre, director, actors, country, tags)
+    // the same series or franchise (by name, or the same owner folder), oldest first; shown before the similar list
+    async getRelated(key) {
+      const base = search.find(key);
+      if (!base) return { ok: false, error: 'unknown' };
+      return { ok: true, items: relatedTo(base, search.query({}).entries).map(lightOf) };
+    },
     async getSimilar(key, limit = 12) {
       const base = search.find(key);
       if (!base) return { ok: false, error: 'unknown' };
       const { entries } = search.query({});
-      return { ok: true, items: similarTo(base, entries, { limit }).map((r) => ({ ...lightOf(r.entry), score: r.score, reasons: r.reasons })) };
+      const related = new Set(relatedTo(base, entries).map((x) => x.key)); // already in its own list
+      return { ok: true, items: similarTo(base, entries.filter((x) => !related.has(x.key)), { limit }).map((r) => ({ ...lightOf(r.entry), score: r.score, reasons: r.reasons })) };
     },
     // Anime that MyAnimeList users recommend after this one (Jikan). Those already in the archive come back as card entries,
     // the others with a poster saved next to the archive posters. Answers are stored, so a title is asked for once.

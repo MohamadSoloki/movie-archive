@@ -11,7 +11,7 @@ const TEXT = {
     askTitle: 'پیدا نکردی؟', askText: 'اسم فیلم رو بنویس تا برات تهیه کنیم.', askGo: 'درخواست', askThanks: 'ثبت شد. اگه تهیه کردیم بهت خبر می‌دیم.',
     askHave: 'این فیلم توی آرشیو هست:', empty: 'کاتالوگ هنوز خالیه.',
     tariff: 'تعرفه', perMovie: 'هر فیلم', perSeason: 'هر فصل سریال', perEpisode: 'هر قسمت', currency: 'تومان', total: 'مبلغ کل',
-    pickSeasons: 'فصل و قسمت', seasonN: 'فصل', epWord: 'قسمت', episodesHint: 'یا فقط این قسمت‌ها: ۱-۵ یا ۲ ۵ ۷', apply: 'تأیید انتخاب', noSeasons: 'فصل‌ها الان در دسترس نیست.',
+    pickSeasons: 'فصل و قسمت', related: 'فیلم‌های مرتبط', relatedOf: 'فیلم‌های مرتبط با', relatedBack: 'برگشت به همهٔ فیلم‌ها', seasonN: 'فصل', epWord: 'قسمت', episodesHint: 'یا فقط این قسمت‌ها: ۱-۵ یا ۲ ۵ ۷', apply: 'تأیید انتخاب', noSeasons: 'فصل‌ها الان در دسترس نیست.',
     clearAll: 'پاک کردن همهٔ انتخاب‌ها', doneNote: 'می‌تونی لیستت رو تغییر بدی و دوباره بفرستی؛ همین لیست به‌روز می‌شه.', whole: 'همهٔ فصل‌ها', onlyEps: 'قسمت',
     badge: { '4K': '4K', '1080p': '1080p', dub: 'دوبله', sub: 'زیرنویس', hardsub: 'زیرنویس چسبیده' },
   },
@@ -66,6 +66,8 @@ form { display: grid; gap: 0.6rem; }
 ul { margin: 0; padding: 0; list-style: none; max-height: 30vh; overflow: auto; }
 li.row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.2rem 0; }
 li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--muted); font-size: 1.2rem; }
+.relbar { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.6rem 1rem; background: var(--card); border-bottom: 1px solid var(--line); }
+.relbar button { min-height: 44px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 10px; font: inherit; padding: 0 0.9rem; }
 .tariff { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.85rem; }
 .film button.alt { margin-top: 0.3rem; border-style: dashed; }
 .srow { display: grid; gap: 0.3rem; padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
@@ -93,6 +95,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   <div class="tools"><select id="sort" aria-label="${x.sort}"></select></div>
   <div class="chips" id="genres" role="group"></div>
 </section>
+<div id="relbar" class="relbar" hidden></div>
 <main id="grid"></main>
 <div class="bar" id="bar"><button id="open" class="big" type="button"></button></div>
 <dialog id="dlg">
@@ -180,8 +183,16 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     sortRating: function (a, b) { return (parseFloat(b.r) || 0) - (parseFloat(a.r) || 0); },
     sortYear: function (a, b) { return (parseInt(b.y, 10) || 0) - (parseInt(a.y, 10) || 0); }
   };
+  var relOf = null;
+  function showRelated(f) {
+    relOf = f; window.scrollTo(0, 0); render();
+  }
   function visible() {
     var words = norm($('q').value).split(' ').filter(Boolean);
+    if (relOf) { // the film and the films of its series, oldest first; search and filters are set aside until the owner goes back
+      var keys = [relOf.k].concat(relOf.rl || []);
+      return films.filter(function (f) { return keys.indexOf(f.k) >= 0; }).sort(function (a, b) { return keys.indexOf(a.k) - keys.indexOf(b.k); });
+    }
     var list = films.filter(function (f) {
       return (!kind || f.kd === kind) && (!genre || f.g.indexOf(genre) >= 0) && words.every(function (w) { return f._n.indexOf(w) >= 0; });
     });
@@ -206,6 +217,14 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   }
   function render() {
     var list = visible();
+    var rb = $('relbar');
+    rb.hidden = !relOf;
+    rb.replaceChildren();
+    if (relOf) {
+      var back = el('button', { type: 'button' }, [T.relatedBack]);
+      back.onclick = function () { relOf = null; render(); };
+      rb.append(el('span', { dir: 'auto' }, [T.relatedOf + ' ' + (relOf.f || relOf.t)]), back);
+    }
     var grid = $('grid');
     grid.replaceChildren();
     list.slice(0, shown).forEach(function (f) {
@@ -223,6 +242,11 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
         var alt = el('button', { type: 'button', 'class': 'alt' }, [T.pickSeasons]);
         alt.onclick = function () { openSeasons(f); };
         card.querySelector('.body').append(alt);
+      }
+      if (f.rl && f.rl.length && !relOf) {
+        var rel = el('button', { type: 'button', 'class': 'alt' }, [T.related + ' (' + fa(f.rl.length) + ')']);
+        rel.onclick = function () { showRelated(f); };
+        card.querySelector('.body').append(rel);
       }
       grid.append(card);
     });
