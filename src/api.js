@@ -17,6 +17,7 @@ const { forgetSeasons, getCache, putCache, cached } = require('./core/cache.js')
 const { createSearch } = require('./core/search.js');
 const { lightOf, badgesOf } = require('./core/library.js');
 const { createCatalogServer } = require('./core/catalog-server.js');
+const { createTunnel } = require('./core/tunnel.js');
 const tags = require('./core/tags.js');
 const transfer = require('./core/transfer.js');
 const { createCalendar, isEnded } = require('./core/calendar.js');
@@ -71,7 +72,7 @@ function catalogRow(e, lang) {
 // "The Batman!" and "the batman" are the same name
 const nameKey = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
-const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate', 'priceMovie', 'priceSeason', 'priceEpisode', 'shopName', 'phoneCatalog', 'catalogPort'];
+const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate', 'priceMovie', 'priceSeason', 'priceEpisode', 'shopName', 'phoneCatalog', 'phoneInternet', 'catalogPort'];
 const PRICE_KEYS = ['priceMovie', 'priceSeason', 'priceEpisode'];
 
 function createApi({
@@ -79,7 +80,7 @@ function createApi({
   openPath = async () => '', openExternal = async () => {},
   updater = { check: async () => ({ state: 'dev' }), download: async () => ({ state: 'dev' }), install() {} },
   concurrency = 5, translatePause = 700, now = () => Date.now(), clock = () => Date.now(), version = '',
-  qr = defaultQr, lanAddress = defaultLanAddress,
+  qr = defaultQr, lanAddress = defaultLanAddress, tunnel = createTunnel({ dir: path.join(userDataDir, 'bin') }),
   freeSpace = (dir) => { try { const s = fs.statfsSync(dir); return s.bavail * s.bsize; } catch { return Infinity; } },
 }) {
   const search = createSearch(db);
@@ -553,6 +554,7 @@ function createApi({
 
   // ---- phone catalog: a read-only page on the shop network, customers send back the films they want ----
   const catalogServer = createCatalogServer({
+    viaTunnel: () => tunnel.status().state === 'on',
     films: (lang) => {
       const list = search.query({}).entries.filter((e) => e.kind !== 'collection');
       const rel = relatedMap(list);
@@ -587,6 +589,7 @@ function createApi({
     clock,
   });
   let catalogUrl = null;
+  let catalogPortNow = 0;
 
   // already here: the same name as a title or other name, or inside a folder name
   function inArchiveNamed(name) {
@@ -595,9 +598,14 @@ function createApi({
       || (key.length >= 4 && e.locations.some((l) => orders.nameKey(l.folderName).includes(key)))).map((e) => ({ key: e.key, title: e.title }));
   }
 
+  // the internet part of the catalog info: the tunnel's state and, when it is on, its address with a QR
+  async function internetInfo() {
+    const s = tunnel.status();
+    return { state: s.state, url: s.url, qr: s.url ? await qr(s.url) : null, error: s.error };
+  }
   async function catalogInfo() {
     if (!catalogServer.running || !catalogUrl) return { running: false };
-    return { running: true, url: catalogUrl, qr: await qr(catalogUrl) };
+    return { running: true, url: catalogUrl, qr: await qr(catalogUrl), internet: await internetInfo() };
   }
 
   return {
@@ -610,7 +618,7 @@ function createApi({
         let v = partial[k];
         if (PRICE_KEYS.includes(k)) { v = Number(v); v = Number.isFinite(v) && v > 0 ? v : 0; }
         if (k === 'shopName') v = String(v ?? '').trim().slice(0, 80);
-        if (k === 'phoneCatalog') v = !!v;
+        if (k === 'phoneCatalog' || k === 'phoneInternet') v = !!v;
         if (k === 'catalogPort') { v = Number(v); v = Number.isInteger(v) && v >= 0 && v <= 65535 ? v : 8787; }
         setSetting(db, k, v);
       }
@@ -1244,13 +1252,28 @@ function createApi({
       try {
         const { port } = await catalogServer.start(getSetting(db, 'catalogPort'));
         catalogUrl = `http://${lanAddress()}:${port}`;
+        catalogPortNow = port;
       } catch (e) {
         return { ok: false, error: e.code === 'EADDRINUSE' ? 'port_busy' : 'start_failed' };
       }
       setSetting(db, 'phoneCatalog', true);
       return { ok: true, ...(await catalogInfo()) };
     },
+    // reachable from a customer's own mobile data: a public https address (Cloudflare quick tunnel) that forwards to the catalog
+    async startInternet() {
+      if (!catalogServer.running) return { ok: false, error: 'catalog_off' };
+      const r = await tunnel.start(catalogPortNow);
+      setSetting(db, 'phoneInternet', !!r.ok);
+      return r.ok ? { ok: true, internet: await internetInfo() } : { ok: false, error: r.error, internet: await internetInfo() };
+    },
+    async stopInternet() {
+      await tunnel.stop();
+      setSetting(db, 'phoneInternet', false);
+      return { ok: true, internet: await internetInfo() };
+    },
     async stopCatalog() {
+      await tunnel.stop();
+      setSetting(db, 'phoneInternet', false);
       await catalogServer.stop();
       catalogUrl = null;
       setSetting(db, 'phoneCatalog', false);
@@ -1258,7 +1281,10 @@ function createApi({
     },
     // at launch: bring the catalog back when it was left on
     async initCatalog() {
-      if (getSetting(db, 'phoneCatalog')) await this.startCatalog();
+      if (getSetting(db, 'phoneCatalog')) {
+        await this.startCatalog();
+        if (getSetting(db, 'phoneInternet')) this.startInternet().catch(() => {}); // takes a few seconds: the window does not wait for it
+      }
       return catalogInfo();
     },
     async getWishes() {

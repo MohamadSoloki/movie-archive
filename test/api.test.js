@@ -12,7 +12,7 @@ const OMDB_BODY = {
   imdbRating: '7.8', Runtime: '176 min', Actors: 'Robert Pattinson', Poster: 'https://img.example/p.jpg',
 };
 
-function setup({ jikan, updater, key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause, now, clock, version, listRemovable, eject, qr, lanAddress } = {}) {
+function setup({ jikan, updater, key = 'K', openPath, openExternal, mymemory, freeSpace, translatePause, now, clock, version, listRemovable, eject, qr, lanAddress, tunnel } = {}) {
   const media = fs.mkdtempSync(path.join(os.tmpdir(), 'media-'));
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'ud-'));
   const fetchCalls = [];
@@ -35,7 +35,7 @@ function setup({ jikan, updater, key = 'K', openPath, openExternal, mymemory, fr
   const db = openDb();
   const state = { online: true };
   const api = createApi({
-    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace, translatePause, now, clock, version, updater, listRemovable, eject, qr, lanAddress,
+    db, userDataDir: userData, fetch, openPath, openExternal, freeSpace, translatePause, now, clock, version, updater, listRemovable, eject, qr, lanAddress, tunnel,
     listDrives: async () => (state.online ? [{ serial: 'S1', label: 'Test', root: media + path.sep }] : []),
   });
   return { api, db, media, userData, fetchCalls, key, state };
@@ -1163,6 +1163,67 @@ test('phone catalog: prices, the seasons of a series and a list that names seaso
     const [w] = await api.getWishes();
     assert.deepEqual(w.items[0].sel, { seasons: [1], episodes: { 2: [3, 4] } });
   } finally { await api.stopCatalog(); }
+});
+
+function fakeTunnel(result = { ok: true, url: 'https://quiet-river.trycloudflare.com' }) {
+  let st = { state: 'off', url: null, error: null };
+  const calls = { start: [], stop: 0 };
+  return {
+    calls,
+    status: () => ({ ...st }),
+    onChange() {},
+    async start(port) {
+      calls.start.push(port);
+      st = result.ok ? { state: 'on', url: result.url, error: null } : { state: 'error', url: null, error: result.error };
+      return result;
+    },
+    async stop() { calls.stop += 1; st = { state: 'off', url: null, error: null }; },
+  };
+}
+
+test('phone catalog from the internet: the tunnel points at the catalog port, its address and QR are shown, it stops with the catalog', async () => {
+  const tunnel = fakeTunnel();
+  const { api } = await withFilms({ qr: async (text) => `qr:${text}`, lanAddress: () => '192.168.1.20', tunnel });
+  await api.setSettings({ catalogPort: 0 });
+  assert.deepEqual(await api.startInternet(), { ok: false, error: 'catalog_off' });
+  const on = await api.startCatalog();
+  try {
+    assert.deepEqual(on.internet, { state: 'off', url: null, qr: null, error: null });
+    const r = await api.startInternet();
+    assert.equal(r.ok, true);
+    assert.deepEqual(tunnel.calls.start, [Number(new URL(on.url).port)]);
+    assert.deepEqual(r.internet, { state: 'on', url: 'https://quiet-river.trycloudflare.com', qr: 'qr:https://quiet-river.trycloudflare.com', error: null });
+    assert.equal((await api.getSettings()).phoneInternet, true);
+    assert.equal((await api.getCatalogInfo()).internet.state, 'on');
+    assert.equal((await api.stopInternet()).internet.state, 'off');
+    assert.equal((await api.getSettings()).phoneInternet, false);
+    await api.startInternet();
+  } finally { await api.stopCatalog(); }
+  assert.equal(tunnel.calls.stop, 2); // once by hand, once with the catalog
+  assert.equal((await api.getSettings()).phoneInternet, false);
+});
+
+test('phone catalog from the internet: a tunnel that cannot start is reported and leaves the setting off; launch brings it back only when left on', async () => {
+  const bad = fakeTunnel({ ok: false, error: 'download' });
+  const one = await withFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5', tunnel: bad });
+  await one.api.setSettings({ catalogPort: 0 });
+  await one.api.startCatalog();
+  try {
+    assert.deepEqual(await one.api.startInternet(), { ok: false, error: 'download', internet: { state: 'error', url: null, qr: null, error: 'download' } });
+    assert.equal((await one.api.getSettings()).phoneInternet, false);
+  } finally { await one.api.stopCatalog(); }
+  const good = fakeTunnel();
+  const two = await withFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5', tunnel: good });
+  await two.api.setSettings({ catalogPort: 0, phoneCatalog: true, phoneInternet: true });
+  try {
+    await two.api.initCatalog();
+    await new Promise((r) => setImmediate(r));
+    assert.equal(good.calls.start.length, 1);
+  } finally { await two.api.stopCatalog(); }
+  const off = fakeTunnel();
+  const three = await withFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5', tunnel: off });
+  await three.api.setSettings({ catalogPort: 0, phoneCatalog: true });
+  try { await three.api.initCatalog(); assert.equal(off.calls.start.length, 0); } finally { await three.api.stopCatalog(); }
 });
 
 test('phone catalog starts at launch only when it was left on', async () => {

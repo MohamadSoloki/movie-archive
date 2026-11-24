@@ -1892,7 +1892,26 @@
     if (info.running) { $('phone-qr').src = info.qr; $('phone-url').textContent = info.url; }
     $('phone-note').hidden = !note;
     $('phone-note').textContent = note;
+    // reachable from the customer's own internet: only offered while the catalog is on
+    $('internet-box').hidden = !info.running;
+    if (!info.running) return;
+    const net = info.internet;
+    $('internet-toggle').textContent = t(net.state === 'on' ? 'internet_stop' : 'internet_start');
+    $('internet-toggle').disabled = net.state === 'starting';
+    $('internet-qr-box').hidden = net.state !== 'on';
+    if (net.state === 'on') { $('internet-qr').src = net.qr; $('internet-url').textContent = net.url; }
+    $('internet-note').hidden = !(net.state === 'error' || net.state === 'starting');
+    $('internet-note').textContent = net.state === 'error' ? t(`internet_err_${net.error}`) : t('internet_starting');
   }
+  $('internet-toggle').addEventListener('click', async () => {
+    const info = await api.getCatalogInfo();
+    if (info.internet?.state === 'on') { await api.stopInternet(); await paintPhone(); return; }
+    $('internet-toggle').disabled = true;
+    $('internet-note').hidden = false;
+    $('internet-note').textContent = t('internet_starting');
+    await api.startInternet(); // the result, good or bad, is read back from the catalog info
+    await paintPhone();
+  });
   $('phone-toggle').addEventListener('click', async () => {
     const info = await api.getCatalogInfo();
     if (info.running) { await api.stopCatalog(); await paintPhone(); return; }

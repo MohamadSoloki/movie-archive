@@ -21,7 +21,7 @@ function make(over = {}) {
   });
   return { srv, wishes, tick: (ms) => { t += ms; } };
 }
-const post = (url, body) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+const post = (url, body, headers = {}) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
 
 test('serves the page, the film list and posters, read-only', async () => {
   const { srv } = make();
@@ -78,6 +78,26 @@ test('one address can send only a few lists in ten minutes', async () => {
     tick(11 * 60 * 1000);
     assert.equal((await send()).status, 200);
   } finally { await srv.stop(); }
+});
+
+test('behind the internet tunnel each customer address gets its own allowance; without the tunnel the header is ignored', async () => {
+  const send = (url, ip) => post(url, { name: 'Ali', keys: ['t:1'] }, ip ? { 'cf-connecting-ip': ip } : {});
+  const { srv } = make({ viaTunnel: () => true });
+  const { port } = await srv.start(0, '127.0.0.1');
+  try {
+    const url = `http://127.0.0.1:${port}/api/wish`;
+    for (let i = 0; i < 5; i += 1) assert.equal((await send(url, '5.6.7.8')).status, 200);
+    assert.equal((await send(url, '5.6.7.8')).status, 429);
+    assert.equal((await send(url, '9.9.9.9')).status, 200); // another customer on the same tunnel
+    assert.equal((await send(url, `${'x'.repeat(200)}`)).status, 200); // a junk header is not a way around the limit: it is capped and counted
+  } finally { await srv.stop(); }
+  const off = make(); // no tunnel running: whoever sets the header is still one address
+  const { port: p2 } = await off.srv.start(0, '127.0.0.1');
+  try {
+    const url = `http://127.0.0.1:${p2}/api/wish`;
+    for (let i = 0; i < 5; i += 1) assert.equal((await send(url, `1.1.1.${i}`)).status, 200);
+    assert.equal((await send(url, '2.2.2.2')).status, 429);
+  } finally { await off.srv.stop(); }
 });
 
 test('a customer can ask for a film the archive lacks; the answer says when it is already there', async () => {

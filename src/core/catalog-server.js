@@ -11,9 +11,18 @@ const clean = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, m
  * The phone catalog: a small read-only web server for the shop's local network. Customers browse the film list on their
  * phone and send back the list they want. No file path, drive or folder name ever leaves it; sent lists only reach `submit`.
  */
-function createCatalogServer({ films, posterFile, known, submit, ask, info = () => ({ prices: {}, shop: '' }), seasons = () => null, font = () => null, clock = Date.now }) {
+function createCatalogServer({ films, posterFile, known, submit, ask, info = () => ({ prices: {}, shop: '' }), seasons = () => null, font = () => null, viaTunnel = () => false, clock = Date.now }) {
   let server = null;
   const sent = new Map(); // address -> times of its recent lists
+
+  // The customer's address. Through the internet tunnel every request comes from this computer, and cloudflared puts the real address
+  // in CF-Connecting-IP; that header is believed only for a loopback peer while the tunnel runs, so nobody on the Wi-Fi can use it to dodge the limits.
+  const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+  const addressOf = (req) => {
+    const peer = req.socket.remoteAddress;
+    const real = viaTunnel() && LOOPBACK.has(peer) ? String(req.headers['cf-connecting-ip'] ?? '').trim().slice(0, 64) : '';
+    return real || peer;
+  };
 
   // `what` is 'wish' or 'ask': each has its own allowance per address
   const limited = (ip, what) => {
@@ -69,7 +78,7 @@ function createCatalogServer({ films, posterFile, known, submit, ask, info = () 
         return { key: e.key, title: e.title, year: e.year ?? null, ...(sel ? { sel } : {}) };
       }));
       if (!items.length) { json(res, 400, { ok: false, error: 'bad_list' }); return; }
-      if (limited(req.socket.remoteAddress, 'wish')) { json(res, 429, { ok: false, error: 'slow_down' }); return; }
+      if (limited(addressOf(req), 'wish')) { json(res, 429, { ok: false, error: 'slow_down' }); return; }
       const id = submit({ name, phone: clean(b.phone, 30), note: clean(b.note, 200), items });
       if (!id) json(res, 503, { ok: false, error: 'full' });
       else json(res, 200, { ok: true, id });
@@ -83,7 +92,7 @@ function createCatalogServer({ films, posterFile, known, submit, ask, info = () 
       try { b = JSON.parse(text); } catch { json(res, 400, { ok: false, error: 'bad_json' }); return; }
       const name = clean(b?.name, 101);
       if (!name || name.length > 100) { json(res, 400, { ok: false, error: 'bad_name' }); return; }
-      if (limited(req.socket.remoteAddress, 'ask')) { json(res, 429, { ok: false, error: 'slow_down' }); return; }
+      if (limited(addressOf(req), 'ask')) { json(res, 429, { ok: false, error: 'slow_down' }); return; }
       const r = ask(name);
       if (!r?.ok) json(res, 400, { ok: false, error: 'bad_name' });
       else json(res, 200, { ok: true, inArchive: r.inArchive });
