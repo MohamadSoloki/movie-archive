@@ -1355,3 +1355,54 @@ test('addManualPath gives a manual film one more file when the old one moved', a
   assert.equal((await api.getEntry(key)).locations.length, 2);
   assert.deepEqual(await api.addManualPath(key, path.join(media, 'nope.mkv')), { ok: false, error: 'not_found' });
 });
+
+test('my collections: named lists with a note, films in the order the owner chose, kept across rescans', async () => {
+  const { api } = await withFilms();
+  await api.setSettings({ omdbKey: 'K' });
+  await api.startQueue(() => {});
+  const [a, b] = (await api.getEntries()).entries.map((e) => e.key);
+  assert.deepEqual(await api.createPlaylist({ name: '  ', note: '' }), { ok: false, error: 'empty' });
+  assert.deepEqual(await api.createPlaylist({ name: 'x'.repeat(81) }), { ok: false, error: 'too_long' });
+  const made = await api.createPlaylist({ name: 'Star Wars saga', note: 'watch in this order' });
+  assert.equal(made.ok, true);
+  assert.deepEqual(await api.createPlaylist({ name: 'star  wars SAGA' }), { ok: false, error: 'exists' });
+  assert.deepEqual(await api.addToPlaylist(made.id, [b, a, b, 'nope']), { ok: true, added: 2 });
+  assert.deepEqual((await api.getPlaylists()).map((p) => [p.name, p.note, p.count]), [['Star Wars saga', 'watch in this order', 2]]);
+  const one = await api.getPlaylist(made.id);
+  assert.deepEqual(one.items.map((x) => x.key), [b, a]);
+  assert.equal('plot' in one.items[0], false);
+  assert.equal(one.missing, 0);
+  assert.deepEqual(await api.setPlaylistItems(made.id, [a, b]), { ok: true });
+  assert.deepEqual((await api.getPlaylist(made.id)).items.map((x) => x.key), [a, b]);
+  await api.scan();
+  assert.deepEqual((await api.getPlaylist(made.id)).items.map((x) => x.key), [a, b]);
+  assert.deepEqual(await api.removeFromPlaylist(made.id, a), { ok: true });
+  assert.deepEqual((await api.getPlaylist(made.id)).items.map((x) => x.key), [b]);
+  assert.deepEqual(await api.updatePlaylist(made.id, { name: 'Saga', note: '' }), { ok: true });
+  assert.deepEqual((await api.getPlaylists()).map((p) => [p.name, p.note]), [['Saga', '']]);
+  await api.hideEntry(b);
+  const gone = await api.getPlaylist(made.id);
+  assert.deepEqual([gone.items.length, gone.missing], [0, 1]); // a film that is no longer in the archive is counted, not shown
+  assert.deepEqual(await api.deletePlaylist(made.id), { ok: true });
+  assert.deepEqual(await api.getPlaylists(), []);
+  assert.deepEqual(await api.getPlaylist(made.id), { ok: false, error: 'unknown' });
+  assert.deepEqual(await api.addToPlaylist(made.id, [a]), { ok: false, error: 'unknown' });
+});
+
+test('createPlaylistFromRelated makes a collection of the film and the other films of its series, oldest first', async () => {
+  const { api, db } = await withFilms();
+  await api.setSettings({ omdbKey: 'K' });
+  await api.startQueue(() => {});
+  const rows = db.prepare('SELECT id FROM titles ORDER BY id').all();
+  db.prepare("UPDATE titles SET title = 'Dune: Part Two', year = '2024' WHERE id = ?").run(rows[0].id);
+  db.prepare("UPDATE titles SET title = 'Dune', year = '1984' WHERE id = ?").run(rows[1].id);
+  const all = (await api.getEntries()).entries;
+  const two = all.find((x) => x.title === 'Dune: Part Two');
+  const one = all.find((x) => x.title === 'Dune');
+  const r = await api.createPlaylistFromRelated(two.key);
+  assert.equal(r.ok, true);
+  assert.deepEqual((await api.getPlaylist(r.id)).items.map((x) => x.key), [one.key, two.key]);
+  assert.equal((await api.getPlaylists())[0].name, 'Dune');
+  assert.deepEqual(await api.createPlaylistFromRelated(two.key), { ok: false, error: 'exists' });
+  assert.deepEqual(await api.createPlaylistFromRelated('t:99999'), { ok: false, error: 'unknown' });
+});

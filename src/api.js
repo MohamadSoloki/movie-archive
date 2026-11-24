@@ -24,7 +24,8 @@ const copies = require('./core/copies.js');
 const { verifyFiles } = require('./core/verify.js');
 const { createRate } = require('./core/rate.js');
 const { similarTo } = require('./core/similar.js');
-const { relatedTo, relatedMap } = require('./core/related');
+const playlists = require('./core/playlists.js');
+const { relatedTo, relatedMap, franchiseKey } = require('./core/related');
 const { seriesGaps } = require('./core/gaps.js');
 const { singleDrive, catalogByGenre } = require('./core/reports.js');
 const { exportData, importData } = require('./core/backup.js');
@@ -500,6 +501,25 @@ function createApi({
     return { ok: true, seasons: [...seasons.values()].sort((a, b) => a.season - b.season) };
   }
 
+  // ---- my collections: the owner's named lists --------------------------------
+  // a collection key stands for every film inside it; unknown keys and unmatched folders are left out
+  function playlistRefs(keys) {
+    const refs = [];
+    for (const k of Array.isArray(keys) ? keys : []) {
+      const e = search.find(k);
+      if (!e) continue;
+      for (const f of e.kind === 'collection' ? e.members.map((m) => search.find(m.key)).filter(Boolean) : [e]) if (f.titleId != null) refs.push(refOfEntry(f));
+    }
+    return refs;
+  }
+  function playlistView(id) {
+    const refs = playlists.refsOf(db, id);
+    const byRef = new Map();
+    for (const e of search.query({}).entries) if (e.kind !== 'collection' && e.titleId != null) byRef.set(refOfEntry(e), e);
+    const items = refs.map((r) => byRef.get(r)).filter(Boolean);
+    return { items: items.map(lightOf), missing: refs.length - items.length };
+  }
+
   // ---- films added by hand: the owner types the facts and picks the picture and the file ----
   const IMAGE = new Set(['png', 'jpg', 'jpeg', 'webp']);
   const manualText = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -941,6 +961,39 @@ function createApi({
         search.invalidate();
       }
       return { ok: true };
+    },
+    async getPlaylists() { return playlists.list(db); },
+    async getPlaylist(id) {
+      const p = db.prepare('SELECT id, name, note FROM playlists WHERE id = ?').get(id);
+      return p ? { ok: true, ...p, ...playlistView(id) } : { ok: false, error: 'unknown' };
+    },
+    async createPlaylist(f) { return playlists.create(db, f ?? {}, now()); },
+    async updatePlaylist(id, f) { return playlists.update(db, id, f ?? {}); },
+    async deletePlaylist(id) { return playlists.remove(db, id) ? { ok: true } : { ok: false, error: 'unknown' }; },
+    async addToPlaylist(id, keys) {
+      if (!playlists.exists(db, id)) return { ok: false, error: 'unknown' };
+      return { ok: true, added: playlists.addRefs(db, id, playlistRefs(keys)) };
+    },
+    async setPlaylistItems(id, keys) {
+      if (!playlists.exists(db, id)) return { ok: false, error: 'unknown' };
+      playlists.setRefs(db, id, playlistRefs(keys));
+      return { ok: true };
+    },
+    async removeFromPlaylist(id, key) {
+      if (!playlists.exists(db, id)) return { ok: false, error: 'unknown' };
+      const e = search.find(key);
+      if (e) for (const r of playlistRefs([key])) playlists.removeRef(db, id, r);
+      return { ok: true };
+    },
+    // a collection named after the film, holding it and the other films of its series, oldest first
+    async createPlaylistFromRelated(key) {
+      const e = search.find(key);
+      if (!e || e.kind === 'collection' || e.titleId == null) return { ok: false, error: 'unknown' };
+      const same = [e, ...relatedTo(e, search.query({}).entries)].sort((a, b) => (/\d{4}/.exec(a.year)?.[0] ?? 9999) - (/\d{4}/.exec(b.year)?.[0] ?? 9999));
+      const made = playlists.create(db, { name: franchiseKey(e.title).replace(/(^|\s)\S/g, (c) => c.toUpperCase()) || e.title, note: '' }, now());
+      if (!made.ok) return made;
+      playlists.setRefs(db, made.id, playlistRefs(same.map((x) => x.key)));
+      return made;
     },
     // "Remove" from the archive view: only the app forgets to show it, the folder on the disk is never touched and a rescan keeps it hidden
     async hideEntry(key) {

@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { setSetting } = require('./db.js');
 const orders = require('./orders.js');
+const playlists = require('./playlists.js');
 
 const FORMAT = 'movie-archive-backup';
 // what the owner made by hand, so a new computer or a wiped database can get it back; the archive itself is rescanned.
@@ -39,6 +40,7 @@ function exportData(db, { now = Date.now(), postersDir = null } = {}) {
     qualityMarks: db.prepare(`SELECT l.drive_serial AS driveSerial, l.rel_path AS relPath, x.flag AS flag, x.value AS value
       FROM quality_marks x JOIN locations l ON l.id = x.location_id ORDER BY l.drive_serial, l.rel_path, x.flag`).all().map((r) => ({ ...r })),
     manualFilms: manualFilmsOf(db, postersDir),
+    playlists: plain(db.prepare('SELECT id, name, note, created FROM playlists ORDER BY created, id').all()).map(({ id, ...p }) => ({ ...p, items: playlists.refsOf(db, id) })),
     reminders: plain(db.prepare('SELECT title, key, weekday, time, episode, due, enabled FROM reminders ORDER BY id').all()),
     copies,
     orders: orders.listOrders(db).map(({ id, ...o }) => o),
@@ -50,7 +52,7 @@ function exportData(db, { now = Date.now(), postersDir = null } = {}) {
 // changes nothing. Tags and aliases go to the folder with the same drive and path; those this machine does not have are counted.
 function importData(db, data, { postersDir = null } = {}) {
   if (!data || typeof data !== 'object' || data.format !== FORMAT) throw new Error('not_a_backup');
-  const out = { tags: 0, aliases: 0, qualityMarks: 0, manualFilms: 0, reminders: 0, copies: 0, orders: 0, requests: 0, skipped: 0 };
+  const out = { tags: 0, aliases: 0, qualityMarks: 0, manualFilms: 0, playlists: 0, reminders: 0, copies: 0, orders: 0, requests: 0, skipped: 0 };
   const arr = (v) => (Array.isArray(v) ? v : []);
   db.exec('BEGIN');
   try {
@@ -90,6 +92,14 @@ function importData(db, data, { postersDir = null } = {}) {
         } catch { /* no picture: the film still comes back */ }
       }
       out.manualFilms += 1;
+    }
+    // a collection is added when no collection of this name is here yet
+    for (const p of arr(data.playlists)) {
+      if (typeof p?.name !== 'string') continue;
+      const made = playlists.create(db, { name: p.name, note: p.note }, Number(p.created) || 0);
+      if (!made.ok) continue;
+      playlists.setRefs(db, made.id, arr(p.items).filter((r) => typeof r === 'string' && r.length <= 200), { tx: false });
+      out.playlists += 1;
     }
     const rem = db.prepare(`INSERT INTO reminders(title, key, weekday, time, episode, due, enabled) VALUES(?,?,?,?,?,?,?)
       ON CONFLICT(key) DO NOTHING`);

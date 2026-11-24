@@ -263,6 +263,99 @@
       e.year || genres.length || mine.length || marks.length ? h('span', { class: 'meta' }, e.year ? h('span', { class: 'year' }, String(e.year)) : null, ...marks, ...mine, ...genres) : null));
   }
 
+  // ---- my collections: named lists with a note, films in the order the owner chose ----
+  let plId = null; // the collection shown in #pl-dlg
+  const plMsg = (text = '') => { $('pl-msg').textContent = text; };
+  async function paintPlaylists(select = plId) {
+    const lists = await api.getPlaylists();
+    plId = lists.some((p) => p.id === select) ? select : (lists[0]?.id ?? null);
+    $('pl-select').replaceChildren(...lists.map((p) => h('option', { value: String(p.id), selected: p.id === plId }, `${p.name} (${p.count})`)));
+    $('pl-select').hidden = !lists.length;
+    $('pl-form').hidden = plId == null;
+    $('pl-copy').hidden = plId == null;
+    if (plId == null) { $('pl-items').replaceChildren(h('li', { class: 'help' }, t('pl_empty'))); return; }
+    const p = await api.getPlaylist(plId);
+    if (!p.ok) return;
+    if (document.activeElement !== $('pl-name')) { $('pl-name').value = p.name; $('pl-note').value = p.note ?? ''; }
+    const move = async (i, d) => {
+      const keys = p.items.map((x) => x.key);
+      [keys[i], keys[i + d]] = [keys[i + d], keys[i]];
+      await api.setPlaylistItems(plId, keys);
+      await paintPlaylists();
+    };
+    $('pl-items').replaceChildren(...p.items.map((e, i) => h('li', { class: 'loc' },
+      h('span', { class: 'name', dir: 'auto' }, shownTitle(e), e.year ? h('span', { class: 'year' }, ` ${e.year}`) : null),
+      h('button', { type: 'button', class: 'icon-btn', disabled: i === 0, 'aria-label': t('pl_up'), title: t('pl_up'), onclick: () => move(i, -1) }, '↑'),
+      h('button', { type: 'button', class: 'icon-btn', disabled: i === p.items.length - 1, 'aria-label': t('pl_down'), title: t('pl_down'), onclick: () => move(i, 1) }, '↓'),
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('pl_remove'), title: t('pl_remove'), onclick: async () => { await api.removeFromPlaylist(plId, e.key); await paintPlaylists(); } }, icon('x')))),
+      ...(p.missing ? [h('li', { class: 'help' }, t('pl_missing', { n: p.missing }))] : []));
+    $('pl-items').dataset.keys = p.items.map((x) => `${x.key}\t${x.title}`).join('\n');
+  }
+  async function openPlaylists(id = plId) {
+    plMsg();
+    await paintPlaylists(id);
+    if (!$('pl-dlg').open) $('pl-dlg').showModal();
+  }
+  const plError = (r) => plMsg(t(`pl_err_${r.error}`));
+  $('pl-btn').addEventListener('click', () => openPlaylists());
+  $('pl-x').addEventListener('click', () => $('pl-dlg').close());
+  $('pl-select').addEventListener('change', async () => { plId = Number($('pl-select').value); plMsg(); $('pl-name').blur(); await paintPlaylists(plId); });
+  $('pl-new').addEventListener('click', async () => {
+    const taken = new Set((await api.getPlaylists()).map((p) => p.name));
+    let n = 1;
+    while (taken.has(t('pl_default_name', { n }))) n += 1;
+    const r = await api.createPlaylist({ name: t('pl_default_name', { n }), note: '' });
+    if (!r.ok) return plError(r);
+    plMsg();
+    await paintPlaylists(r.id);
+    $('pl-name').focus();
+    $('pl-name').select();
+  });
+  $('pl-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const r = await api.updatePlaylist(plId, { name: $('pl-name').value, note: $('pl-note').value });
+    if (!r.ok) return plError(r);
+    plMsg(t('pl_saved'));
+    $('pl-name').blur();
+    await paintPlaylists();
+  });
+  $('pl-delete').addEventListener('click', async () => {
+    if (!window.confirm(t('pl_delete_confirm', { name: $('pl-name').value }))) return;
+    await api.deletePlaylist(plId);
+    plId = null;
+    plMsg();
+    await paintPlaylists();
+  });
+  $('pl-copy').addEventListener('click', () => {
+    let n = 0;
+    for (const line of ($('pl-items').dataset.keys || '').split('\n').filter(Boolean)) {
+      const [key, title] = line.split('\t');
+      if (!inCart(key)) { toggleCart(key, title); n += 1; }
+    }
+    setStatus(t('sel_copied', { n }));
+  });
+  // in the film drawer: put this film in a collection, or start one from its series
+  function playlistSection(e) {
+    const box = h('section', { class: 'mytags' });
+    const note = h('p', { class: 'msg', role: 'alert' });
+    const select = h('select', { 'aria-label': t('pl_title') });
+    const add = h('button', { type: 'button', class: 'btn', onclick: async () => {
+      const r = await api.addToPlaylist(Number(select.value), [e.key]);
+      note.textContent = r.ok ? t(r.added ? 'pl_added' : 'pl_already') : t(`pl_err_${r.error}`);
+    } }, icon('check'), t('pl_add'));
+    const series = h('button', { type: 'button', class: 'btn', onclick: async () => {
+      const r = await api.createPlaylistFromRelated(e.key);
+      if (!r.ok) { note.textContent = t(`pl_err_${r.error}`); return; }
+      await openPlaylists(r.id);
+    } }, icon('layers'), t('pl_from_series'));
+    api.getPlaylists().then((lists) => {
+      select.replaceChildren(...lists.map((p) => h('option', { value: String(p.id) }, p.name)));
+      select.hidden = add.hidden = !lists.length;
+    });
+    box.append(h('h3', {}, t('pl_title')), h('div', { class: 'field-row' }, select, add, series), note);
+    return box;
+  }
+
   // ---- right-click menu on a card (also the Menu key / Shift+F10) --------
   // Everything here only changes the app's own data; hiding a title never touches its folder.
   function closeMenu() { document.getElementById('ctx-menu')?.remove(); }
@@ -1143,6 +1236,7 @@
         myTagsSection(e),
         persianNameSection(e),
         qualitySection(e),
+        playlistSection(e),
         e.genreList.length ? h('div', { class: 'detail-tags', 'aria-label': t('genres') }, e.genreList.map((g) => h('button', {
           type: 'button', class: 'tag', 'aria-pressed': String(hasGenre(g)), onclick: () => { toggleGenre(g); },
         }, genreName(g)))) : null,

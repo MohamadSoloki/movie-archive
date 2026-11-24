@@ -55,6 +55,9 @@ CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY, name TEXT NOT NULL, 
 -- dub / sub set by hand on a folder: value 1 = it has it, 0 = it does not; no row = what the folder name says
 CREATE TABLE IF NOT EXISTS quality_marks(location_id INTEGER NOT NULL, flag TEXT NOT NULL CHECK (flag IN ('dub', 'sub')), value INTEGER NOT NULL, PRIMARY KEY(location_id, flag));
 -- lists customers sent from the phone catalog: items is a JSON array of { key, title, year }
+-- the owner's own named collections (a saga, a mood): films by durable reference, in the order he chose
+CREATE TABLE IF NOT EXISTS playlists(id INTEGER PRIMARY KEY, name TEXT NOT NULL, note TEXT, created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS playlist_items(playlist_id INTEGER NOT NULL, ref TEXT NOT NULL, pos INTEGER NOT NULL, PRIMARY KEY(playlist_id, ref));
 CREATE TABLE IF NOT EXISTS wishes(id INTEGER PRIMARY KEY, name TEXT NOT NULL, phone TEXT, note TEXT, created INTEGER NOT NULL, items TEXT NOT NULL);
 -- series calendar: one row per show; due is the next air time (epoch ms, local clock), moved a week on each tick
 CREATE TABLE IF NOT EXISTS reminders(

@@ -102,3 +102,15 @@ test('a film added by hand goes into the backup with its picture and comes back 
   assert.deepEqual(fs.readFileSync(path.join(to, t.poster_file)), Buffer.from([1, 2, 3, 4]));
   assert.equal(importData(fresh, JSON.parse(JSON.stringify(data)), { postersDir: to }).manualFilms, 0); // the same film is not added twice
 });
+
+test('my collections go into the backup by film reference and come back once', () => {
+  const db = openDb();
+  db.prepare("INSERT INTO playlists(id, name, note, created) VALUES(1,'Saga','n',5)").run();
+  db.prepare("INSERT INTO playlist_items(playlist_id, ref, pos) VALUES(1,'tt1',0),(1,'n:dune|2021',1)").run();
+  const data = exportData(db);
+  assert.deepEqual(data.playlists, [{ name: 'Saga', note: 'n', created: 5, items: ['tt1', 'n:dune|2021'] }]);
+  const fresh = openDb();
+  assert.equal(importData(fresh, JSON.parse(JSON.stringify(data))).playlists, 1);
+  assert.deepEqual(fresh.prepare('SELECT ref FROM playlist_items ORDER BY pos').all().map((r) => r.ref), ['tt1', 'n:dune|2021']);
+  assert.equal(importData(fresh, JSON.parse(JSON.stringify(data))).playlists, 0);
+});
