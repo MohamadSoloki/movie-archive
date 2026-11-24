@@ -1276,3 +1276,82 @@ test('hideEntry takes a title out of the archive view without touching the folde
   assert.deepEqual(await api.getHidden(), []);
   assert.deepEqual(await api.unhide(99999), { ok: false, error: 'unknown' });
 });
+
+// a film added by hand: the owner types the facts, picks a picture and the file; nothing online decides anything
+function manualSetup() {
+  const ctx = setup();
+  const { media } = ctx;
+  fs.mkdirSync(path.join(media, 'Misc'), { recursive: true });
+  const file = path.join(media, 'Misc', 'my.home.video.mkv');
+  fs.writeFileSync(file, Buffer.alloc(50, 1));
+  const poster = path.join(media, 'cover.png');
+  fs.writeFileSync(poster, Buffer.from([137, 80, 78, 71, 1, 2, 3]));
+  const info = { filePath: file, title: 'سفر به ماه', year: '2020', kind: 'movie', genres: ['Drama', 'Comedy'], plot: 'یک داستان', director: 'Ali', actors: 'A, B', runtime: '90 min', country: 'Iran', posterPath: poster };
+  return { ...ctx, file, poster, info };
+}
+
+test('addManualFilm: typed facts and the picked picture become a verified entry that rescans never change', async () => {
+  const { api, media, userData, file, info } = manualSetup();
+  const r = await api.addManualFilm(info);
+  assert.equal(r.ok, true);
+  const e = await api.getEntry(r.key);
+  assert.deepEqual([e.title, e.year, e.kind, e.status, e.attention, e.manual], ['سفر به ماه', '2020', 'movie', 'matched', 'ok', true]);
+  assert.deepEqual(e.genreList, ['Drama', 'Comedy']);
+  assert.deepEqual([e.plot, e.director, e.actors, e.runtime, e.country], ['یک داستان', 'Ali', 'A, B', '90 min', 'Iran']);
+  assert.equal(fs.existsSync(path.join(userData, 'posters', e.posterFile)), true);
+  assert.equal(e.locations.length, 1);
+  assert.equal(e.locations[0].relPath, 'Misc/my.home.video.mkv');
+  assert.equal((await api.scan()).added, 0);
+  assert.deepEqual((await api.getEntry(r.key)).title, 'سفر به ماه');
+  assert.equal(fs.readFileSync(file).length, 50); // the file itself is only read, never changed
+  assert.deepEqual(await api.addManualFilm(info), { ok: false, error: 'already' }); // one file is one entry
+  assert.ok(media);
+});
+
+test('addManualFilm refuses a missing title, a missing file, a file outside every drive and something that is not media', async () => {
+  const { api, media, info } = manualSetup();
+  assert.deepEqual(await api.addManualFilm({ ...info, title: '  ' }), { ok: false, error: 'no_title' });
+  assert.deepEqual(await api.addManualFilm({ ...info, filePath: path.join(media, 'nope.mkv') }), { ok: false, error: 'not_found' });
+  fs.writeFileSync(path.join(media, 'a.txt'), 'x');
+  assert.deepEqual(await api.addManualFilm({ ...info, filePath: path.join(media, 'a.txt') }), { ok: false, error: 'not_media' });
+  const outside = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'other-')), 'x.mkv');
+  fs.writeFileSync(outside, 'x');
+  assert.deepEqual(await api.addManualFilm({ ...info, filePath: outside }), { ok: false, error: 'no_drive' });
+  assert.deepEqual(await api.addManualFilm({ ...info, kind: 'weird' }).then((r) => r.ok), true); // an unknown kind falls back to a movie
+});
+
+test('updateManualFilm changes only what the owner typed, replaces the picture, and refuses a title found online', async () => {
+  const { api, userData, poster, info, media } = manualSetup();
+  const { key } = await api.addManualFilm(info);
+  const before = (await api.getEntry(key)).posterFile;
+  const other = path.join(path.dirname(poster), 'cover2.jpg');
+  fs.writeFileSync(other, Buffer.from([255, 216, 255, 1]));
+  assert.deepEqual(await api.updateManualFilm(key, { title: 'سفر به خورشید', genres: ['Drama'], posterPath: other }), { ok: true });
+  const e = await api.getEntry(key);
+  assert.deepEqual([e.title, e.year, e.plot], ['سفر به خورشید', '2020', 'یک داستان']);
+  assert.deepEqual(e.genreList, ['Drama']);
+  assert.notEqual(e.posterFile, before);
+  assert.equal(fs.existsSync(path.join(userData, 'posters', before)), false);
+  assert.deepEqual(await api.updateManualFilm(key, { title: '' }), { ok: false, error: 'no_title' });
+  assert.deepEqual(await api.updateManualFilm('t:99999', { title: 'x' }), { ok: false, error: 'unknown' });
+  fs.mkdirSync(path.join(media, 'Movies', 'dune 2021'), { recursive: true });
+  fs.writeFileSync(path.join(media, 'Movies', 'dune 2021', 'm.mkv'), 'x');
+  await api.addRoot(path.join(media, 'Movies'));
+  await api.scan();
+  const scanned = (await api.getEntries()).entries.find((x) => x.title === 'dune');
+  assert.deepEqual(await api.updateManualFilm(scanned.key, { title: 'x' }), { ok: false, error: 'not_manual' });
+  assert.deepEqual(await api.addManualPath(scanned.key, path.join(media, 'Movies', 'dune 2021', 'm.mkv')), { ok: false, error: 'not_manual' });
+});
+
+test('addManualPath gives a manual film one more file when the old one moved', async () => {
+  const { api, media, info } = manualSetup();
+  const { key } = await api.addManualFilm(info);
+  fs.mkdirSync(path.join(media, 'Elsewhere'));
+  const moved = path.join(media, 'Elsewhere', 'moved.mkv');
+  fs.writeFileSync(moved, 'x');
+  assert.deepEqual(await api.addManualPath(key, moved), { ok: true });
+  assert.deepEqual((await api.getEntry(key)).locations.map((l) => l.relPath).sort(), ['Elsewhere/moved.mkv', 'Misc/my.home.video.mkv']);
+  assert.deepEqual(await api.addManualPath(key, moved), { ok: true }); // the same path twice is one location
+  assert.equal((await api.getEntry(key)).locations.length, 2);
+  assert.deepEqual(await api.addManualPath(key, path.join(media, 'nope.mkv')), { ok: false, error: 'not_found' });
+});

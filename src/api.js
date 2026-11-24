@@ -500,6 +500,37 @@ function createApi({
     return { ok: true, seasons: [...seasons.values()].sort((a, b) => a.season - b.season) };
   }
 
+  // ---- films added by hand: the owner types the facts and picks the picture and the file ----
+  const IMAGE = new Set(['png', 'jpg', 'jpeg', 'webp']);
+  const manualText = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+  const manualGenres = (g) => [...new Set((Array.isArray(g) ? g : String(g ?? '').split(/[,،]/)).map((x) => manualText(x, 40)).filter(Boolean))].slice(0, 12).join(', ') || null;
+  // the file the owner picked: a video (or a folder) on a plugged-in drive → where it is stored; otherwise the reason
+  async function manualPlace(filePath) {
+    let st;
+    try { st = fs.statSync(filePath); } catch { return { error: 'not_found' }; }
+    if (st.isFile() && !VIDEO.has(path.extname(filePath).slice(1).toLowerCase())) return { error: 'not_media' };
+    if (!st.isFile() && !st.isDirectory()) return { error: 'not_found' };
+    const hit = toDriveRel((await getDrives()).filter((d) => d.online), filePath);
+    if (!hit || !hit.relPath) return { error: 'no_drive' };
+    return { serial: hit.serial, relPath: hit.relPath, name: path.basename(filePath) };
+  }
+  // the picture is copied into the archive's own poster folder under a new name, so a replaced picture never shows a stale cache
+  function manualPoster(titleId, picked) {
+    const ext = path.extname(String(picked || '')).slice(1).toLowerCase();
+    if (!picked || !IMAGE.has(ext)) return null;
+    try {
+      fs.mkdirSync(postersDir, { recursive: true });
+      const file = `manual-${titleId}-${Date.now()}.${ext}`;
+      fs.copyFileSync(picked, path.join(postersDir, file));
+      return file;
+    } catch { return null; }
+  }
+  const manualFields = (f) => ({
+    title: manualText(f.title, 200), year: manualText(f.year, 9) || null, type: f.kind === 'series' ? 'series' : 'movie',
+    plot: manualText(f.plot, 4000) || null, genres: manualGenres(f.genres), director: manualText(f.director, 200) || null,
+    actors: manualText(f.actors, 400) || null, runtime: manualText(f.runtime, 30) || null, country: manualText(f.country, 120) || null,
+  });
+
   // ---- phone catalog: a read-only page on the shop network, customers send back the films they want ----
   const catalogServer = createCatalogServer({
     films: (lang) => {
@@ -747,7 +778,7 @@ function createApi({
     // what the owner made by hand (tags, other names, lists, calendar, copies), to a file and back; the archive itself is rescanned
     async exportBackup(file) {
       try {
-        fs.writeFileSync(file, JSON.stringify(exportData(db, { now: now() }), null, 1));
+        fs.writeFileSync(file, JSON.stringify(exportData(db, { now: now(), postersDir }), null, 1));
         return { ok: true };
       } catch {
         return { ok: false, error: 'unwritable' };
@@ -757,7 +788,7 @@ function createApi({
       let text;
       try { text = fs.readFileSync(file, 'utf8'); } catch { return { ok: false, error: 'unreadable' }; }
       try {
-        const r = importData(db, JSON.parse(text));
+        const r = importData(db, JSON.parse(text), { postersDir });
         search.invalidate();
         return { ok: true, ...r };
       } catch {
@@ -851,6 +882,64 @@ function createApi({
         db.exec('COMMIT');
       } catch (err) { db.exec('ROLLBACK'); throw err; }
       search.invalidate();
+      return { ok: true };
+    },
+    // A film the owner types in: facts + picture + the file. It is a verified entry (pinned), so no scan, queue or fix run touches it;
+    // it changes only through updateManualFilm or an Online Info Fix link the owner gives.
+    async addManualFilm(f) {
+      const v = manualFields(f ?? {});
+      if (!v.title) return { ok: false, error: 'no_title' };
+      const place = await manualPlace(String(f.filePath ?? ''));
+      if (place.error) return { ok: false, error: place.error };
+      if (db.prepare('SELECT 1 FROM locations WHERE drive_serial = ? AND rel_path = ?').get(place.serial, place.relPath)) return { ok: false, error: 'already' };
+      let titleId;
+      db.exec('BEGIN');
+      try {
+        titleId = Number(db.prepare(`INSERT INTO titles(source, title, year, type, plot, genres, director, actors, runtime, country)
+          VALUES('manual', ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(v.title, v.year, v.type, v.plot, v.genres, v.director, v.actors, v.runtime, v.country).lastInsertRowid);
+        db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, parsed_year, title_id, status, pinned)
+          VALUES(?, ?, ?, ?, ?, ?, 'matched', 1)`).run(place.serial, place.relPath, place.name, v.title, v.year, titleId);
+        db.exec('COMMIT');
+      } catch (err) { db.exec('ROLLBACK'); throw err; }
+      const poster = manualPoster(titleId, f.posterPath);
+      if (poster) db.prepare('UPDATE titles SET poster_file = ? WHERE id = ?').run(poster, titleId);
+      search.invalidate();
+      return { ok: true, key: `t:${titleId}` };
+    },
+    // only what the owner typed: the fields sent replace the old ones, the others stay
+    async updateManualFilm(key, f) {
+      const e = search.find(key);
+      if (!e) return { ok: false, error: 'unknown' };
+      if (e.titleId == null) return { ok: false, error: 'not_manual' };
+      const row = db.prepare('SELECT source, poster_file FROM titles WHERE id = ?').get(e.titleId);
+      if (row?.source !== 'manual') return { ok: false, error: 'not_manual' };
+      const v = manualFields({ ...e, kind: e.kind, ...f, genres: f.genres ?? e.genres });
+      if (!v.title) return { ok: false, error: 'no_title' };
+      db.prepare('UPDATE titles SET title = ?, year = ?, type = ?, plot = ?, genres = ?, director = ?, actors = ?, runtime = ?, country = ? WHERE id = ?')
+        .run(v.title, v.year, v.type, v.plot, v.genres, v.director, v.actors, v.runtime, v.country, e.titleId);
+      db.prepare('UPDATE locations SET parsed_title = ?, parsed_year = ? WHERE title_id = ?').run(v.title, v.year, e.titleId);
+      if (f.posterPath) {
+        const poster = manualPoster(e.titleId, f.posterPath);
+        if (poster) {
+          db.prepare('UPDATE titles SET poster_file = ? WHERE id = ?').run(poster, e.titleId);
+          if (row.poster_file?.startsWith('manual-')) fs.rmSync(path.join(postersDir, path.basename(row.poster_file)), { force: true });
+        }
+      }
+      search.invalidate();
+      return { ok: true };
+    },
+    // the file moved: the same manual film also lives at the new path (the old location stays and shows as missing/offline until removed)
+    async addManualPath(key, filePath) {
+      const e = search.find(key);
+      if (!e) return { ok: false, error: 'unknown' };
+      if (e.titleId == null || db.prepare('SELECT source FROM titles WHERE id = ?').get(e.titleId)?.source !== 'manual') return { ok: false, error: 'not_manual' };
+      const place = await manualPlace(String(filePath ?? ''));
+      if (place.error) return { ok: false, error: place.error };
+      if (!db.prepare('SELECT 1 FROM locations WHERE drive_serial = ? AND rel_path = ?').get(place.serial, place.relPath)) {
+        db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, parsed_year, title_id, status, pinned)
+          VALUES(?, ?, ?, ?, ?, ?, 'matched', 1)`).run(place.serial, place.relPath, place.name, e.title, e.year, e.titleId);
+        search.invalidate();
+      }
       return { ok: true };
     },
     // "Remove" from the archive view: only the app forgets to show it, the folder on the disk is never touched and a rescan keeps it hidden

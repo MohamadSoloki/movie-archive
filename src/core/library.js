@@ -59,6 +59,7 @@ function listEntries(db) {
         status: 'matched', guessed: false, locations: [],
         imdbId: t.imdb_id, genreList: t.genres ? t.genres.split(', ') : [], director: t.director, awards: t.awards,
         rated: t.rated, country: t.country, countryList: t.country ? t.country.split(', ') : [], totalSeasons: t.total_seasons, kind: kindOf(t.type), addedOrder: l.id, userTags: [],
+        manual: t.source === 'manual', // typed by the owner, not found online
       };
       e.section = sectionOf(t, e.genreList, e.countryList);
       byTitle.set(t.id, e);

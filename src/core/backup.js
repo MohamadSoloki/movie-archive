@@ -1,4 +1,6 @@
 'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
 const { setSetting } = require('./db.js');
 const orders = require('./orders.js');
 
@@ -10,7 +12,20 @@ const SECRET = new Set(['omdbKey']);
 // node:sqlite rows have no prototype; plain objects compare and serialise the same everywhere
 const plain = (rows) => rows.map((r) => ({ ...r }));
 
-function exportData(db, { now = Date.now() } = {}) {
+// the typed films carry their facts, their files' places and the picture (small, as base64), because a rescan cannot find them again
+function manualFilmsOf(db, postersDir) {
+  const where = db.prepare('SELECT drive_serial AS driveSerial, rel_path AS relPath FROM locations WHERE title_id = ? ORDER BY id');
+  return db.prepare("SELECT id, title, year, type, plot, genres, director, actors, runtime, country, poster_file FROM titles WHERE source = 'manual' ORDER BY id").all().map((t) => {
+    let poster = null;
+    if (t.poster_file && postersDir) {
+      try { poster = { ext: path.extname(t.poster_file).slice(1).toLowerCase(), data: fs.readFileSync(path.join(postersDir, path.basename(t.poster_file))).toString('base64') }; } catch { /* the picture is gone: the film still comes back */ }
+    }
+    const { id, poster_file: _p, ...facts } = t;
+    return { ...facts, locations: plain(where.all(id)), poster };
+  });
+}
+
+function exportData(db, { now = Date.now(), postersDir = null } = {}) {
   const settings = {};
   for (const r of db.prepare('SELECT key, value FROM settings').all()) if (!SECRET.has(r.key)) settings[r.key] = JSON.parse(r.value);
   const byPlace = (table, col) => db.prepare(`SELECT l.drive_serial AS driveSerial, l.rel_path AS relPath, x.${col} AS ${col}
@@ -23,6 +38,7 @@ function exportData(db, { now = Date.now() } = {}) {
     tags: byPlace('tags', 'tag'), aliases: byPlace('aliases', 'alias'),
     qualityMarks: db.prepare(`SELECT l.drive_serial AS driveSerial, l.rel_path AS relPath, x.flag AS flag, x.value AS value
       FROM quality_marks x JOIN locations l ON l.id = x.location_id ORDER BY l.drive_serial, l.rel_path, x.flag`).all().map((r) => ({ ...r })),
+    manualFilms: manualFilmsOf(db, postersDir),
     reminders: plain(db.prepare('SELECT title, key, weekday, time, episode, due, enabled FROM reminders ORDER BY id').all()),
     copies,
     orders: orders.listOrders(db).map(({ id, ...o }) => o),
@@ -32,9 +48,9 @@ function exportData(db, { now = Date.now() } = {}) {
 
 // Merges a backup into the database: settings are overwritten, everything else is added when missing, so importing twice
 // changes nothing. Tags and aliases go to the folder with the same drive and path; those this machine does not have are counted.
-function importData(db, data) {
+function importData(db, data, { postersDir = null } = {}) {
   if (!data || typeof data !== 'object' || data.format !== FORMAT) throw new Error('not_a_backup');
-  const out = { tags: 0, aliases: 0, qualityMarks: 0, reminders: 0, copies: 0, orders: 0, requests: 0, skipped: 0 };
+  const out = { tags: 0, aliases: 0, qualityMarks: 0, manualFilms: 0, reminders: 0, copies: 0, orders: 0, requests: 0, skipped: 0 };
   const arr = (v) => (Array.isArray(v) ? v : []);
   db.exec('BEGIN');
   try {
@@ -54,6 +70,26 @@ function importData(db, data) {
       const loc = ['dub', 'sub'].includes(r?.flag) ? find.get(String(r.driveSerial), String(r.relPath)) : null;
       if (!loc) { out.skipped += 1; continue; }
       out.qualityMarks += Number(mark.run(loc.id, r.flag, r.value ? 1 : 0).changes);
+    }
+    // a typed film is added only when none of its files is already stored here (importing twice changes nothing)
+    const IMAGE = new Set(['png', 'jpg', 'jpeg', 'webp']);
+    const addTitle = db.prepare(`INSERT INTO titles(source, title, year, type, plot, genres, director, actors, runtime, country) VALUES('manual',?,?,?,?,?,?,?,?,?)`);
+    const addLoc = db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, parsed_year, title_id, status, pinned) VALUES(?,?,?,?,?,?, 'matched', 1)`);
+    for (const f of arr(data.manualFilms)) {
+      const places = arr(f?.locations).filter((l) => typeof l?.driveSerial === 'string' && typeof l.relPath === 'string');
+      if (typeof f?.title !== 'string' || !f.title.trim() || !places.length || places.some((l) => find.get(l.driveSerial, l.relPath))) continue;
+      const s = (v) => (typeof v === 'string' ? v : null);
+      const id = Number(addTitle.run(f.title.slice(0, 200), s(f.year), f.type === 'series' ? 'series' : 'movie', s(f.plot), s(f.genres), s(f.director), s(f.actors), s(f.runtime), s(f.country)).lastInsertRowid);
+      for (const l of places) addLoc.run(l.driveSerial, l.relPath, path.basename(l.relPath), f.title, s(f.year), id);
+      if (f.poster && postersDir && IMAGE.has(f.poster.ext) && typeof f.poster.data === 'string') {
+        try {
+          fs.mkdirSync(postersDir, { recursive: true });
+          const file = `manual-${id}-${Date.now()}.${f.poster.ext}`;
+          fs.writeFileSync(path.join(postersDir, file), Buffer.from(f.poster.data, 'base64'));
+          db.prepare('UPDATE titles SET poster_file = ? WHERE id = ?').run(file, id);
+        } catch { /* no picture: the film still comes back */ }
+      }
+      out.manualFilms += 1;
     }
     const rem = db.prepare(`INSERT INTO reminders(title, key, weekday, time, episode, due, enabled) VALUES(?,?,?,?,?,?,?)
       ON CONFLICT(key) DO NOTHING`);

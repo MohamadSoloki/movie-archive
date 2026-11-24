@@ -282,6 +282,7 @@
       !isCol ? [t('open_folder'), 'folder', async () => { const r = await api.openLocation(loc.id); if (!r.ok) setStatus(errText(r.error)); }, !loc] : null,
       [t(inCart(key) ? 'copy_remove' : 'copy_add'), 'layers', () => toggleCart(key, e.title)],
       !isCol && e.attention === 'guess' ? [t('confirm_guess'), 'check', async () => { const r = await api.confirmGuess(key); if (r.ok) await refresh(true); }] : null,
+      !isCol && full?.manual ? [t('menu_edit_info'), 'film', () => openManual(full)] : null,
       !isCol ? [t('menu_edit_name'), 'tag', () => focusIn('.persian-name-input')] : null,
       !isCol ? [t('online_info_fix'), 'search', () => focusIn('.fix-input')] : null,
       'sep',
@@ -332,6 +333,71 @@
     const list = [...menu.querySelectorAll('button:not([disabled])')];
     const at = list.indexOf(document.activeElement);
     list[(at + (ev.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]?.focus();
+  });
+
+  // ---- a film typed in by hand (and the same form to edit it) ------------------
+  const DEFAULT_GENRES = ['Action', 'Adventure', 'Animation', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy', 'History', 'Horror', 'Music', 'Mystery', 'Romance', 'Sci-Fi', 'Thriller', 'War', 'Western'];
+  const VIDEO_EXT = ['mkv', 'mp4', 'avi', 'mov', 'wmv', 'm4v', 'ts', 'm2ts', 'mpg', 'mpeg', 'flv', 'webm', 'iso', 'vob'];
+  let manualEntry = null; // null = adding a new film, else the manual entry being edited
+  let manualGenres = new Set();
+  function paintManualGenres() {
+    const names = [...new Set([...DEFAULT_GENRES, ...manualGenres])];
+    $('m-genres').replaceChildren(...names.map((g) => h('button', {
+      type: 'button', class: 'chip', 'aria-pressed': String(manualGenres.has(g)),
+      onclick: () => { if (manualGenres.has(g)) manualGenres.delete(g); else manualGenres.add(g); paintManualGenres(); },
+    }, genreName(g))));
+  }
+  function openManual(entry = null) {
+    manualEntry = entry;
+    const known = new Set(entry?.genreList ?? []);
+    manualGenres = new Set([...known].filter((g) => DEFAULT_GENRES.includes(g)));
+    const set = (id, v) => { $(id).value = v ?? ''; };
+    $('manual-title').textContent = t(entry ? 'manual_edit' : 'manual_new');
+    set('m-file', ''); set('m-title', entry?.title); set('m-year', entry?.year); set('m-runtime', entry?.runtime); set('m-country', entry?.country);
+    set('m-director', entry?.director); set('m-actors', entry?.actors); set('m-plot', entry?.plot); set('m-poster', ''); set('m-file2', '');
+    set('m-genres-extra', [...known].filter((g) => !DEFAULT_GENRES.includes(g)).join(', '));
+    $('m-kind').value = entry?.kind === 'series' ? 'series' : 'movie';
+    $('m-file-label').hidden = !!entry;
+    $('m-file').closest('.field-row').hidden = !!entry;
+    $('m-newfile').hidden = !entry;
+    $('manual-msg').textContent = '';
+    paintManualGenres();
+    if (!$('manual-dlg').open) $('manual-dlg').showModal();
+    $('m-title').focus();
+  }
+  $('manual-btn').addEventListener('click', () => openManual());
+  $('manual-x').addEventListener('click', () => $('manual-dlg').close());
+  $('manual-cancel').addEventListener('click', () => $('manual-dlg').close());
+  const pickInto = (btn, input, name, extensions) => $(btn).addEventListener('click', async () => { const p = await api.pickOpenFile([{ name, extensions }]); if (p) $(input).value = p; });
+  pickInto('m-file-pick', 'm-file', 'Video', VIDEO_EXT);
+  pickInto('m-file2-pick', 'm-file2', 'Video', VIDEO_EXT);
+  pickInto('m-poster-pick', 'm-poster', 'Image', ['jpg', 'jpeg', 'png', 'webp']);
+  $('manual-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const msg = $('manual-msg');
+    const extra = $('m-genres-extra').value.split(/[,،]/).map((x) => x.trim()).filter(Boolean);
+    const info = {
+      title: $('m-title').value, year: $('m-year').value, kind: $('m-kind').value, genres: [...manualGenres, ...extra], plot: $('m-plot').value,
+      director: $('m-director').value, actors: $('m-actors').value, runtime: $('m-runtime').value, country: $('m-country').value, posterPath: $('m-poster').value.trim(),
+    };
+    const fail = (r) => { msg.textContent = t(`manual_err_${r.error}`); };
+    let key;
+    if (manualEntry) {
+      const r = await api.updateManualFilm(manualEntry.key, info);
+      if (!r.ok) return fail(r);
+      const more = $('m-file2').value.trim();
+      if (more) { const p = await api.addManualPath(manualEntry.key, more); if (!p.ok) return fail(p); }
+      key = manualEntry.key;
+    } else {
+      const r = await api.addManualFilm({ ...info, filePath: $('m-file').value.trim() });
+      if (!r.ok) return fail(r);
+      key = r.key;
+    }
+    $('manual-dlg').close();
+    await resetView();
+    state.selected = key;
+    await renderDetail();
+    setStatus(t('manual_saved'));
   });
 
   function appendChunk() {
@@ -1073,6 +1139,7 @@
         h('div', { class: 'hero-actions' },
           e.imdbId ? h('button', { type: 'button', class: 'btn', onclick: () => api.openImdb(e.titleId) }, icon('link'), t('open_imdb')) : null,
           cartButton(e)),
+        e.manual ? h('div', { class: 'hero-actions' }, h('button', { type: 'button', class: 'btn', onclick: () => openManual(e) }, icon('tag'), t('manual_edit'))) : null,
         myTagsSection(e),
         persianNameSection(e),
         qualitySection(e),

@@ -77,3 +77,28 @@ test('manual dub and sub marks go into the backup and come back on the same fold
   assert.deepEqual(b.prepare('SELECT flag, value FROM quality_marks ORDER BY flag').all().map((x) => [x.flag, x.value]), [['dub', 1], ['sub', 0]]);
   assert.equal(importData(b, data).qualityMarks, 0);
 });
+
+test('a film added by hand goes into the backup with its picture and comes back on a fresh database', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const from = fs.mkdtempSync(path.join(os.tmpdir(), 'pf-'));
+  const to = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-'));
+  fs.writeFileSync(path.join(from, 'manual-1-5.png'), Buffer.from([1, 2, 3, 4]));
+  const db = openDb();
+  db.prepare("INSERT INTO titles(id, source, title, year, type, plot, genres, director, actors, runtime, country, poster_file) VALUES(1,'manual','سفر','2020','movie','p','Drama, Comedy','D','A','90','Iran','manual-1-5.png')").run();
+  db.prepare("INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, parsed_year, title_id, status, pinned) VALUES('D1','Misc/a.mkv','a.mkv','سفر','2020',1,'matched',1)").run();
+  db.prepare("INSERT INTO titles(id, source, title) VALUES(2,'omdb','Online')").run();
+  const data = exportData(db, { postersDir: from });
+  assert.equal(data.manualFilms.length, 1);
+  assert.deepEqual([data.manualFilms[0].title, data.manualFilms[0].genres, data.manualFilms[0].locations], ['سفر', 'Drama, Comedy', [{ driveSerial: 'D1', relPath: 'Misc/a.mkv' }]]);
+  assert.equal(data.manualFilms[0].poster.ext, 'png');
+  const fresh = openDb();
+  assert.equal(importData(fresh, JSON.parse(JSON.stringify(data)), { postersDir: to }).manualFilms, 1);
+  const t = fresh.prepare("SELECT * FROM titles WHERE source = 'manual'").get();
+  assert.deepEqual([t.title, t.year, t.genres, t.director, t.country], ['سفر', '2020', 'Drama, Comedy', 'D', 'Iran']);
+  const l = fresh.prepare('SELECT * FROM locations').get();
+  assert.deepEqual([l.drive_serial, l.rel_path, l.status, l.pinned, l.title_id], ['D1', 'Misc/a.mkv', 'matched', 1, t.id]);
+  assert.deepEqual(fs.readFileSync(path.join(to, t.poster_file)), Buffer.from([1, 2, 3, 4]));
+  assert.equal(importData(fresh, JSON.parse(JSON.stringify(data)), { postersDir: to }).manualFilms, 0); // the same film is not added twice
+});

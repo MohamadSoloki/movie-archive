@@ -56,6 +56,7 @@
       </div>
       <button id="filter-open" type="button" class="btn filter-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg><span data-i18n="filters"></span><span id="filter-badge" class="badge" hidden></span></button>
       <button id="select-btn" type="button" class="btn" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/></svg><span data-i18n="select_mode"></span></button>
+      <button id="manual-btn" type="button" class="btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span data-i18n="manual_add"></span></button>
       <div id="active" class="chips"></div>
       <p id="count" class="count"></p>
     </div>
@@ -87,6 +88,50 @@
     </footer>
   </dialog>
 
+  <dialog id="manual-dlg" class="sheet" aria-labelledby="manual-title">
+    <header class="sheet-head">
+      <h2 id="manual-title"></h2>
+      <button id="manual-x" type="button" class="icon-btn" data-i18n-label="close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </header>
+    <form id="manual-form" class="sheet-body">
+      <p class="help" data-i18n="manual_hint"></p>
+      <label for="m-file" id="m-file-label" data-i18n="manual_file"></label>
+      <div class="field-row"><input id="m-file" type="text" dir="ltr" autocomplete="off"><button id="m-file-pick" type="button" class="btn" data-i18n="browse"></button></div>
+      <label for="m-title" data-i18n="manual_title_field"></label>
+      <input id="m-title" type="text" maxlength="200" dir="auto" required>
+      <div class="price-fields">
+        <label for="m-year" data-i18n="manual_year"></label>
+        <input id="m-year" type="text" maxlength="9" dir="ltr" inputmode="numeric">
+        <label for="m-kind" data-i18n="manual_kind"></label>
+        <select id="m-kind"><option value="movie" data-i18n="manual_kind_movie"></option><option value="series" data-i18n="manual_kind_series"></option></select>
+        <label for="m-runtime" data-i18n="manual_runtime"></label>
+        <input id="m-runtime" type="text" maxlength="30" dir="auto">
+        <label for="m-country" data-i18n="manual_country"></label>
+        <input id="m-country" type="text" maxlength="120" dir="auto">
+        <label for="m-director" data-i18n="director"></label>
+        <input id="m-director" type="text" maxlength="200" dir="auto">
+        <label for="m-actors" data-i18n="actors"></label>
+        <input id="m-actors" type="text" maxlength="400" dir="auto">
+      </div>
+      <h3 data-i18n="genres"></h3>
+      <div id="m-genres" class="chips" role="group"></div>
+      <input id="m-genres-extra" type="text" maxlength="120" dir="auto" data-i18n-placeholder="manual_genres_extra" aria-label="genres">
+      <label for="m-plot" data-i18n="plot"></label>
+      <textarea id="m-plot" rows="4" maxlength="4000" dir="auto"></textarea>
+      <label for="m-poster" data-i18n="manual_poster"></label>
+      <div class="field-row"><input id="m-poster" type="text" dir="ltr" autocomplete="off"><button id="m-poster-pick" type="button" class="btn" data-i18n="browse"></button></div>
+      <div id="m-newfile" hidden>
+        <label for="m-file2" data-i18n="manual_newfile"></label>
+        <div class="field-row"><input id="m-file2" type="text" dir="ltr" autocomplete="off"><button id="m-file2-pick" type="button" class="btn" data-i18n="browse"></button></div>
+        <p class="help" data-i18n="manual_newfile_hint"></p>
+      </div>
+      <p id="manual-msg" class="msg" role="alert"></p>
+      <div class="row">
+        <button type="submit" class="btn primary" data-i18n="manual_save"></button>
+        <button id="manual-cancel" type="button" class="btn" data-i18n="close"></button>
+      </div>
+    </form>
+  </dialog>
   <dialog id="folders-dlg" class="sheet" aria-labelledby="folders-title">
     <header class="sheet-head">
       <h2 id="folders-title" data-i18n="folders"></h2>
