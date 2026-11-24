@@ -881,9 +881,20 @@
     loadRemovable();
   }
 
+  let customerList = [];
   async function refreshCustomers() {
-    $('customer-suggest').replaceChildren(...(await api.getCustomers()).map((c) => h('option', { value: c.name })));
+    customerList = await api.getCustomers();
+    $('customer-suggest').replaceChildren(...customerList.map((c) => h('option', { value: c.name })));
+    await updateDebt();
   }
+  // a customer who still owes from earlier copies is shown before the next copy starts
+  async function updateDebt() {
+    const key = await api.customerKey($('copy-customer').value);
+    const due = key ? customerList.find((c) => c.key === key)?.due ?? 0 : 0;
+    $('copy-debt').hidden = due <= 0;
+    $('copy-debt').textContent = due > 0 ? t('copy_debt', { n: money(due) }) : '';
+  }
+  $('copy-customer').addEventListener('input', updateDebt);
 
   async function updateCopyPlan() {
     updateCapacity();
@@ -927,7 +938,7 @@
     $('copy-go').textContent = t(state.copying ? 'copy_cancel' : 'copy_start');
     $('copy-go').disabled = !state.copying && !(state.copyPlan?.ok && state.copyPlan.jobs.length);
     $('copy-name').disabled = $('copy-browse').disabled = state.copying;
-    for (const id of ['copy-customer', 'copy-phone', 'copy-note']) $(id).disabled = state.copying;
+    for (const id of ['copy-customer', 'copy-phone', 'copy-note', 'copy-paid']) $(id).disabled = state.copying;
   }
 
   async function runCopy() {
@@ -947,7 +958,7 @@
     let r;
     try {
       r = await api.startTransfer({ keys: [...state.cart.keys()], destDir: state.copyDest, name: $('copy-name').value.trim(), picks: picksNow(),
-        customer: $('copy-customer').value.trim(), phone: $('copy-phone').value.trim(), note: $('copy-note').value.trim() });
+        customer: $('copy-customer').value.trim(), phone: $('copy-phone').value.trim(), note: $('copy-note').value.trim(), paid: $('copy-paid').value.trim() });
     } catch { r = { ok: false, error: 'busy' }; }
     state.copying = false;
     $('copy-bar').hidden = true;
@@ -967,7 +978,7 @@
       state.holdPrice = !!r.price;
       paintPrice(r.price);
       for (const key of [...state.cart.keys()]) toggleCart(key, '');
-      for (const id of ['copy-customer', 'copy-phone', 'copy-note']) $(id).value = ''; // the next customer starts empty
+      for (const id of ['copy-customer', 'copy-phone', 'copy-note', 'copy-paid']) $(id).value = ''; // the next customer starts empty
       if (currentList()) { currentList().customer = ''; currentList().phoneKeys = new Set(); saveLists(); }
     }
     refreshCustomers();
@@ -1005,6 +1016,7 @@
         h('tbody', {}, order.items.map((i) => h('tr', {}, h('td', { dir: 'auto' }, i.year ? `${i.title} (${i.year})` : i.title), h('td', { dir: 'auto' }, i.detail || ''))))),
       h('p', {}, t('invoice_size', { n: order.items.length, size: size(order.bytes) })),
       order.price != null ? h('p', { class: 'total' }, t('price_total', { n: money(order.price) })) : null,
+      order.due > 0 ? h('p', {}, t('invoice_paid_due', { paid: money(order.paid), due: money(order.due) })) : null,
       order.note ? h('p', { dir: 'auto' }, order.note) : null));
     window.print();
   }
@@ -1308,8 +1320,13 @@
 
   $('scan').addEventListener('click', async () => {
     const r = await runScan();
-    if (r) setStatus(t('scan_done', { n: r.scanned, added: r.added }));
+    if (r) { setStatus(t('scan_done', { n: r.scanned, added: r.added })); announceArrived(); }
   });
+  // a requested film that is in the archive now: the shop is told once per run, and the details are in Reports → Requests
+  async function announceArrived() {
+    const n = (await api.getArrived()).length;
+    if (n) setStatus(t('req_arrived_status', { n }));
+  }
 
   // ---- drag and drop: folders become single archive folders, a video brings its own folder ----
 
@@ -1672,6 +1689,21 @@
           h('ul', { class: 'plain members' }, g.items.map((i) => h('li', {}, h('button', { type: 'button', class: 'member', onclick: () => { $('rep-dlg').close(); openMember(i.key); } },
             h('span', { dir: 'auto' }, i.title), i.year ? h('span', { class: 'year' }, String(i.year)) : null)))))) : [h('p', {}, t('rep_single_none'))]));
     },
+    // the same film or season in several folders: which copy is where, how big, and how much space keeping only the biggest would free
+    async duplicates(body) {
+      const r = await api.getDuplicates();
+      body.replaceChildren(h('p', { class: 'help' }, t('rep_dup_help')),
+        r.count ? h('p', { class: 'total' }, t('rep_dup_total', { n: r.count, size: size(r.reclaim) })) : h('p', {}, t('rep_dup_none')),
+        ...r.groups.map((g) => h('section', { class: 'order' },
+          h('div', { class: 'order-head' },
+            h('button', { type: 'button', class: 'member', onclick: () => { $('rep-dlg').close(); openMember(g.key); } }, h('span', { dir: 'auto' }, g.season != null ? t('rep_dup_season', { title: g.title, n: g.season }) : g.title)),
+            h('span', { class: 'price' }, t('rep_dup_reclaim', { size: size(g.reclaim) }))),
+          h('ul', { class: 'plain' }, g.copies.map((c) => h('li', { class: 'loc' },
+            h('span', { class: 'where', dir: 'auto' }, `${c.driveLabel || '?'} · `, h('span', { class: 'path' }, c.relPath),
+              c.badges.length ? ` · ${c.badges.map((b) => (b === 'dub' || b === 'sub' || b === 'hardsub' ? t(`qb_${b}`) : b)).join(' ')}` : ''),
+            h('span', { class: 'help' }, c.bytes == null ? t('rep_dup_unknown') : size(c.bytes)),
+            h('button', { type: 'button', class: 'btn', disabled: !c.online, onclick: async () => { const x = await api.openLocation(c.locationId); if (!x.ok) setStatus(errText(x.error)); } }, t('open_folder'))))))));
+    },
   };
   // The archive as a printable list by genre. Printing goes through the print dialog, which also saves a PDF.
   REPORTS.catalog = async (body) => {
@@ -1770,7 +1802,59 @@
     await paint();
     body.replaceChildren(h('p', { class: 'help' }, t('wish_help')), list);
   };
+  // a payment that comes later: the amount typed is added to what was paid
+  function payRow(o, done) {
+    const input = h('input', { type: 'text', inputmode: 'numeric', dir: 'ltr', maxlength: '14', autocomplete: 'off', placeholder: t('order_pay_ph'), 'aria-label': t('order_pay_ph') });
+    const msg = h('span', { class: 'help', role: 'alert' });
+    const pay = async () => {
+      const r = await api.payOrder(o.id, input.value.replace(/[^\d۰-۹]/g, '').replace(/[۰-۹]/g, (c) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(c)));
+      if (!r.ok) { msg.textContent = t('order_pay_bad'); return; }
+      done();
+    };
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); pay(); } });
+    return h('span', { class: 'field-row' }, input, h('button', { type: 'button', class: 'btn', onclick: pay }, t('order_pay')), msg);
+  }
+  // requested films that are in the archive now: who to tell, with a ready message to copy. Telling someone removes them from the list.
+  async function arrivedSection(repaint) {
+    const rows = await api.getArrived();
+    if (!rows.length) return [];
+    const shop = (await api.getSettings()).shopName;
+    const copy = async (text, btn) => {
+      try { await navigator.clipboard.writeText(text); btn.textContent = t('req_copied'); } catch { btn.textContent = t('req_copy_failed'); }
+    };
+    return [h('h3', {}, t('req_arrived_title', { n: rows.length })), h('ul', { class: 'plain orders' }, rows.map((r) => h('li', { class: 'order' },
+      h('div', { class: 'order-head' }, h('strong', { dir: 'auto' }, r.name), ...r.matches.map((m) => h('button', { type: 'button', class: 'member', onclick: () => { $('rep-dlg').close(); openMember(m.key); } }, m.title))),
+      ...r.askers.map((a) => {
+        const text = t('req_msg', { name: a.name || '', title: r.matches[0].title, shop: shop || '' }).replace(/\s+/g, ' ').trim();
+        const btn = h('button', { type: 'button', class: 'btn' }, t('req_copy_msg'));
+        btn.addEventListener('click', () => copy(text, btn));
+        return h('div', { class: 'row' }, h('span', { dir: 'auto' }, [a.name, a.phone].filter(Boolean).join(' · ')), btn,
+          h('button', { type: 'button', class: 'btn', onclick: async () => { await api.removeAsker(a.id); repaint(); renderReports(); } }, t('req_told')));
+      }),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', onclick: async () => { await api.removeRequest(r.id); renderReports(); } }, t('req_done'))))))];
+  }
+  const monthOf = (key) => new Intl.DateTimeFormat(state.lang === 'fa' ? 'fa-IR-u-ca-persian' : 'en-GB', { year: 'numeric', month: 'long' }).format(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 15));
+  const dayOf = (key) => dateOf(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, Number(key.slice(8, 10)), 12));
+  let salesDays = 30;
+
   Object.assign(REPORTS, {
+    // income, what is still owed and the titles copied most often
+    async sales(body) {
+      const s = await api.getSales({ days: salesDays });
+      const debtors = await api.getDebtors();
+      const ranges = h('div', { class: 'chips', role: 'group' }, [[30, 'sales_30'], [90, 'sales_90'], [0, 'sales_all']].map(([d, k]) => chip(t(k), null, salesDays === d, () => { salesDays = d; renderReports(); })));
+      const table = (rows, label) => h('table', { class: 'sales' }, h('thead', {}, h('tr', {}, h('th', {}, label), h('th', {}, t('sales_orders')), h('th', {}, t('sales_income')), h('th', {}, t('sales_paid')))),
+        h('tbody', {}, rows.map((r) => h('tr', {}, h('td', {}, r.name), h('td', {}, String(r.orders)), h('td', {}, money(r.price)), h('td', {}, money(r.paid))))));
+      body.replaceChildren(ranges,
+        h('p', { class: 'total' }, t('sales_totals', { n: s.totals.orders, price: money(s.totals.price), paid: money(s.totals.paid), due: money(s.totals.due) })),
+        h('h3', {}, t('sales_debtors')),
+        debtors.length ? h('ul', { class: 'plain orders' }, debtors.map((d) => h('li', { class: 'order' },
+          h('div', { class: 'order-head' }, h('strong', { dir: 'auto' }, d.name), d.phone ? h('span', { class: 'help', dir: 'ltr' }, d.phone) : null,
+            h('span', { class: 'price bad' }, money(d.due)), h('span', { class: 'help' }, t('sales_debt_orders', { n: d.orders })))))) : h('p', { class: 'help' }, t('sales_no_debt')),
+        h('h3', {}, t('sales_months')), s.months.length ? table(s.months.map((m) => ({ ...m, name: monthOf(m.month) })), t('sales_month')) : h('p', { class: 'help' }, t('sales_empty')),
+        h('h3', {}, t('sales_days')), s.days.length ? table(s.days.slice(0, 31).map((d) => ({ ...d, name: dayOf(d.day) })), t('sales_day')) : null,
+        h('h3', {}, t('sales_top')), s.top.length ? h('ol', { class: 'plain' }, s.top.map((x) => h('li', { dir: 'auto' }, `${x.title} · ${t('sales_top_n', { n: x.count })}`))) : h('p', { class: 'help' }, t('sales_empty')));
+    },
     // every copy made for a customer, newest first, with the films in it; the same list gives the invoice again
     async orders(body) {
       await refreshCustomers();
@@ -1783,11 +1867,13 @@
           h('div', { class: 'order-head' },
             h('strong', { dir: 'auto' }, o.customer || t('order_nameless')),
             h('span', { class: 'help' }, dateOf(o.created, true)),
-            o.price != null ? h('span', { class: 'price' }, money(o.price)) : null),
+            o.price != null ? h('span', { class: 'price' }, money(o.price)) : null,
+            o.due > 0 ? h('span', { class: 'price bad' }, t('order_due', { n: money(o.due) })) : null),
           h('p', { class: 'help' }, t('order_summary', { n: o.items.length, size: size(o.bytes) }) + (o.phone ? ` · ${o.phone}` : '') + (o.note ? ` · ${o.note}` : '')),
           h('details', {}, h('summary', {}, joinList(o.items.slice(0, 3).map((i) => i.title)) + (o.items.length > 3 ? '…' : '')),
             h('ul', { class: 'plain' }, o.items.map((i) => h('li', { dir: 'auto' }, i.detail ? `${i.title} · ${i.detail}` : i.title)))),
           h('div', { class: 'row' },
+            o.due > 0 ? payRow(o, paint) : null,
             h('button', { type: 'button', class: 'btn', onclick: () => showInvoice(o.id) }, t('order_invoice')),
             h('button', { type: 'button', class: 'btn', onclick: async () => { if (window.confirm(t('order_confirm_delete'))) { await api.removeOrder(o.id); paint(); } } }, t('order_delete')))))
           : [h('li', { class: 'help' }, t('order_empty'))]));
@@ -1806,6 +1892,7 @@
         list.replaceChildren(...(rows.length ? rows.map((r) => h('li', { class: 'order' },
           h('div', { class: 'order-head' }, h('strong', { dir: 'auto' }, r.name), h('span', { class: 'price' }, t('req_count', { n: r.count })),
             h('span', { class: 'help' }, dateOf(r.last))),
+          r.askers.length ? h('p', { class: 'help', dir: 'auto' }, r.askers.map((a) => [a.name, a.phone].filter(Boolean).join(' ')).join(' · ')) : null,
           h('div', { class: 'row' },
             h('button', { type: 'button', class: 'btn', onclick: async () => { await add(r.name); } }, t('req_plus')),
             h('button', { type: 'button', class: 'btn', onclick: async () => { await api.removeRequest(r.id); paint(); } }, t('req_delete')))))
@@ -1823,7 +1910,7 @@
       };
       input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); add(input.value); } });
       await paint();
-      body.replaceChildren(h('p', { class: 'help' }, t('req_help')),
+      body.replaceChildren(...(await arrivedSection(paint)), h('p', { class: 'help' }, t('req_help')),
         h('div', { class: 'field-row' }, input, h('button', { type: 'button', class: 'btn primary', onclick: () => add(input.value) }, t('req_add'))), note, list);
     },
   });
@@ -1992,6 +2079,7 @@
     setInterval(() => pollCalendar(false), 20000);
     await pollWishes();
     setInterval(pollWishes, 15000);
+    setTimeout(announceArrived, 6000);
     // a few seconds after launch, so the first screen is not competing with it
     if (state.lang === 'fa' && s.autoTranslate !== false) setTimeout(() => backgroundTranslate(false), 4000);
   })();

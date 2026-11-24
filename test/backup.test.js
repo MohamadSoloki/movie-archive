@@ -14,8 +14,8 @@ function seed() {
   db.prepare('INSERT INTO reminders(title, key, weekday, time, episode, due, enabled) VALUES(?,?,?,?,?,?,?)').run('Show', 't:1', 2, '20:00', 3, 99, 1);
   db.prepare("INSERT INTO copies(name, target, created, state) VALUES('Flash','F:\\\\Flash', 5, 'ok')").run();
   db.prepare("INSERT INTO copy_files(copy_id, rel, size, sha, title, drive_serial, src_rel) VALUES(1,'A/a.mkv',10,'abc','A','D1','Movies/A')").run();
-  orders.recordOrder(db, { customer: 'Ali', phone: '09', items: [{ ref: 'tt1', title: 'A', year: '2020', kind: 'movie', detail: '' }], bytes: 7, price: 100 }, 50);
-  orders.addRequest(db, 'Dune 2', 60);
+  orders.recordOrder(db, { customer: 'Ali', phone: '09', items: [{ ref: 'tt1', title: 'A', year: '2020', kind: 'movie', detail: '' }], bytes: 7, price: 100, paid: 40 }, 50);
+  orders.addRequest(db, 'Dune 2', 60, { customer: 'Sara', phone: '0933' });
   orders.addRequest(db, 'Dune 2', 61);
   setSetting(db, 'language', 'en');
   setSetting(db, 'omdbKey', 'SECRET');
@@ -46,7 +46,9 @@ test('import into a fresh database restores them, matching folders by drive and 
   assert.deepEqual(getSetting(db, 'copyLists'), [{ id: 'x', name: 'L', items: [] }]);
   assert.equal(db.prepare('SELECT COUNT(*) c FROM copy_files').get().c, 1);
   assert.deepEqual(orders.listOrders(db).map((o) => [o.customer, o.price, o.items.map((i) => i.ref)]), [['Ali', 100, ['tt1']]]);
+  assert.deepEqual(orders.listOrders(db).map((o) => [o.paid, o.due]), [[40, 60]]); // the debt comes back with the order
   assert.deepEqual(orders.listRequests(db).map((r) => [r.name, r.count]), [['Dune 2', 2]]);
+  assert.deepEqual(orders.listRequests(db)[0].askers.map((a) => [a.name, a.phone]), [['Sara', '0933']]); // who to tell comes back too
   assert.deepEqual([r.orders, r.requests], [1, 1]);
   // twice is harmless
   importData(db, data);

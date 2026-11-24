@@ -28,9 +28,10 @@ const { similarTo } = require('./core/similar.js');
 const playlists = require('./core/playlists.js');
 const { relatedTo, relatedMap, franchiseKey } = require('./core/related');
 const { seriesGaps } = require('./core/gaps.js');
-const { singleDrive, catalogByGenre } = require('./core/reports.js');
+const { singleDrive, catalogByGenre, duplicates } = require('./core/reports.js');
 const { exportData, importData } = require('./core/backup.js');
 const orders = require('./core/orders.js');
+const { normalizeFa } = require('./core/persian.js');
 const { diffWish } = require('./core/lists.js');
 const { episodesIn, episodeFilter } = require('./core/seasons.js');
 const { ProviderError } = require('./core/errors.js');
@@ -368,7 +369,8 @@ function createApi({
       const price = orders.priceOf(okJobs, priceSettings());
       result.price = price;
       result.orderId = orders.recordOrder(db, { customer: request.customer, phone: request.phone, note: request.note,
-        items: okJobs.flatMap(itemsOfJob), bytes: doneBytes, price: price ? price.total : null }, now());
+        items: okJobs.flatMap(itemsOfJob), bytes: doneBytes, price: price ? price.total : null,
+        paid: paidOf(request.paid) }, now());
     }
     if (manifest.length) {
       const id = copies.saveCopy(db, { name: path.basename(plan.target), target: plan.target, files: manifest }, now());
@@ -502,6 +504,12 @@ function createApi({
     return { ok: true, seasons: [...seasons.values()].sort((a, b) => a.season - b.season) };
   }
 
+  // what the shop typed as "paid now": digits only (Persian digits and separators allowed); nothing typed = the whole price
+  const paidOf = (v) => {
+    const d = normalizeFa(String(v ?? '')).replace(/[^\d]/g, '');
+    return d === '' ? null : Number(d);
+  };
+
   // ---- my collections: the owner's named lists --------------------------------
   // a collection key stands for every film inside it; unknown keys and unmatched folders are left out
   function playlistRefs(keys) {
@@ -581,10 +589,10 @@ function createApi({
     // only a film that has season folders answers; the page then offers the seasons and episodes to pick from
     seasons: async (k) => { const r = await seasonsOf(k); return r.ok && r.seasons.length ? r.seasons : null; },
     // a film that is already in the archive is not demand: only a missing one is counted in the request list
-    ask: (name) => {
+    ask: (name, who) => {
       const found = inArchiveNamed(name);
       if (found.length) return { ok: true, inArchive: found.map((f) => f.title) };
-      return orders.addRequest(db, name, now()) ? { ok: true, inArchive: [] } : { ok: false };
+      return orders.addRequest(db, name, now(), who) ? { ok: true, inArchive: [] } : { ok: false };
     },
     clock,
   });
@@ -800,6 +808,16 @@ function createApi({
     async getCatalog() {
       return catalogByGenre(search.query({}).entries);
     },
+    // copies of the same film or season in several folders, with sizes read from the plugged-in drives (report only: nothing is deleted)
+    async getDuplicates() {
+      const rootOf = new Map((await getDrives()).map((d) => [d.serial, d.root]));
+      return duplicates(search.query({}).entries, (l) => {
+        const root = l.online ? rootOf.get(l.driveSerial) : null;
+        if (!root) return null;
+        const p = path.join(root, l.relPath);
+        try { return fs.existsSync(p) ? transfer.treeSize(p) : null; } catch { return null; }
+      });
+    },
     async getSingleDrive() {
       return singleDrive(search.query({}).entries);
     },
@@ -861,6 +879,14 @@ function createApi({
     async getCustomers() {
       return orders.customers(db);
     },
+    // money: what is still owed, payments that come later, and income / demand over the last N days (no N: everything)
+    async getDebtors() { return orders.debtors(db); },
+    async payOrder(id, amount) { return orders.payOrder(db, id, amount); },
+    async setOrderPaid(id, amount) { return orders.setPaid(db, id, amount); },
+    async getSales({ days = 0 } = {}) {
+      const n = Number(days);
+      return orders.salesReport(db, { since: n > 0 ? now() - n * 86400000 : 0 });
+    },
     // which of these entries this customer already received: { [key]: { created, orderId } }
     async getDelivered({ customer, keys = [] } = {}) {
       const out = {};
@@ -886,9 +912,9 @@ function createApi({
       const hit = (await listRemovable()).find((d) => d.root.toLowerCase() === String(root).toLowerCase());
       return hit ? eject(hit.root) : { ok: false, error: 'not_removable' };
     },
-    async addRequest(name) {
+    async addRequest(name, who = {}) {
       if (String(name ?? '').trim().length > 100) return { ok: false, error: 'too_long' };
-      const r = orders.addRequest(db, name, now());
+      const r = orders.addRequest(db, name, now(), who);
       if (!r) return { ok: false, error: 'empty' };
       return { ok: true, ...r, inArchive: inArchiveNamed(r.name) };
     },
@@ -898,6 +924,19 @@ function createApi({
     async removeRequest(id) {
       orders.removeRequest(db, id);
       return { ok: true };
+    },
+    async removeAsker(id) {
+      orders.removeAsker(db, id);
+      return { ok: true };
+    },
+    // requested films that are in the archive now, with the people who asked and are still to be told
+    async getArrived() {
+      const out = [];
+      for (const r of orders.listRequests(db)) {
+        const matches = inArchiveNamed(r.name);
+        if (matches.length) out.push({ ...r, matches });
+      }
+      return out;
     },
     // the owner ticks a guessed match: it becomes verified and is pinned, so no later rescan or queue run touches it
     async confirmGuess(key) {

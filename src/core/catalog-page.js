@@ -9,7 +9,7 @@ const TEXT = {
     full: 'الان لیست جدید قبول نمی‌کنیم. به مغازه بگو.', none: 'چیزی پیدا نشد.', more: 'نمایش بیشتر', loadFail: 'کاتالوگ باز نشد. دوباره امتحان کن.', retry: 'تلاش دوباره',
     sortNew: 'تازه‌اضافه‌شده', sortName: 'الفبا', sortRating: 'امتیاز', sortYear: 'سال', sort: 'مرتب‌سازی', seasons: 'فصل', stars: 'امتیاز',
     askTitle: 'پیدا نکردی؟', askText: 'اسم فیلم رو بنویس تا برات تهیه کنیم.', askGo: 'درخواست', askThanks: 'ثبت شد. اگه تهیه کردیم بهت خبر می‌دیم.',
-    askHave: 'این فیلم توی آرشیو هست:', empty: 'کاتالوگ هنوز خالیه.',
+    askHave: 'این فیلم توی آرشیو هست:', askName: 'اسم شما (برای خبر دادن، اختیاری)', askPhone: 'شماره تماس (اختیاری)', empty: 'کاتالوگ هنوز خالیه.',
     tariff: 'تعرفه', perMovie: 'هر فیلم', perSeason: 'هر فصل سریال', perEpisode: 'هر قسمت', currency: 'تومان', total: 'مبلغ کل',
     pickSeasons: 'فصل و قسمت', related: 'فیلم‌های مرتبط', relatedOf: 'فیلم‌های مرتبط با', relatedBack: 'برگشت به همهٔ فیلم‌ها', seasonN: 'فصل', epWord: 'قسمت', episodesHint: 'یا فقط این قسمت‌ها: ۱-۵ یا ۲ ۵ ۷', apply: 'تأیید انتخاب', noSeasons: 'فصل‌ها الان در دسترس نیست.',
     clearAll: 'پاک کردن همهٔ انتخاب‌ها', doneNote: 'می‌تونی لیستت رو تغییر بدی و دوباره بفرستی؛ همین لیست به‌روز می‌شه.', whole: 'همهٔ فصل‌ها', onlyEps: 'قسمت',
@@ -201,19 +201,21 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   function askBox(prefill) {
     var input = el('input', { maxlength: '100', 'aria-label': T.askText, placeholder: T.askText });
     input.value = prefill;
+    var who = el('input', { maxlength: '80', 'aria-label': T.askName, placeholder: T.askName });
+    var tel = el('input', { maxlength: '30', type: 'tel', inputmode: 'tel', dir: 'ltr', 'aria-label': T.askPhone, placeholder: T.askPhone });
     var out = el('p', { 'class': 'msg', role: 'status' });
     var go = el('button', { type: 'button' }, [T.askGo]);
     go.onclick = function () {
       if (!input.value.trim()) return;
       go.disabled = true;
-      fetch('/api/ask', { method: 'POST', body: JSON.stringify({ name: input.value }) }).then(function (r) { return r.json().then(function (j) { return [r.status, j]; }); }).then(function (a) {
+      fetch('/api/ask', { method: 'POST', body: JSON.stringify({ name: input.value, customer: who.value, phone: tel.value }) }).then(function (r) { return r.json().then(function (j) { return [r.status, j]; }); }).then(function (a) {
         out.className = 'msg' + (a[0] === 200 ? '' : ' bad');
         if (a[0] === 200) out.textContent = a[1].inArchive.length ? T.askHave + ' ' + a[1].inArchive.join('، ') : T.askThanks;
         else out.textContent = a[0] === 429 ? T.slow : T.fail;
         go.disabled = false;
       }, function () { out.className = 'msg bad'; out.textContent = T.fail; go.disabled = false; });
     };
-    return el('div', { 'class': 'ask' }, [el('b', {}, [T.askTitle]), el('p', {}, [T.askText]), input, go, out]);
+    return el('div', { 'class': 'ask' }, [el('b', {}, [T.askTitle]), el('p', {}, [T.askText]), input, who, tel, go, out]);
   }
   function render() {
     var list = visible();

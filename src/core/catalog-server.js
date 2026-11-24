@@ -93,7 +93,7 @@ function createCatalogServer({ films, posterFile, known, submit, ask, info = () 
       const name = clean(b?.name, 101);
       if (!name || name.length > 100) { json(res, 400, { ok: false, error: 'bad_name' }); return; }
       if (limited(addressOf(req), 'ask')) { json(res, 429, { ok: false, error: 'slow_down' }); return; }
-      const r = ask(name);
+      const r = ask(name, { customer: clean(b?.customer, 80), phone: clean(b?.phone, 30) });
       if (!r?.ok) json(res, 400, { ok: false, error: 'bad_name' });
       else json(res, 200, { ok: true, inArchive: r.inArchive });
     });

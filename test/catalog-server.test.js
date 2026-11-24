@@ -100,6 +100,18 @@ test('behind the internet tunnel each customer address gets its own allowance; w
   } finally { await off.srv.stop(); }
 });
 
+test('asking can carry the customer name and phone, cleaned and capped, so the shop can tell them', async () => {
+  const seen = [];
+  const { srv } = make({ ask: (name, who) => { seen.push([name, who]); return { ok: true, inArchive: [] }; } });
+  const { port } = await srv.start(0, '127.0.0.1');
+  try {
+    const url = `http://127.0.0.1:${port}/api/ask`;
+    await post(url, { name: 'Dune 3', customer: '  Ali   R ', phone: `09${'1'.repeat(50)}` });
+    await post(url, { name: 'Dune 4' });
+    assert.deepEqual(seen, [['Dune 3', { customer: 'Ali R', phone: `09${'1'.repeat(28)}` }], ['Dune 4', { customer: '', phone: '' }]]);
+  } finally { await srv.stop(); }
+});
+
 test('a customer can ask for a film the archive lacks; the answer says when it is already there', async () => {
   const { srv } = make();
   const { port } = await srv.start(0, '127.0.0.1');

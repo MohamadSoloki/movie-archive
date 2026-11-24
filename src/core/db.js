@@ -47,11 +47,13 @@ CREATE TABLE IF NOT EXISTS aliases(location_id INTEGER NOT NULL, alias TEXT NOT 
 -- what was handed to a customer: one order per copy, with the titles in it (ref = imdb id, mal:<id> or n:<name>|<year>)
 CREATE TABLE IF NOT EXISTS orders(
   id INTEGER PRIMARY KEY, customer TEXT NOT NULL DEFAULT '', customer_key TEXT NOT NULL DEFAULT '', phone TEXT, note TEXT,
-  created INTEGER NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, price INTEGER);
+  created INTEGER NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, price INTEGER, paid INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS order_items(order_id INTEGER NOT NULL, ref TEXT NOT NULL, title TEXT NOT NULL, year TEXT, kind TEXT, detail TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS order_items_order ON order_items(order_id);
 -- films customers asked for; key is the normalised name, so spellings of one name count together
 CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY, name TEXT NOT NULL, key TEXT NOT NULL UNIQUE, count INTEGER NOT NULL DEFAULT 1, last INTEGER NOT NULL);
+-- who asked for a requested film (name and/or phone), so the shop can tell them when it arrives; who_key stops the same person being listed twice
+CREATE TABLE IF NOT EXISTS request_askers(id INTEGER PRIMARY KEY, request_id INTEGER NOT NULL, name TEXT NOT NULL DEFAULT '', phone TEXT, who_key TEXT NOT NULL, created INTEGER NOT NULL, UNIQUE(request_id, who_key));
 -- dub / sub set by hand on a folder: value 1 = it has it, 0 = it does not; no row = what the folder name says
 CREATE TABLE IF NOT EXISTS quality_marks(location_id INTEGER NOT NULL, flag TEXT NOT NULL CHECK (flag IN ('dub', 'sub')), value INTEGER NOT NULL, PRIMARY KEY(location_id, flag));
 -- lists customers sent from the phone catalog: items is a JSON array of { key, title, year }
@@ -96,6 +98,11 @@ function openDb(file = ':memory:') {
   // taken out of the archive view by the owner; the folder itself is never touched and a rescan keeps it hidden
   if (!db.prepare('PRAGMA table_info(locations)').all().some((c) => c.name === 'hidden')) {
     db.exec('ALTER TABLE locations ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0');
+  }
+  // what the customer has paid so far; orders made before this column existed count as paid in full
+  if (!db.prepare('PRAGMA table_info(orders)').all().some((c) => c.name === 'paid')) {
+    db.exec('ALTER TABLE orders ADD COLUMN paid INTEGER NOT NULL DEFAULT 0');
+    db.exec('UPDATE orders SET paid = COALESCE(price, 0)');
   }
   if (!db.prepare('PRAGMA table_info(roots)').all().some((c) => c.name === 'single')) {
     db.exec('ALTER TABLE roots ADD COLUMN single INTEGER NOT NULL DEFAULT 0');

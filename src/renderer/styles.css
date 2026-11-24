@@ -494,3 +494,7 @@ body.selecting main { padding-block-end: 6rem; }
 .pl-items { list-style: none; padding: 0; margin: 0; }
 .pl-items .loc { grid-template-columns: 1fr auto auto auto; }
 .pl-items .loc.help, .pl-items li.help { display: block; border: 0; background: none; padding: 0.4rem 0; }
+
+/* sales report tables */
+table.sales { width: 100%; border-collapse: collapse; margin-block-end: 0.6rem; }
+table.sales th, table.sales td { text-align: start; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }

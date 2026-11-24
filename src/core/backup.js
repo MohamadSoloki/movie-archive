@@ -44,7 +44,7 @@ function exportData(db, { now = Date.now(), postersDir = null } = {}) {
     reminders: plain(db.prepare('SELECT title, key, weekday, time, episode, due, enabled FROM reminders ORDER BY id').all()),
     copies,
     orders: orders.listOrders(db).map(({ id, ...o }) => o),
-    requests: plain(db.prepare('SELECT name, count, last FROM requests ORDER BY id').all()),
+    requests: orders.listRequests(db).sort((a, b) => a.id - b.id).map((r) => ({ name: r.name, count: r.count, last: r.last, askers: r.askers.map((a) => ({ name: a.name, phone: a.phone, created: a.created })) })),
   };
 }
 
@@ -117,13 +117,18 @@ function importData(db, data, { postersDir = null } = {}) {
     const dup = db.prepare('SELECT 1 FROM orders WHERE customer_key = ? AND created = ?');
     for (const o of arr(data.orders)) {
       if (!Array.isArray(o?.items) || !Number.isFinite(o.created) || dup.get(orders.customerKey(o.customer), o.created)) continue;
-      orders.recordOrder(db, { customer: o.customer, phone: o.phone, note: o.note, items: o.items.filter((i) => typeof i?.ref === 'string' && typeof i.title === 'string'), bytes: o.bytes ?? 0, price: o.price ?? null }, o.created);
+      orders.recordOrder(db, { customer: o.customer, phone: o.phone, note: o.note, items: o.items.filter((i) => typeof i?.ref === 'string' && typeof i.title === 'string'), bytes: o.bytes ?? 0, price: o.price ?? null, paid: o.paid ?? null }, o.created);
       out.orders += 1;
     }
     const rq = db.prepare('INSERT INTO requests(name, key, count, last) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET count = MAX(count, excluded.count), last = MAX(last, excluded.last)');
     for (const r of arr(data.requests)) {
       const key = typeof r?.name === 'string' ? orders.nameKey(r.name) : '';
-      if (key && r.name.length <= 100) { rq.run(r.name, key, Math.max(1, Number(r.count) || 1), Number(r.last) || 0); out.requests += 1; }
+      if (key && r.name.length <= 100) {
+        rq.run(r.name, key, Math.max(1, Number(r.count) || 1), Number(r.last) || 0);
+        out.requests += 1;
+        const id = db.prepare('SELECT id FROM requests WHERE key = ?').get(key).id;
+        for (const a of arr(r.askers)) if (a && typeof a === 'object') orders.addAsker(db, id, { customer: a.name, phone: a.phone }, Number(a.created) || 0);
+      }
     }
     db.exec('COMMIT');
   } catch (e) {

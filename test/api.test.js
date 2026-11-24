@@ -1063,6 +1063,29 @@ test('a finished copy becomes an order with the customer, its films and the pric
   assert.deepEqual(await api.getOrders(), []);
 });
 
+test('payment: a copy is paid in full unless the shop says less; later payments, debtors and the sales report', async () => {
+  const { api, keys, dest } = await withFilms({ now: () => 5000 });
+  await api.setSettings({ priceMovie: 7000 });
+  const r = await api.startTransfer({ keys, destDir: dest, name: 'c', customer: 'Ali', phone: '0912', paid: 4000 }, () => {});
+  const [order] = await api.getOrders();
+  assert.deepEqual([order.price, order.paid, order.due], [14000, 4000, 10000]);
+  assert.deepEqual(await api.getDebtors(), [{ name: 'Ali', phone: '0912', due: 10000, orders: 1, last: 5000 }]);
+  assert.deepEqual((await api.getCustomers()).map((c) => [c.name, c.due]), [['Ali', 10000]]);
+  assert.deepEqual(await api.payOrder(r.orderId, 3000), { ok: true, paid: 7000, due: 7000 });
+  assert.deepEqual(await api.payOrder(r.orderId, 'abc'), { ok: false, error: 'bad_amount' });
+  assert.deepEqual(await api.setOrderPaid(r.orderId, 14000), { ok: true, paid: 14000, due: 0 });
+  assert.deepEqual(await api.getDebtors(), []);
+  const sales = await api.getSales({ days: 30 });
+  assert.deepEqual([sales.totals.orders, sales.totals.price, sales.totals.paid, sales.totals.due], [1, 14000, 14000, 0]);
+  assert.deepEqual(sales.top.map((x) => x.count), [1, 1]);
+  const none = await api.getSales({ days: 1 }); // "now" is epoch 5000 ms, so a day back reaches everything; a clock far ahead would not
+  assert.equal(none.totals.orders, 1);
+  // a copy with no `paid` field is paid in full
+  const two = await api.startTransfer({ keys, destDir: dest, name: 'd', customer: 'Sara' }, () => {});
+  assert.deepEqual((await api.getOrders({ customer: 'Sara' }))[0].due, 0);
+  assert.equal(two.ok, true);
+});
+
 test('a copy that delivered nothing makes no order; price settings are numbers', async () => {
   const { api, keys, dest } = await withFilms();
   await api.setSettings({ priceEpisode: 'abc', priceMovie: -5, priceSeason: '1500' });
@@ -1092,6 +1115,43 @@ test('requests count up, say when the film is already in the archive, and can be
   assert.deepEqual(await api.addRequest('  '), { ok: false, error: 'empty' });
   assert.deepEqual(await api.removeRequest(miss.id), { ok: true });
   assert.equal((await api.getRequests()).length, 1);
+});
+
+test('a request keeps who asked; when the film reaches the archive it shows as arrived with the people to tell', async () => {
+  const { api, media } = await withFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  await api.setSettings({ catalogPort: 0 });
+  const info = await api.startCatalog();
+  try {
+    const res = await fetch(`http://127.0.0.1:${new URL(info.url).port}/api/ask`, { method: 'POST', body: JSON.stringify({ name: 'Zorro', customer: 'Ali', phone: '0912' }) });
+    assert.equal(res.status, 200);
+  } finally { await api.stopCatalog(); }
+  assert.deepEqual((await api.getRequests())[0].askers.map((a) => [a.name, a.phone]), [['Ali', '0912']]);
+  assert.deepEqual(await api.getArrived(), []); // not in the archive yet
+  fs.mkdirSync(path.join(media, 'Movies', 'Zorro 1998'), { recursive: true });
+  fs.writeFileSync(path.join(media, 'Movies', 'Zorro 1998', 'movie.mkv'), Buffer.alloc(10, 1));
+  await api.scan();
+  const [hit] = await api.getArrived();
+  assert.deepEqual([hit.name, hit.askers.length, hit.matches.length], ['Zorro', 1, 1]);
+  assert.deepEqual(await api.removeAsker(hit.askers[0].id), { ok: true });
+  assert.equal((await api.getArrived())[0].askers.length, 0);
+  assert.deepEqual(await api.removeRequest(hit.id), { ok: true });
+  assert.deepEqual(await api.getArrived(), []);
+});
+
+test('duplicates: a film kept in two folders shows both copies with their sizes; nothing is deleted', async () => {
+  const { api, media } = await withFilms({});
+  const second = path.join(media, 'Spare');
+  fs.mkdirSync(path.join(second, 'dune 2021'), { recursive: true });
+  fs.writeFileSync(path.join(second, 'dune 2021', 'movie.mkv'), Buffer.alloc(500, 1));
+  await api.addRoot(second);
+  await api.scan();
+  await api.setSettings({ omdbKey: 'K' });
+  await api.startQueue(() => {});
+  const r = await api.getDuplicates();
+  assert.deepEqual([r.count, r.reclaim], [1, 500]);
+  assert.equal(r.groups[0].title, 'dune');
+  assert.deepEqual(r.groups[0].copies.map((c) => c.bytes), [2010, 500]);
+  assert.ok(fs.existsSync(path.join(second, 'dune 2021', 'movie.mkv')) && fs.existsSync(path.join(media, 'Movies', 'dune 2021', 'movie.mkv')));
 });
 
 test('estimateSize gives the size and price of a list before any destination is chosen; getFreeSpace reports the destination', async () => {

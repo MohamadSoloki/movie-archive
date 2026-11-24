@@ -42,3 +42,27 @@ test('the printable catalog lists each film once, under its first genre, in name
   assert.deepEqual(r[0].items[0].badges, ['dub']);
   assert.deepEqual(r[0].items[1].badges, ['1080p']);
 });
+
+test('duplicates: a film or season with two usable copies is listed with each copy and the space freed by keeping only the biggest', () => {
+  const { duplicates } = require('../src/core/reports.js');
+  const db = openDb();
+  db.prepare("INSERT INTO drives(serial, label, root, online) VALUES('D1','Big','D:\\\\',1),('D2','Small','E:\\\\',1),('D3','Off','F:\\\\',0)").run();
+  const loc = (serial, rel, titleId, extra = {}) => db.prepare(
+    "INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, title_id, status, missing, season) VALUES(?,?,?,?,?,'matched',?,?)")
+    .run(serial, rel, rel, rel, titleId, extra.missing ?? 0, extra.season ?? null);
+  const film = upsertTitle(db, info('tt1', 'Twice'), null); loc('D1', 'Twice 1080p', film); loc('D2', 'Twice 720p', film);
+  const three = upsertTitle(db, info('tt2', 'Thrice'), null); loc('D1', 't1', three); loc('D1', 't2', three); loc('D2', 't3', three);
+  const single = upsertTitle(db, info('tt3', 'Once'), null); loc('D1', 'o1', single);
+  const gone = upsertTitle(db, info('tt4', 'Copy Gone'), null); loc('D1', 'g1', gone); loc('D2', 'g2', gone, { missing: 1 });
+  const off = upsertTitle(db, info('tt5', 'Copy On Unplugged Drive'), null); loc('D1', 'u1', off); loc('D3', 'u2', off); // size unknown: listed, not counted
+  const show = upsertTitle(db, { ...info('tt6', 'Show'), type: 'series' }, null);
+  loc('D1', 'Show/S01', show, { season: '1' }); loc('D2', 'Show/S01', show, { season: '1' }); loc('D1', 'Show/S02', show, { season: '2' }); // season 2 once: fine
+  const sizes = { 'D1:Twice 1080p': 8000, 'D2:Twice 720p': 3000, 'D1:t1': 5000, 'D1:t2': 4000, 'D2:t3': 6000, 'D1:Show/S01': 900, 'D2:Show/S01': 900, 'D1:u1': 70 };
+  const r = duplicates(listEntries(db), (l) => sizes[`${l.driveSerial}:${l.relPath}`] ?? null);
+  assert.deepEqual(r.groups.map((g) => [g.title, g.season, g.copies.length, g.reclaim]),
+    [['Thrice', null, 3, 9000], ['Twice', null, 2, 3000], ['Show', 1, 2, 900], ['Copy On Unplugged Drive', null, 2, 0]]);
+  assert.deepEqual(r.groups[1].copies.map((c) => [c.driveLabel, c.relPath, c.bytes, c.badges]), [['Big', 'Twice 1080p', 8000, ['1080p']], ['Small', 'Twice 720p', 3000, ['720p']]]); // biggest first
+  assert.equal(r.groups[3].copies.find((c) => c.driveLabel === 'Off').bytes, null);
+  assert.deepEqual([r.reclaim, r.count], [12900, 4]);
+  assert.deepEqual(duplicates([], () => 0), { groups: [], reclaim: 0, count: 0 });
+});
