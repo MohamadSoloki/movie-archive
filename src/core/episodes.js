@@ -67,7 +67,7 @@ async function runEpisodes(db, deps) {
     });
 
     // phase B: one request per episode plot
-    const setPlot = db.prepare('UPDATE episodes SET plot = ?, rating = COALESCE(?, rating) WHERE title_id = ? AND season = ? AND number = ?');
+    const setPlot = db.prepare('UPDATE episodes SET plot = ?, rating = COALESCE(?, rating), runtime = ? WHERE title_id = ? AND season = ? AND number = ?');
     const jobs = [];
     for (const t of titles) {
       const seasons = t.source === 'jikan' ? [1] : ownedSeasons(db, t.id);
@@ -78,6 +78,7 @@ async function runEpisodes(db, deps) {
     await pool(jobs, limit, async ({ t, r }) => {
       let plot = '';
       let rating = null;
+      let runtime = '';
       if (t.source === 'jikan') {
         await pause();
         plot = (await jikan.episode(t.mal_id, r.number)) || '';
@@ -86,11 +87,31 @@ async function runEpisodes(db, deps) {
           const info = await omdb.byId(r.ext_id);
           plot = info.plot || '';
           rating = info.rating ?? null;
+          runtime = info.runtime || '';
         } catch (e) {
           if (e.kind !== 'not_found') throw e;
         }
       }
-      setPlot.run(plot, rating, t.id, r.season, r.number);
+      setPlot.run(plot, rating, runtime, t.id, r.season, r.number);
+      fetched += 1;
+    });
+
+    // Older databases already have plots. Learn their missing runtimes after new episodes have been handled.
+    const previous = db.prepare(`SELECT season, number, ext_id FROM episodes
+      WHERE title_id = ? AND plot IS NOT NULL AND runtime IS NULL AND ext_id IS NOT NULL ORDER BY season, number`);
+    const setRuntime = db.prepare('UPDATE episodes SET runtime = ? WHERE title_id = ? AND season = ? AND number = ?');
+    const runtimes = titles.filter((t) => t.source === 'omdb').flatMap((t) => {
+      const owned = new Set(ownedSeasons(db, t.id));
+      return previous.all(t.id).filter((r) => owned.has(r.season)).map((r) => ({ t, r }));
+    });
+    await pool(runtimes, limit, async ({ t, r }) => {
+      let runtime = '';
+      try {
+        runtime = (await omdb.byId(r.ext_id)).runtime || '';
+      } catch (e) {
+        if (e.kind !== 'not_found') throw e;
+      }
+      setRuntime.run(runtime, t.id, r.season, r.number);
       fetched += 1;
     });
   } catch (e) {

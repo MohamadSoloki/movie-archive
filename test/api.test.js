@@ -1246,6 +1246,45 @@ test('phone catalog: repeat sends replace one incoming list and keep its public 
   } finally { await api.stopCatalog(); }
 });
 
+test('phone catalog details show public metadata and season summaries only for archive titles', async () => {
+  const { api, db, key } = await withShow({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  const titleId = Number(key.split(':')[1]);
+  db.prepare('UPDATE titles SET plot = ?, actors = ?, awards = ?, runtime = ?, total_seasons = ? WHERE id = ?')
+    .run('داستان سریال', 'First Actor, Second Actor', 'Won 1 Emmy. 2 nominations total', '45 min', 4, titleId);
+  db.prepare('DELETE FROM episodes WHERE title_id = ?').run(titleId);
+  const insert = db.prepare('INSERT INTO episodes (title_id, season, number, rating) VALUES (?, ?, ?, ?)');
+  for (const [season, number, rating] of [[1, 1, '8.5'], [1, 2, '9.5'], [1, 3, 'N/A'], [2, 1, null]]) {
+    insert.run(titleId, season, number, rating);
+  }
+  db.prepare('UPDATE episodes SET runtime = ? WHERE title_id = ? AND season = 1 AND number = 2').run('41 min', titleId);
+  await api.setSettings({ catalogPort: 0 });
+  const started = await api.startCatalog();
+  const base = `http://127.0.0.1:${new URL(started.url).port}`;
+  const detailUrl = `${base}/api/detail?k=${encodeURIComponent(key)}`;
+  try {
+    const response = await fetch(detailUrl);
+    assert.equal(response.status, 200);
+    const { detail } = await response.json();
+    assert.equal(detail.plot, 'داستان سریال');
+    assert.equal(detail.actors, 'First Actor, Second Actor');
+    assert.equal(detail.awards, 'Won 1 Emmy. 2 nominations total');
+    assert.equal(detail.runtime, '45 min');
+    assert.equal(detail.totalSeasons, 4);
+    assert.equal(detail.availableEpisodes, 7);
+    assert.deepEqual(detail.seasons.map(({ season, average, episodes }) => [season, average, episodes]), [
+      [1, 9, [1, 2]], [2, null, [1, 2, 3, 4]], [3, null, [1]],
+    ]);
+    assert.deepEqual(detail.seasons[0].runtimeByEpisode, { 2: '41 min' });
+    assert.doesNotMatch(JSON.stringify(detail), /relPath|driveSerial|locations|bytes|omdbKey/);
+    db.prepare('UPDATE titles SET awards = ? WHERE id = ?').run('2 nominations', titleId);
+    await api.scan();
+    assert.equal((await (await fetch(detailUrl)).json()).detail.awards, null);
+    assert.equal((await fetch(`${base}/api/detail?k=missing`)).status, 404);
+    const [card] = await (await fetch(`${base}/api/films`)).json();
+    assert.equal(card.plot, undefined);
+  } finally { await api.stopCatalog(); }
+});
+
 test('phone catalog: prices, the seasons of a series and a list that names seasons and episodes', async () => {
   const { api, key } = await withShow({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
   await api.setSettings({ catalogPort: 0, priceMovie: 5000, priceSeason: 20000, priceEpisode: 2000, shopName: 'Net' });

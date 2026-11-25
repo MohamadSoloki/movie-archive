@@ -65,6 +65,13 @@ function createTranslator({ fetch = globalThis.fetch, email = '' } = {}) {
   };
 }
 
+function readTranslation(db, text) {
+  if (ARABIC.test(text) && !LATIN.test(text)) return text;
+  const get = db.prepare('SELECT text FROM translations WHERE hash = ?');
+  const parts = splitForTranslation(text).map((chunk) => get.get(crypto.createHash('sha1').update(chunk).digest('hex'))?.text);
+  return parts.every(Boolean) ? parts.join(' ') : null;
+}
+
 async function translateCached(db, translator, text) {
   if (ARABIC.test(text) && !LATIN.test(text)) return text;
   const out = [];
@@ -108,4 +115,4 @@ async function pretranslate(db, translator, { pause = 700, onProgress, signal } 
   return r;
 }
 
-module.exports = { splitForTranslation, createTranslator, translateCached, pretranslate };
+module.exports = { splitForTranslation, createTranslator, translateCached, readTranslation, pretranslate };

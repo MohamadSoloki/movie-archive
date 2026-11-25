@@ -1,6 +1,7 @@
 'use strict';
 
 const { wishSignature } = require('./wish-signature.js');
+const { renderDetailView } = require('./catalog-detail-view.js');
 
 const TEXT = {
   fa: {
@@ -15,7 +16,13 @@ const TEXT = {
     askTitle: 'پیدا نکردی؟', askText: 'اسم فیلم رو بنویس تا برات تهیه کنیم.', askGo: 'درخواست', askThanks: 'ثبت شد. اگه تهیه کردیم بهت خبر می‌دیم.',
     askHave: 'این فیلم توی آرشیو هست:', askName: 'اسم شما (برای خبر دادن، اختیاری)', askPhone: 'شماره تماس (اختیاری)', empty: 'کاتالوگ هنوز خالیه.',
     tariff: 'تعرفه', perMovie: 'هر فیلم', perSeason: 'هر فصل سریال', perEpisode: 'هر قسمت', currency: 'تومان', total: 'مبلغ کل',
-    pickSeasons: 'فصل و قسمت', related: 'فیلم‌های مرتبط', relatedOf: 'فیلم‌های مرتبط با', relatedBack: 'برگشت به همهٔ فیلم‌ها', seasonN: 'فصل', epWord: 'قسمت', episodesHint: 'یا فقط این قسمت‌ها: ۱-۵ یا ۲ ۵ ۷', apply: 'تأیید انتخاب', noSeasons: 'فصل‌ها الان در دسترس نیست.',
+    related: 'عنوان‌های مرتبط', similar: 'پیشنهادهای مشابه', back: 'برگشت', seasonN: 'فصل', epWord: 'قسمت',
+    episodesHint: 'شمارهٔ قسمت‌ها، مثلاً ۱-۵ یا ۲ ۵ ۷', wholeSeason: 'همهٔ قسمت‌های موجود', invalidEpisodes: 'شمارهٔ قسمت‌های موجود را وارد کن.',
+    genres: 'ژانرها', genreCount: 'انتخاب', addToList: 'اضافه به لیست سینمایی', inList: 'در لیست شما', updatePick: 'ثبت انتخاب فصل و قسمت',
+    editSeasons: 'ویرایش فصل و قسمت', loading: 'در حال بارگذاری جزئیات…', detailError: 'جزئیات در دسترس نیست.', unknownTitle: 'این عنوان در کاتالوگ پیدا نشد.',
+    synopsis: 'خلاصهٔ داستان', morePlot: 'ادامهٔ توضیحات', people: 'بازیگران و عوامل', cast: 'بازیگران', director: 'کارگردان', awards: 'جوایز',
+    availableSeasons: 'فصل موجود', availableEpisodes: 'قسمت موجود', totalSeasons: 'فصل در مجموع', knownEpisodes: 'قسمت ثبت‌شده',
+    typicalRuntime: 'مدت معمول هر قسمت', average: 'میانگین IMDb', ratingsCount: 'قسمت امتیازدار', episodeTimes: 'مدت قسمت‌ها',
     clearAll: 'پاک کردن همهٔ انتخاب‌ها', doneNote: 'می‌تونی لیستت رو تغییر بدی و دوباره بفرستی؛ همین لیست به‌روز می‌شه.', whole: 'همهٔ فصل‌ها', onlyEps: 'قسمت',
     badge: { '4K': '4K', '1080p': '1080p', dub: 'دوبله', sub: 'زیرنویس', hardsub: 'زیرنویس چسبیده' },
   },
@@ -33,9 +40,10 @@ function pageHtml(lang) {
 <title>${x.title}</title>
 <style>
 @font-face { font-family: "Vazirmatn"; src: url("/font.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
-:root { --bg: #eceff5; --card: #fff; --ink: #141925; --muted: #586276; --accent: #3a46d6; --line: #dde2ec; --ok: #1f7a52; }
-@media (prefers-color-scheme: dark) { :root { --bg: #11141c; --card: #1a1f2b; --ink: #eef0f6; --muted: #a2abbd; --accent: #8b95ff; --line: #2a3142; --ok: #5fd39a; } }
+:root { --bg: #eceff5; --card: #fff; --ink: #141925; --muted: #586276; --accent: #3a46d6; --accent-ink: #fff; --line: #dde2ec; --ok: #1f7a52; }
+@media (prefers-color-scheme: dark) { :root { --bg: #11141c; --card: #1a1f2b; --ink: #eef0f6; --muted: #a2abbd; --accent: #8b95ff; --accent-ink: #141925; --line: #2a3142; --ok: #5fd39a; } }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; font: 17px/1.5 "Vazirmatn", system-ui, Tahoma, sans-serif; background: var(--bg); color: var(--ink); padding-bottom: 6rem; }
 header { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 0.6rem 1rem 0.6rem; border-bottom: 1px solid var(--line); }
 .filters { padding: 0 1rem; }
@@ -45,23 +53,26 @@ a.lang { color: var(--accent); text-decoration: none; font-size: 0.9rem; padding
 input, textarea, select, button { font-family: inherit; }
 input, textarea, select { width: 100%; font: inherit; padding: 0.65rem 0.8rem; min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
 .tools { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
-.tools select { flex: 1; }
+.tools select { flex: 1; min-width: 0; }
 .chips { display: flex; gap: 0.4rem; overflow-x: auto; padding: 0.5rem 0 0; scrollbar-width: none; }
 .chip { flex: none; min-height: 40px; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 0.2rem 0.9rem; font: inherit; font-size: 0.9rem; }
-.chip[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
-main { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.8rem; padding: 1rem; }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+#grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(128px, 100%), 1fr)); gap: 0.8rem; padding: 1rem; }
 .film { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
 .film .img { aspect-ratio: 2 / 3; background: var(--line); display: grid; place-items: center; text-align: center; padding: 0.5rem; color: var(--muted); }
 .film img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .film .body { padding: 0.5rem 0.6rem 0.6rem; display: flex; flex-direction: column; gap: 0.2rem; flex: 1; }
 .film b { font-size: 0.95rem; line-height: 1.35; }
+.film a { display: block; color: inherit; text-decoration: none; overflow-wrap: anywhere; }
+.film .title-link:hover, .rec:hover { text-decoration: underline; }
+.title-link:focus-visible, .rec:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .film small { color: var(--muted); font-size: 0.8rem; }
 .film button { margin-top: auto; min-height: 44px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 8px; padding: 0.35rem; font: inherit; font-size: 0.9rem; }
 .film.on { border-color: var(--accent); }
-.film.on button { background: var(--accent); color: #fff; }
-.bar { position: fixed; inset-inline: 0; bottom: 0; padding: 0.7rem 1rem; background: var(--bg); border-top: 1px solid var(--line); display: none; }
+.film.on button { background: var(--accent); color: var(--accent-ink); }
+.bar { position: fixed; z-index: 3; inset-inline: 0; bottom: 0; padding: 0.7rem 1rem calc(0.7rem + env(safe-area-inset-bottom)); background: var(--bg); border-top: 1px solid var(--line); display: none; }
 .bar.show { display: block; }
-.big { width: 100%; min-height: 48px; padding: 0.75rem; border: 0; border-radius: 12px; background: var(--accent); color: #fff; font: inherit; font-weight: 700; }
+.big { width: 100%; min-height: 48px; padding: 0.75rem; border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 700; }
 .big:disabled { opacity: 0.6; }
 .quiet { background: transparent; color: var(--muted); }
 dialog { width: min(92vw, 440px); max-height: 92vh; overflow: auto; border: 0; border-radius: 16px; background: var(--card); color: var(--ink); padding: 1rem; }
@@ -70,13 +81,38 @@ form { display: grid; gap: 0.6rem; }
 ul { margin: 0; padding: 0; list-style: none; max-height: 30vh; overflow: auto; }
 li.row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.2rem 0; }
 li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--muted); font-size: 1.2rem; }
-.relbar { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.6rem 1rem; background: var(--card); border-bottom: 1px solid var(--line); }
-.relbar button { min-height: 44px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 10px; font: inherit; padding: 0 0.9rem; }
 .tariff { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.85rem; }
-.film button.alt { margin-top: 0.3rem; border-style: dashed; }
-.srow { display: grid; gap: 0.3rem; padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
-.srow label { display: flex; align-items: center; gap: 0.5rem; min-height: 44px; }
-.srow input[type=checkbox] { width: 22px; height: 22px; min-height: 0; flex: none; }
+#genres { flex-wrap: wrap; overflow: visible; }
+#genreToggle { min-height: 44px; max-width: 65%; }
+#detailView { width: min(100%, 740px); margin-inline: auto; padding: 1rem 1rem 3rem; }
+#detailBack { min-height: 44px; margin-bottom: 0.75rem; }
+.detail-hero { display: grid; grid-template-columns: minmax(96px, 30%) minmax(0, 1fr); gap: clamp(0.75rem, 4vw, 1.75rem); align-items: center; }
+.detail-heading { min-width: 0; overflow-wrap: anywhere; }
+.detail-heading h1 { font-size: clamp(1.3rem, 4.8vw, 2rem); line-height: 1.3; }
+.detail-poster, .rec-poster { aspect-ratio: 2 / 3; width: 100%; display: grid; place-items: center; object-fit: cover; background: var(--line); color: var(--muted); border-radius: 10px; overflow: hidden; text-align: center; }
+.card-poster { width: 100%; height: 100%; }
+.detail-meta { margin-block: 0.45rem; font-size: 0.9rem; }
+.detail-genres { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.detail-genres span { padding: 0.12rem 0.45rem; background: var(--card); border: 1px solid var(--line); border-radius: 999px; font-size: 0.8rem; }
+.detail-section { border-top: 1px solid var(--line); margin-top: 1.15rem; padding-top: 0.85rem; }
+.detail-section h2 { margin: 0 0 0.45rem; font-size: 1.05rem; }
+.detail-section p, .detail-section dl { margin: 0.25rem 0 0.5rem; overflow-wrap: anywhere; }
+.detail-section p, .detail-section dd { unicode-bidi: plaintext; }
+.detail-section dt, .subtle { color: var(--muted); font-size: 0.88rem; }
+.detail-section dd { margin: 0 0 0.45rem; }
+.detail-section summary { cursor: pointer; min-height: 44px; padding-block: 0.55rem; }
+.detail-section details > summary { color: var(--accent); }
+.season { background: var(--card); padding-inline: 0.65rem; border-radius: 10px; margin-block: 0.4rem; border: 1px solid var(--line); }
+.season-name { font-weight: 700; color: var(--ink); }
+.season-info { display: inline; color: var(--muted); font-size: 0.82rem; }
+.season label { display: flex; align-items: center; gap: 0.5rem; min-height: 44px; }
+.season input[type=checkbox] { width: 20px; height: 20px; min-height: 0; flex: none; }
+.season input[type=text] { margin-bottom: 0.5rem; }
+.season .episode-times { margin-bottom: 0.5rem; }
+.recommendations { display: grid; grid-auto-flow: column; grid-auto-columns: clamp(94px, 25vw, 130px); gap: 0.6rem; overflow-x: auto; padding: 0.2rem 0.15rem 0.6rem; }
+.rec { display: grid; align-content: start; gap: 0.25rem; color: inherit; text-decoration: none; font-size: 0.85rem; overflow-wrap: anywhere; }
+#detailActions { display: flex; gap: 0.5rem; width: min(100%, 740px); margin-inline: auto; }
+#detailCart { min-height: 48px; }
 .sum { margin: 0.2rem 0 0; display: grid; gap: 0.15rem; font-size: 0.95rem; }
 .sum b { color: var(--accent); }
 .price { color: var(--accent); font-size: 0.85rem; white-space: nowrap; }
@@ -89,19 +125,26 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 </style>
 </head>
 <body>
-<header>
+<header id="catalogHead">
   <div class="top"><h1>${x.title}</h1></div>
   <p class="tariff" id="tariff" hidden></p>
   <input id="q" type="search" placeholder="${x.search}" autocomplete="off" aria-label="${x.search}">
 </header>
-<section class="filters">
+<section class="filters" id="catalogFilters">
   <div class="chips" id="kinds" role="group"></div>
-  <div class="tools"><select id="sort" aria-label="${x.sort}"></select></div>
-  <div class="chips" id="genres" role="group"></div>
+  <div class="tools"><select id="sort" aria-label="${x.sort}"></select><button class="chip" type="button" id="genreToggle" aria-expanded="false" aria-controls="genres">${x.genres} ▾</button></div>
+  <div class="chips" id="genres" role="group" aria-label="${x.genres}" hidden></div>
 </section>
-<div id="relbar" class="relbar" hidden></div>
 <main id="grid"></main>
+<main id="detailView" hidden>
+  <button id="detailBack" type="button" class="chip">${x.back}</button>
+  <div id="detailBody"></div>
+</main>
 <div class="bar" id="bar"><button id="open" class="big" type="button"></button></div>
+<div class="bar show" id="detailBar" hidden><div id="detailActions">
+  <button id="detailAdd" type="button" class="big">${x.addToList}</button>
+  <button id="detailCart" type="button" class="chip" hidden>${x.mine}</button>
+</div></div>
 <dialog id="dlg">
   <form id="form" method="dialog">
     <h2 style="margin:0;font-size:1.05rem">${x.mine}</h2>
@@ -116,18 +159,13 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     <button type="button" id="close" class="big quiet">${x.close}</button>
   </form>
 </dialog>
-<dialog id="sdlg">
-  <h2 id="stitle" style="margin:0;font-size:1.05rem" dir="auto"></h2>
-  <div id="sbody"></div>
-  <button type="button" id="sapply" class="big">${x.apply}</button>
-  <button type="button" id="sclose" class="big quiet">${x.close}</button>
-</dialog>
 <script>
 (function () {
   ${wishSignature.toString()}
+  ${renderDetailView.toString()}
   var T = ${client};
   var PAGE = 60;
-  var films = [], kind = '', genre = '', shown = PAGE, chosen = {}, sel = {}, P = { movie: 0, season: 0, episode: 0 };
+  var films = [], filmByKey = new Map(), kind = '', genres = new Set(), shown = PAGE, chosen = {}, sel = {}, P = { movie: 0, season: 0, episode: 0 };
   var $ = function (id) { return document.getElementById(id); };
   function norm(s) {
     return String(s || '').toLowerCase().replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[آأإ]/g, 'ا').replace(/[ةۀ]/g, 'ه')
@@ -213,18 +251,11 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     sortRating: function (a, b) { return (parseFloat(b.r) || 0) - (parseFloat(a.r) || 0); },
     sortYear: function (a, b) { return (parseInt(b.y, 10) || 0) - (parseInt(a.y, 10) || 0); }
   };
-  var relOf = null;
-  function showRelated(f) {
-    relOf = f; window.scrollTo(0, 0); render();
-  }
   function visible() {
     var words = norm($('q').value).split(' ').filter(Boolean);
-    if (relOf) { // the film and the films of its series, oldest first; search and filters are set aside until the owner goes back
-      var keys = [relOf.k].concat(relOf.rl || []);
-      return films.filter(function (f) { return keys.indexOf(f.k) >= 0; }).sort(function (a, b) { return keys.indexOf(a.k) - keys.indexOf(b.k); });
-    }
     var list = films.filter(function (f) {
-      return (!kind || f.kd === kind) && (!genre || f.g.indexOf(genre) >= 0) && words.every(function (w) { return f._n.indexOf(w) >= 0; });
+      return (!kind || f.kd === kind) && (!genres.size || f.g.some(function (g) { return genres.has(g); }))
+        && words.every(function (w) { return f._n.indexOf(w) >= 0; });
     });
     return list.sort(function (a, b) { return SORTS[$('sort').value](a, b) || (a.f || a.t).localeCompare(b.f || b.t, 'fa'); });
   }
@@ -249,37 +280,24 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   }
   function render() {
     var list = visible();
-    var rb = $('relbar');
-    rb.hidden = !relOf;
-    rb.replaceChildren();
-    if (relOf) {
-      var back = el('button', { type: 'button' }, [T.relatedBack]);
-      back.onclick = function () { relOf = null; render(); };
-      rb.append(el('span', { dir: 'auto' }, [T.relatedOf + ' ' + (relOf.f || relOf.t)]), back);
-    }
     var grid = $('grid');
     grid.replaceChildren();
     list.slice(0, shown).forEach(function (f) {
       var on = !!chosen[f.k];
-      var img = f.p ? el('img', { src: '/poster/' + encodeURIComponent(f.k), alt: '', loading: 'lazy' }) : el('span', {}, [f.f || f.t]);
       var tags = f.b.map(function (b) { return T.badge[b] || b; });
-      if (f.s) tags.unshift(f.s + ' ' + T.seasons);
+      if (f.s) tags.unshift(fa(f.s) + ' ' + T.seasons);
       var meta = [f.y, f.r ? '★ ' + f.r : ''].concat(tags).filter(Boolean).join(' · ');
+      var pick = el('button', { type: 'button', 'aria-pressed': String(on) }, [on ? T.picked : T.pick]);
+      pick.onclick = function () {
+        setChoice(f, !chosen[f.k], null);
+        $(pick.id)?.focus({ preventScroll: true });
+      };
+      pick.id = 'pick-' + f.k;
       var card = el('div', { 'class': 'film' + (on ? ' on' : '') }, [
-        el('div', { 'class': 'img' }, [img]),
-        el('div', { 'class': 'body' }, [el('b', { dir: 'auto' }, [f.f || f.t]), f.f ? el('small', { dir: 'ltr', 'class': 'orig' }, [f.t]) : '', el('small', {}, [meta]), f.d ? el('small', { dir: 'auto' }, [f.d]) : '',
-          el('button', { type: 'button', 'aria-pressed': String(on) }, [on ? T.picked : T.pick])])]);
-      card.querySelector('button').onclick = function () { if (chosen[f.k]) { delete chosen[f.k]; delete sel[f.k]; } else chosen[f.k] = f; save(); render(); };
-      if (f.s > 0) {
-        var alt = el('button', { type: 'button', 'class': 'alt' }, [T.pickSeasons]);
-        alt.onclick = function () { openSeasons(f); };
-        card.querySelector('.body').append(alt);
-      }
-      if (f.rl && f.rl.length && !relOf) {
-        var rel = el('button', { type: 'button', 'class': 'alt' }, [T.related + ' (' + fa(f.rl.length) + ')']);
-        rel.onclick = function () { showRelated(f); };
-        card.querySelector('.body').append(rel);
-      }
+        detailLink(f, { class: 'img', 'aria-label': f.f || f.t, tabindex: '-1' }, [poster(f, 'card-poster', true)]),
+        el('div', { class: 'body' }, [detailLink(f, { class: 'title-link', id: 'title-' + f.k }, [
+          el('b', { dir: 'auto' }, [f.f || f.t]),
+        ]), f.f ? el('small', { dir: 'ltr', 'class': 'orig' }, [f.t]) : '', el('small', {}, [meta]), pick])]);
       grid.append(card);
     });
     var tail = el('div', { 'class': 'wide' }, []);
@@ -296,14 +314,29 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     syncSend();
   }
   function save() { store('pick', JSON.stringify(Object.keys(chosen))); store('sel', JSON.stringify(sel)); }
-  function chips(box, items, current, set) {
+  function setChoice(f, include, selection) {
+    if (include) chosen[f.k] = f; else delete chosen[f.k];
+    if (include && selection) sel[f.k] = selection; else delete sel[f.k];
+    save(); render();
+  }
+  function chips(box, items, selected, set) {
     box.replaceChildren();
     items.forEach(function (it) {
-      var b = el('button', { 'class': 'chip', type: 'button', 'aria-pressed': String(current() === it[0]) }, [it[1]]);
-      b.onclick = function () { set(it[0]); chips(box, items, current, set); shown = PAGE; render(); };
+      var b = el('button', { 'class': 'chip', type: 'button', 'aria-pressed': String(selected(it[0])) }, [it[1]]);
+      b.onclick = function () {
+        set(it[0]); shown = PAGE;
+        Array.from(box.children).forEach(function (button, i) { button.setAttribute('aria-pressed', String(selected(items[i][0]))); });
+        updateGenreToggle(); render();
+      };
       box.append(b);
     });
   }
+  function updateGenreToggle() {
+    var open = !$('genres').hidden;
+    $('genreToggle').setAttribute('aria-expanded', String(open));
+    $('genreToggle').textContent = T.genres + (genres.size ? ' · ' + fa(genres.size) + ' ' + T.genreCount : '') + (open ? ' ▴' : ' ▾');
+  }
+  $('genreToggle').onclick = function () { $('genres').hidden = !$('genres').hidden; updateGenreToggle(); };
   // prices are read once; without them the page shows no money at all
   function loadPrices() {
     fetch('/api/info').then(function (r) { return r.json(); }).then(function (j) {
@@ -315,59 +348,186 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       if (P.episode > 0) parts.push(T.perEpisode + ' ' + money(P.episode));
       t.hidden = !parts.length;
       t.textContent = T.tariff + ': ' + parts.join(' · ');
-      render();
+      if (catalogReady) render();
     }).catch(function () { /* no prices: no money shown */ });
   }
-  // the seasons (and episodes) of a series to choose from; only what the shop has
-  function openSeasons(f) {
-    var body = $('sbody');
-    $('stitle').textContent = f.f || f.t;
-    body.replaceChildren(el('p', {}, ['…']));
-    $('sdlg').showModal();
-    fetch('/api/seasons?k=' + encodeURIComponent(f.k)).then(function (r) { if (!r.ok) throw new Error('bad'); return r.json(); }).then(function (j) {
-      var cur = sel[f.k] || null; // null = the whole series
-      var rows = j.seasons.map(function (s) {
+  var catalogReady = false, activeDetail = null, detailData = new Map();
+  function poster(f, style, lazy) {
+    if (!f.p) return el('span', { class: style, 'aria-hidden': 'true', dir: 'auto' }, [f.f || f.t]);
+    return el('img', { class: style, src: '/poster/' + encodeURIComponent(f.k), alt: '', loading: lazy ? 'lazy' : 'eager' });
+  }
+  function detailHash(key) { return '#title=' + encodeURIComponent(key); }
+  function detailLink(f, attrs, children) {
+    var link = el('a', { ...attrs, href: detailHash(f.k) }, children);
+    link.onclick = function (ev) {
+      if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return;
+      ev.preventDefault();
+      window.history.replaceState({ ...window.history.state, scroll: window.scrollY, focusKey: f.k }, '');
+      window.history.pushState({ fromCatalog: true }, '', detailHash(f.k));
+      showRoute();
+    };
+    return link;
+  }
+  function recommendation(key) {
+    var f = filmByKey.get(key);
+    return f && detailLink(f, { class: 'rec', 'data-recommendation': f.k }, [
+      poster(f, 'rec-poster', true), el('span', { dir: 'auto' }, [f.f || f.t]),
+    ]);
+  }
+  function showRoute() {
+    var hash = window.location?.hash || '';
+    var detail = hash.startsWith('#title=');
+    var key = '';
+    if (detail) {
+      try { key = decodeURIComponent(hash.slice(7)); } catch (e) { /* unknown title */ }
+    }
+    activeDetail = detail ? filmByKey.get(key) || null : null;
+    ['catalogHead', 'catalogFilters', 'grid', 'bar'].forEach(function (id) { $(id).hidden = detail; });
+    $('detailView').hidden = !detail;
+    $('detailBar').hidden = !activeDetail;
+    if (activeDetail) renderTitle(activeDetail);
+    else if (detail) $('detailBody').replaceChildren(el('p', { role: 'status' }, [T.unknownTitle]));
+    var route = window.history?.state;
+    if (detail) {
+      var previous = Array.from($('detailBody').querySelectorAll?.('[data-recommendation]') || [])
+        .find(function (link) { return link.dataset.recommendation === route?.focusKey; });
+      (previous || $('detailTitle') || $('detailBack')).focus({ preventScroll: true });
+    } else if (route?.focusKey) {
+      $('title-' + route.focusKey)?.focus({ preventScroll: true });
+    }
+    window.scrollTo(0, route?.scroll || 0);
+  }
+  $('detailBack').onclick = function () {
+    if (window.history.state?.fromCatalog) window.history.back();
+    else { window.history.replaceState(null, '', window.location.pathname + window.location.search); showRoute(); }
+  };
+  if (window.history) window.history.scrollRestoration = 'manual';
+  window.addEventListener?.('popstate', function () { if (catalogReady) showRoute(); });
+
+  function renderTitle(f, retry, fetching) {
+    var data = detailData.get(f.k);
+    var add = $('detailAdd');
+    function label(text, disabled) {
+      add.textContent = text;
+      add.disabled = disabled;
+      $('detailCart').hidden = !(Object.keys(chosen).length || wishId);
+    }
+    label(chosen[f.k] ? T.inList : T.addToList, !!chosen[f.k]);
+    add.onclick = function () {
+      setChoice(f, true, null);
+      label(T.inList, true);
+    };
+    renderDetailView({
+      body: $('detailBody'), title: f, data: data, text: T, element: el, fa: fa,
+      poster: function (film) { return poster(film, 'detail-poster', false); }, link: recommendation,
+      controls: function (seasons) { return seasonEditor(f, seasons, label); },
+      retry: retry ? function () { renderTitle(f); } : null,
+    });
+    if (data || retry || fetching) return;
+    fetch('/api/detail?k=' + encodeURIComponent(f.k)).then(function (r) {
+      if (!r.ok) throw new Error('bad');
+      return r.json();
+    }).then(function (j) {
+      detailData.set(f.k, j.detail);
+      if (activeDetail === f) {
+        var focusHeading = document.activeElement === $('detailTitle');
+        renderTitle(f, false, true);
+        if (focusHeading) $('detailTitle').focus({ preventScroll: true });
+      }
+    }).catch(function () { if (activeDetail === f) renderTitle(f, true, true); });
+  }
+
+  function seasonEditor(f, seasons, label) {
+    var block = el('div', {});
+    var rows = [];
+    var current = sel[f.k];
+    var edit = el('button', { type: 'button', class: 'chip' }, [T.editSeasons]);
+    block.append(edit);
+    seasons.forEach(function (s) {
+      var description = [];
+      if (s.episodes) description.push(fa(s.episodes.length) + ' ' + T.availableEpisodes);
+      else if (s.knownEpisodes) description.push(fa(s.knownEpisodes) + ' ' + T.knownEpisodes);
+      if (s.average != null) description.push('★ ' + fa(s.average) + ' ' + T.average + ' · ' + fa(s.ratedEpisodes) + ' ' + T.ratingsCount);
+      var summary = el('summary', {}, [
+        el('span', { class: 'season-name' }, [T.seasonN + ' ' + fa(s.season)]),
+        description.length ? el('span', { class: 'season-info' }, [' · ' + description.join(' · ')]) : '',
+      ]);
+      var panel = el('details', { class: 'season' }, [summary]);
+      var times = Object.entries(s.runtimeByEpisode);
+      if (s.selectable) {
         var whole = el('input', { type: 'checkbox' });
-        whole.checked = !chosen[f.k] ? false : (!cur || cur.seasons.indexOf(s.season) >= 0);
-        var eps = s.episodes ? el('input', { type: 'text', inputmode: 'numeric', placeholder: T.episodesHint, 'aria-label': T.episodesHint }) : null;
-        if (eps && cur && cur.episodes[s.season] && !whole.checked) eps.value = cur.episodes[s.season].join(' ');
-        whole.onchange = function () { if (whole.checked && eps) eps.value = ''; };
-        if (eps) eps.oninput = function () { if (eps.value.trim()) whole.checked = false; };
-        var label = el('label', {}, [whole, el('span', {}, [T.seasonN + ' ' + fa(s.season) + (s.episodes ? ' (' + fa(s.episodes.length) + ' ' + T.epWord + ')' : '')])]);
-        return { season: s.season, have: s.episodes, whole: whole, eps: eps, node: el('div', { 'class': 'srow' }, [label, eps || '']) };
+        whole.checked = !current || current.seasons.includes(s.season);
+        var eps = s.episodes ? el('input', { type: 'text', inputmode: 'text', 'aria-label': T.episodesHint, placeholder: T.episodesHint, dir: 'auto' }) : null;
+        if (eps) eps.value = (current?.episodes[s.season] || []).map(fa).join(' ');
+        rows.push({ season: s.season, whole: whole, eps: eps, available: s.episodes, panel: panel, summary: summary });
+        whole.onchange = function () { if (whole.checked && eps) eps.value = ''; update(); };
+        if (eps) eps.oninput = function () { if (eps.value.trim()) whole.checked = false; update(); };
+        panel.append(el('label', {}, [whole, T.wholeSeason]), eps || '');
+        if (s.episodes) panel.append(el('p', { class: 'subtle' }, [T.availableEpisodes + ' · ' + s.episodes.map(fa).join('، ')]));
+      }
+      if (times.length) {
+        panel.append(el('details', { class: 'episode-times' }, [
+          el('summary', {}, [T.episodeTimes]),
+          ...times.map(function (pair) { return el('p', {}, [T.epWord + ' ' + fa(pair[0]) + ' · ' + pair[1].replace(/^(\\d+) min$/, function (_, n) { return fa(n) + ' دقیقه'; })]); }),
+        ]));
+      }
+      if (s.selectable || times.length) block.append(panel);
+      else block.append(el('div', { class: 'season' }, [
+        el('span', { class: 'season-name' }, [T.seasonN + ' ' + fa(s.season)]),
+        description.length ? el('span', { class: 'season-info' }, [' · ' + description.join(' · ')]) : '',
+      ]));
+    });
+    edit.hidden = !chosen[f.k] || !rows.length;
+    edit.onclick = function () { rows[0].panel.open = true; rows[0].summary.focus(); };
+    if (!rows.length) return block;
+
+    function update() {
+      var selection = { seasons: [], episodes: {} }, invalid = null;
+      rows.forEach(function (row) {
+        if (row.whole.checked) selection.seasons.push(row.season);
+        if (!row.eps) return;
+        var numbers = parseEps(row.eps.value);
+        var bad = !!row.eps.value.trim() && (!numbers.length || numbers.some(function (n) { return !row.available.includes(n); }));
+        row.eps.setCustomValidity(bad ? T.invalidEpisodes : '');
+        if (bad) invalid = invalid || row;
+        else if (numbers.length && !row.whole.checked) selection.episodes[row.season] = numbers;
       });
-      body.replaceChildren.apply(body, rows.map(function (r) { return r.node; }));
-      $('sapply').onclick = function () {
-        var out = { seasons: [], episodes: {} };
-        rows.forEach(function (r) {
-          if (r.whole.checked) { out.seasons.push(r.season); return; }
-          var want = r.eps ? parseEps(r.eps.value).filter(function (n) { return r.have.indexOf(n) >= 0; }) : [];
-          if (want.length) out.episodes[r.season] = want;
-        });
-        var any = out.seasons.length || Object.keys(out.episodes).length;
-        if (!any) { delete chosen[f.k]; delete sel[f.k]; }
-        else {
-          chosen[f.k] = f;
-          if (out.seasons.length === rows.length) delete sel[f.k]; else sel[f.k] = out;
-        }
-        save(); render(); $('sdlg').close();
+      var include = !!(selection.seasons.length || Object.keys(selection.episodes).length);
+      var next = selection.seasons.length === rows.length ? null : selection;
+      var before = JSON.stringify(sel[f.k] || null);
+      var picked = !!chosen[f.k];
+      var same = picked === include && (!include || before === JSON.stringify(next));
+      label(picked ? (same && !invalid ? T.inList : include ? T.updatePick : T.remove) : T.addToList, !invalid && (same || (!picked && !include)));
+      $('detailAdd').onclick = function () {
+        if (invalid) { invalid.panel.open = true; invalid.eps.reportValidity(); return; }
+        if (same) return;
+        setChoice(f, include, next);
+        edit.hidden = !include;
+        update();
       };
-    }).catch(function () { body.replaceChildren(el('p', { 'class': 'msg bad' }, [T.noSeasons])); });
+    }
+    update();
+    return block;
   }
   function load() {
     loadPrices();
     fetch('/api/films?lang=' + T.lang).then(function (r) { if (!r.ok) throw new Error('bad'); return r.json(); }).then(function (list) {
       films = list.map(function (f) { f._n = norm([f.t, f.f || ''].concat(f.a || []).join(' ') + ' ' + (f.y || '')); return f; });
+      filmByKey = new Map(films.map(function (f) { return [f.k, f]; }));
       var kinds = [['', T.all]];
       ['movie', 'series', 'animation', 'anime'].forEach(function (k) { if (films.some(function (f) { return f.kd === k; })) kinds.push([k, T[k]]); });
-      chips($('kinds'), kinds, function () { return kind; }, function (v) { kind = v; });
+      chips($('kinds'), kinds, function (v) { return kind === v; }, function (v) { kind = v; });
       var count = {};
       films.forEach(function (f) { f.g.forEach(function (g) { count[g] = (count[g] || 0) + 1; }); });
-      var gs = [['', T.all]].concat(Object.keys(count).sort(function (a, b) { return count[b] - count[a]; }).slice(0, 24).map(function (g) { return [g, g]; }));
-      chips($('genres'), gs, function () { return genre; }, function (v) { genre = v; });
-      try { JSON.parse(store('pick') || '[]').forEach(function (k) { var f = films.filter(function (x) { return x.k === k; })[0]; if (f) chosen[k] = f; }); } catch (e) { /* nothing saved */ }
+      var gs = [['', T.all]].concat(Object.keys(count).sort(function (a, b) { return count[b] - count[a]; }).map(function (g) { return [g, g]; }));
+      chips($('genres'), gs, function (v) { return v ? genres.has(v) : !genres.size; }, function (v) {
+        if (!v) genres.clear(); else if (genres.has(v)) genres.delete(v); else genres.add(v);
+      });
+      try { JSON.parse(store('pick') || '[]').forEach(function (k) { var f = filmByKey.get(k); if (f) chosen[k] = f; }); } catch (e) { /* nothing saved */ }
       try { var old = JSON.parse(store('sel') || '{}'); Object.keys(old).forEach(function (k) { if (chosen[k]) sel[k] = old[k]; }); } catch (e) { /* nothing saved */ }
+      catalogReady = true;
       render();
+      if (window.location?.hash.startsWith('#title=')) showRoute();
     }).catch(function () {
       var g = $('grid');
       var retry = el('button', { type: 'button', 'class': 'chip' }, [T.retry]);
@@ -409,9 +569,9 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     $('msg').className = 'msg';
   }
   $('form').addEventListener('input', function () { syncSend(); showReference(); });
-  $('open').onclick = function () { listBox(); showReference(); $('dlg').showModal(); };
+  $('open').onclick = $('detailCart').onclick = function () { listBox(); showReference(); $('dlg').showModal(); };
   $('close').onclick = function () { $('dlg').close(); };
-  $('sclose').onclick = function () { $('sdlg').close(); };
+  $('dlg').addEventListener('close', function () { if (activeDetail) renderTitle(activeDetail); });
   $('clearAll').onclick = function () { chosen = {}; sel = {}; save(); render(); if (wishId) listBox(); else $('dlg').close(); };
   $('form').onsubmit = function (ev) {
     ev.preventDefault();

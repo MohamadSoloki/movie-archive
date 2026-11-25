@@ -11,7 +11,7 @@ const clean = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, m
  * The phone catalog: a small read-only web server for the shop's local network. Customers browse the film list on their
  * phone and send back the list they want. No file path, drive or folder name ever leaves it; sent lists only reach `submit`.
  */
-function createCatalogServer({ films, posterFile, known, submit, unchangedReceipt = () => null, ask, info = () => ({ prices: {}, shop: '' }), seasons = () => null, font = () => null, viaTunnel = () => false, clock = Date.now }) {
+function createCatalogServer({ films, posterFile, known, submit, unchangedReceipt = () => null, ask, info = () => ({ prices: {}, shop: '' }), seasons = () => null, detail = () => null, font = () => null, viaTunnel = () => false, clock = Date.now }) {
   let server = null;
   const sent = new Map(); // address -> times of its recent lists
 
@@ -111,7 +111,7 @@ function createCatalogServer({ films, posterFile, known, submit, unchangedReceip
   function handle(req, res) {
     const url = new URL(req.url, 'http://x');
     const path = url.pathname;
-    const routes = ['/', '/api/films', '/api/info', '/api/seasons', '/api/wish', '/api/ask', '/font.woff2'];
+    const routes = ['/', '/api/films', '/api/info', '/api/seasons', '/api/detail', '/api/wish', '/api/ask', '/font.woff2'];
     const poster = path.startsWith('/poster/');
     if (!routes.includes(path) && !poster) { json(res, 404, { ok: false }); return; }
     if (path === '/api/wish' || path === '/api/ask') {
@@ -127,6 +127,12 @@ function createCatalogServer({ films, posterFile, known, submit, unchangedReceip
       else { res.writeHead(200, { 'content-type': 'font/woff2', 'cache-control': 'max-age=86400' }); res.end(f); }
     } else if (path === '/api/films') json(res, 200, films(langOf(url)));
     else if (path === '/api/info') json(res, 200, info());
+    else if (path === '/api/detail') {
+      Promise.resolve().then(() => detail(url.searchParams.get('k') ?? '')).then((data) => {
+        if (!data) json(res, 404, { ok: false });
+        else json(res, 200, { ok: true, detail: data });
+      }, () => json(res, 500, { ok: false }));
+    }
     else if (path === '/api/seasons') {
       Promise.resolve(seasons(url.searchParams.get('k') ?? '')).then((list) => {
         if (!list) json(res, 404, { ok: false });

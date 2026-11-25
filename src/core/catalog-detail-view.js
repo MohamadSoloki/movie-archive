@@ -1,0 +1,65 @@
+'use strict';
+
+// Embedded by catalog-page in the self-contained phone catalog.
+function renderDetailView({ body, title, data, text, element, fa, poster, link, controls, retry }) {
+  const e = element;
+  const name = title.f || title.t;
+  const heading = e('h1', { id: 'detailTitle', dir: 'auto', tabindex: '-1' }, [name]);
+  const facts = [title.y, title.r ? '★ ' + fa(title.r) + ' / ۱۰' : null];
+  if (data?.runtime && !data.episodic) facts.push(data.runtime.replace(/^(\d+) min$/, (_, n) => fa(n) + ' دقیقه'));
+  const hero = e('div', { class: 'detail-hero' }, [
+    poster(title, false),
+    e('div', { class: 'detail-heading' }, [
+      heading,
+      title.f ? e('div', { class: 'subtle', dir: 'auto' }, [title.t]) : '',
+      e('div', { class: 'detail-meta', dir: 'auto' }, [facts.filter(Boolean).join(' · ')]),
+      e('div', { class: 'detail-genres' }, title.g.map((genre) => e('span', {}, [genre]))),
+    ]),
+  ]);
+  body.replaceChildren(hero);
+  if (!data) {
+    const status = retry ? e('button', { type: 'button', class: 'chip' }, [text.retry]) : '';
+    if (status) status.onclick = retry;
+    body.append(e('p', { role: 'status', class: 'subtle' }, [retry ? text.detailError : text.loading]), status);
+    return;
+  }
+  const section = (name, children) => body.append(e('section', { class: 'detail-section' }, [
+    e('h2', {}, [name]), ...children,
+  ]));
+  if (data.plot) {
+    if (data.plot.length > 230) {
+      const words = data.plot.slice(0, 230);
+      const short = words.slice(0, words.lastIndexOf(' ') > 150 ? words.lastIndexOf(' ') : 230) + '…';
+      const excerpt = e('p', { dir: 'auto' }, [short]);
+      const more = e('details', {}, [
+        e('summary', {}, [text.morePlot]), e('p', { dir: 'auto' }, [data.plot]),
+      ]);
+      more.ontoggle = () => { excerpt.hidden = more.open; };
+      section(text.synopsis, [excerpt, more]);
+    } else section(text.synopsis, [e('p', { dir: 'auto' }, [data.plot])]);
+  }
+  const credits = [[text.cast, data.actors], [text.director, data.director]].filter(([, value]) => value);
+  if (credits.length) section(text.people, [e('dl', {}, credits.flatMap(([label, value]) => [
+    e('dt', {}, [label]), e('dd', { dir: 'auto' }, [value]),
+  ]))]);
+  if (data.awards) section(text.awards, [e('p', { dir: 'auto' }, [data.awards])]);
+  if (data.episodic) {
+    const counts = [];
+    if (data.availableSeasons) counts.push(fa(data.availableSeasons) + ' ' + text.availableSeasons);
+    if (data.availableEpisodes != null) counts.push(fa(data.availableEpisodes) + ' ' + text.availableEpisodes);
+    if (data.totalSeasons) counts.push(fa(data.totalSeasons) + ' ' + text.totalSeasons);
+    const known = data.seasons.reduce((n, s) => n + s.knownEpisodes, 0);
+    if (data.availableEpisodes == null && known) counts.push(fa(known) + ' ' + text.knownEpisodes);
+    if (data.runtime) counts.push(text.typicalRuntime + ' ' + data.runtime.replace(/^(\d+) min$/, (_, n) => fa(n) + ' دقیقه'));
+    section(text.seasonN + ' و ' + text.epWord, [
+      counts.length ? e('p', { class: 'subtle' }, [counts.join(' · ')]) : '',
+      controls(data.seasons),
+    ]);
+  }
+  for (const [label, keys] of [[text.related, data.related], [text.similar, data.similar]]) {
+    const items = keys.map(link).filter(Boolean);
+    if (items.length) section(label, [e('div', { class: 'recommendations' }, items)]);
+  }
+}
+
+module.exports = { renderDetailView };

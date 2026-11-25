@@ -17,6 +17,7 @@ const { forgetSeasons, getCache, putCache, cached } = require('./core/cache.js')
 const { createSearch } = require('./core/search.js');
 const { lightOf, badgesOf } = require('./core/library.js');
 const { createCatalogServer } = require('./core/catalog-server.js');
+const { catalogDetail } = require('./core/catalog-details.js');
 const { createTunnel } = require('./core/tunnel.js');
 const tags = require('./core/tags.js');
 const transfer = require('./core/transfer.js');
@@ -488,7 +489,7 @@ function createApi({
   const manyTags = (keys, text, apply) => (keys.length ? changeTags(keys, text, apply) : { ok: false, error: 'nothing' });
 
   // the seasons of an entry that the archive holds, with the episode numbers read from file names (null: only the whole season can be chosen)
-  async function seasonsOf(key) {
+  async function seasonsOf(key, includeBytes = true) {
     const e = search.find(key);
     if (!e || e.kind === 'collection') return { ok: false, error: 'unknown' };
     const rootOf = new Map((await getDrives()).map((d) => [d.serial, d.root]));
@@ -498,8 +499,10 @@ function createApi({
       const n = Number(l.season);
       const src = rootOf.has(l.driveSerial) ? path.join(rootOf.get(l.driveSerial), l.relPath) : null;
       const have = seasons.get(n);
-      if (have?.episodes && have.bytes !== null) continue; // one readable copy of the season is enough
-      seasons.set(n, { season: n, episodes: src ? episodesIn(src) : null, bytes: src && fs.existsSync(src) ? transfer.treeSize(src) : null });
+      if (have?.episodes && (!includeBytes || have.bytes !== null)) continue; // one readable copy of the season is enough
+      const row = { season: n, episodes: src ? episodesIn(src) : null };
+      if (includeBytes) row.bytes = src && fs.existsSync(src) ? transfer.treeSize(src) : null;
+      seasons.set(n, row);
     }
     return { ok: true, seasons: [...seasons.values()].sort((a, b) => a.season - b.season) };
   }
@@ -578,12 +581,18 @@ function createApi({
       try { return fs.readFileSync(path.join(postersDir, path.basename(f))); } catch { return null; }
     },
     font: () => { try { return fs.readFileSync(path.join(__dirname, 'renderer', 'fonts', 'Vazirmatn-Variable.woff2')); } catch { return null; } },
+    detail: async (k) => {
+      const entry = search.find(k);
+      if (!entry || entry.kind === 'collection') return null;
+      const archive = entry.locations.some((l) => l.season != null && !l.missing) ? (await seasonsOf(k, false)).seasons : [];
+      return catalogDetail(db, entry, archive, search.query({}).entries.filter((e) => e.kind !== 'collection'));
+    },
     known: (k) => { const e = search.find(k); return e && e.kind !== 'collection' ? { key: e.key, title: e.title, year: e.year } : null; },
     submit: (w) => saveWish(db, w, now(), WISH_LIMIT),
     unchangedReceipt: (w) => unchangedReceipt(db, w),
     info: () => ({ prices: { movie: getSetting(db, 'priceMovie'), season: getSetting(db, 'priceSeason'), episode: getSetting(db, 'priceEpisode') }, shop: getSetting(db, 'shopName') }),
     // only a film that has season folders answers; the page then offers the seasons and episodes to pick from
-    seasons: async (k) => { const r = await seasonsOf(k); return r.ok && r.seasons.length ? r.seasons : null; },
+    seasons: async (k) => { const r = await seasonsOf(k, false); return r.ok && r.seasons.length ? r.seasons : null; },
     // a film that is already in the archive is not demand: only a missing one is counted in the request list
     ask: (name, who) => {
       const found = inArchiveNamed(name);

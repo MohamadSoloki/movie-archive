@@ -175,12 +175,13 @@ test('a list can name seasons and episodes of a series; the choice is cleaned an
   } finally { await srv.stop(); }
 });
 
-test('phone page: its script parses, and it offers the related films of a series (rl) with a way back', () => {
+test('phone page embeds a valid script, genre disclosure and a detail view with a way back', () => {
   const { pageHtml } = require('../src/core/catalog-page.js');
   const html = pageHtml('fa');
   const script = html.match(/<script>([\s\S]*)<\/script>/)[1];
   assert.doesNotThrow(() => new Function(script));
-  assert.match(html, /id="relbar"/);
-  assert.match(html, /فیلم‌های مرتبط/);
-  assert.match(html, /f\.rl/);
+  assert.match(html, /aria-expanded="false" aria-controls="genres"/);
+  assert.match(html, /id="detailView" hidden/);
+  assert.match(html, /id="detailBack"/);
+  assert.match(html, /پیشنهادهای مشابه/);
 });
