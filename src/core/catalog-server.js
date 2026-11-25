@@ -78,10 +78,14 @@ function createCatalogServer({ films, posterFile, known, submit, unchangedReceip
         json(res, 400, { ok: false, error: 'bad_list' }); return;
       }
       const picks = b.picks && typeof b.picks === 'object' ? b.picks : {};
-      const items = await Promise.all([...new Set(keys)].map((k) => known(k)).filter(Boolean).map(async (e) => {
-        const sel = picks[e.key] && (await seasons(e.key))?.length ? cleanSel(picks[e.key]) : null;
-        return { key: e.key, title: e.title, year: e.year ?? null, ...(sel ? { sel } : {}) };
+      const choices = await Promise.all([...new Set(keys)].filter((k) => known(k)).map(async (key) => {
+        const sel = picks[key] && (await seasons(key))?.length ? cleanSel(picks[key]) : null;
+        return { key, sel };
       }));
+      const items = choices.flatMap(({ key, sel }) => {
+        const e = known(key);
+        return e ? [{ key: e.key, title: e.title, year: e.year ?? null, ...(sel ? { sel } : {}) }] : [];
+      });
       if (!items.length && !clear) { json(res, 400, { ok: false, error: 'bad_list' }); return; }
       const wish = { name, phone: clean(b.phone, 30), note: clean(b.note, 200), items, editKey };
       const receipt = unchangedReceipt(wish);
@@ -144,7 +148,7 @@ function createCatalogServer({ films, posterFile, known, submit, unchangedReceip
       try { key = decodeURIComponent(path.slice('/poster/'.length)); } catch { /* bad escape */ }
       const img = posterFile(key);
       if (!img) json(res, 404, { ok: false });
-      else { res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'max-age=3600' }); res.end(img); }
+      else reply(res, 200, 'image/jpeg', img);
     }
   }
 

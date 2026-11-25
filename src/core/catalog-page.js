@@ -14,7 +14,7 @@ const TEXT = {
     saved: 'ثبت شده', receipt: 'شمارهٔ پیگیری',
     fail: 'ارسال نشد. بعداً دوباره امتحان کن.', slow: 'چند بار پشت هم فرستادی. چند دقیقه بعد دوباره امتحان کن.',
     full: 'الان لیست جدید قبول نمی‌کنیم. به مغازه بگو.', none: 'چیزی پیدا نشد.', more: 'نمایش بیشتر', loadFail: 'کاتالوگ باز نشد. دوباره امتحان کن.', retry: 'تلاش دوباره',
-    sortNew: 'تازه‌اضافه‌شده', sortName: 'الفبا', sortRating: 'امتیاز', sortYear: 'سال', sort: 'مرتب‌سازی', seasons: 'فصل', stars: 'امتیاز',
+    sortNew: 'جدیدترین', sortName: 'الفبا', sortRating: 'امتیاز', sort: 'مرتب‌سازی', seasons: 'فصل', stars: 'امتیاز',
     askTitle: 'پیدا نکردی؟', askText: 'اسم فیلم رو بنویس تا برات تهیه کنیم.', askGo: 'درخواست', askThanks: 'ثبت شد. اگه تهیه کردیم بهت خبر می‌دیم.',
     askHave: 'این فیلم توی آرشیو هست:', askName: 'اسم شما (برای خبر دادن، اختیاری)', askPhone: 'شماره تماس (اختیاری)', empty: 'کاتالوگ هنوز خالیه.',
     tariff: 'تعرفه', perMovie: 'هر فیلم', perSeason: 'هر فصل سریال', perEpisode: 'هر قسمت', currency: 'تومان', total: 'مبلغ کل',
@@ -333,10 +333,9 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     return editKey;
   }
   var SORTS = {
-    sortNew: function (a, b) { return b.o - a.o; },
+    sortNew: function (a, b) { return b._year - a._year; },
     sortName: function (a, b) { return (a.f || a.t).localeCompare(b.f || b.t, 'fa'); },
-    sortRating: function (a, b) { return (parseFloat(b.r) || 0) - (parseFloat(a.r) || 0); },
-    sortYear: function (a, b) { return (parseInt(b.y, 10) || 0) - (parseInt(a.y, 10) || 0); }
+    sortRating: function (a, b) { return (parseFloat(b.r) || 0) - (parseFloat(a.r) || 0); }
   };
   function visible() {
     var words = norm($('q').value).split(' ').filter(Boolean);
@@ -627,6 +626,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       films = list.map(function (f) {
         var cartoon = f.kd === 'animation' || f.kd === 'anime' ? 'کارتون انیمیشن' : '';
         f._n = norm([f.t, f.f, f.y, T[f.kd], cartoon].concat(f.a || [], f.g || []).filter(Boolean).join(' '));
+        f._year = Number(norm(f.y).match(/^\\d{4}\\b/)?.[0]) || 0;
         return f;
       });
       filmByKey = new Map(films.map(function (f) { return [f.k, f]; }));
@@ -651,7 +651,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       g.replaceChildren(el('div', { 'class': 'wide' }, [el('span', {}, [T.loadFail]), retry]));
     });
   }
-  ['sortNew', 'sortRating', 'sortYear', 'sortName'].forEach(function (k) { $('sort').append(el('option', { value: k }, [T[k]])); });
+  ['sortNew', 'sortRating', 'sortName'].forEach(function (k) { $('sort').append(el('option', { value: k }, [T[k]])); });
   $('sort').onchange = function () { shown = PAGE; render(); };
   var typing = 0;
   $('q').addEventListener('input', function () { clearTimeout(typing); typing = setTimeout(function () { shown = PAGE; render(); }, 150); });

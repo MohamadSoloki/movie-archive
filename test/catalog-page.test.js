@@ -127,6 +127,15 @@ test('catalog theme follows device changes until manually changed and keeps the 
   assert.match(reopened.nodes.themeToggle.textContent, /☾/);
 });
 
+test('newest is the default and sorts by release year, with undated titles last', async () => {
+  const catalog = cards.map((f, i) => ({ ...f, y: ['۲۰۲۵', '2020–2026', null][i], o: i + 1 }));
+  const { nodes } = page({ catalog });
+  await settle();
+  assert.equal(nodes.sort.children[0].textContent, 'جدیدترین');
+  const titles = nodes.grid.children.slice(0, 3).map((card) => card.all((e) => e.tag === 'b')[0].textContent);
+  assert.deepEqual(titles, ['Film 0', 'Film 1', 'Film 2']);
+});
+
 test('quick selection keeps the grid and search intact and updates the review button', async () => {
   const { get, nodes } = page();
   await settle();

@@ -1164,8 +1164,17 @@ test('estimateSize gives the size and price of a list before any destination is 
   assert.equal(await api.getFreeSpace(path.join(dest, 'nope')), null);
 });
 
+async function verifiedCatalogFilms(options) {
+  const ctx = await withFilms(options);
+  await ctx.api.setSettings({ omdbKey: 'K' });
+  await ctx.api.startQueue(() => {});
+  const entries = (await ctx.api.getEntries()).entries;
+  for (const entry of entries) await ctx.api.confirmGuess(entry.key);
+  return { ...ctx, keys: entries.map((entry) => entry.key) };
+}
+
 test('phone catalog: off by default, serves films without paths, takes customer lists, stops again', async () => {
-  const { api } = await withFilms({ qr: async (text) => `qr:${text}`, lanAddress: () => '192.168.1.20' });
+  const { api } = await verifiedCatalogFilms({ qr: async (text) => `qr:${text}`, lanAddress: () => '192.168.1.20' });
   await api.setSettings({ catalogPort: 0 });
   assert.deepEqual(await api.getCatalogInfo(), { running: false });
   const r = await api.startCatalog();
@@ -1210,7 +1219,7 @@ test('phone catalog: a film of a series lists the keys of its related films (rl)
 });
 
 test('phone catalog: repeat sends replace one incoming list and keep its public reference', async () => {
-  const { api, keys } = await withFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  const { api, keys } = await verifiedCatalogFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
   await api.setSettings({ catalogPort: 0 });
   const started = await api.startCatalog();
   const url = `http://127.0.0.1:${new URL(started.url).port}/api/wish`;
@@ -1248,6 +1257,7 @@ test('phone catalog: repeat sends replace one incoming list and keep its public 
 
 test('phone catalog details show public metadata and season summaries only for archive titles', async () => {
   const { api, db, key } = await withShow({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  await api.confirmGuess(key);
   const titleId = Number(key.split(':')[1]);
   db.prepare('UPDATE titles SET plot = ?, actors = ?, awards = ?, runtime = ?, total_seasons = ? WHERE id = ?')
     .run('داستان سریال', 'First Actor, Second Actor', 'Won 1 Emmy. 2 nominations total', '45 min', 4, titleId);
@@ -1285,8 +1295,39 @@ test('phone catalog details show public metadata and season summaries only for a
   } finally { await api.stopCatalog(); }
 });
 
+test('phone catalog hides guessed and unresolved titles until the operator confirms them', async () => {
+  const { api, db, media, userData, key } = await withShow({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  db.exec("UPDATE locations SET guessed = 1; UPDATE titles SET poster_file = 'preview.jpg'");
+  fs.mkdirSync(path.join(userData, 'posters'), { recursive: true });
+  fs.writeFileSync(path.join(userData, 'posters', 'preview.jpg'), 'poster');
+  fs.mkdirSync(path.join(media, 'Series', 'Pending title'));
+  fs.writeFileSync(path.join(media, 'Series', 'Pending title', 'video.mkv'), 'x');
+  await api.scan();
+  const guessed = (await api.getEntries()).entries.find((item) => item.key === key);
+  assert.equal(guessed.attention, 'guess');
+  await api.setSettings({ catalogPort: 0 });
+  const started = await api.startCatalog();
+  const base = `http://127.0.0.1:${new URL(started.url).port}`;
+  const id = encodeURIComponent(key);
+  const post = (route, body) => fetch(base + route, { method: 'POST', body: JSON.stringify(body) });
+  try {
+    assert.deepEqual(await (await fetch(base + '/api/films')).json(), []);
+    for (const route of ['/api/detail?k=', '/api/seasons?k=', '/poster/']) {
+      assert.equal((await fetch(base + route + id)).status, 404);
+    }
+    assert.equal((await post('/api/wish', { name: 'Ali', keys: [key] })).status, 400);
+    assert.deepEqual(await (await post('/api/ask', { name: guessed.title })).json(), { ok: true, inArchive: [] });
+    assert.ok((await api.confirmGuess(key)).ok);
+    assert.deepEqual((await (await fetch(base + '/api/films')).json()).map((item) => item.k), [key]);
+    for (const route of ['/api/detail?k=', '/api/seasons?k=', '/poster/']) {
+      assert.equal((await fetch(base + route + id)).status, 200);
+    }
+  } finally { await api.stopCatalog(); }
+});
+
 test('phone catalog: prices, the seasons of a series and a list that names seasons and episodes', async () => {
   const { api, key } = await withShow({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  await api.confirmGuess(key);
   await api.setSettings({ catalogPort: 0, priceMovie: 5000, priceSeason: 20000, priceEpisode: 2000, shopName: 'Net' });
   const r = await api.startCatalog();
   try {
@@ -1373,12 +1414,16 @@ test('phone catalog starts at launch only when it was left on', async () => {
 });
 
 test('phone catalog rows: persian genres, persian name from a folder, no paths; asking for a film we have is not demand', async () => {
-  const { api, media } = await withFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
-  fs.mkdirSync(path.join(media, 'Movies', 'بتمن آغاز می‌کند 2005 دوبله فارسی'), { recursive: true });
-  fs.writeFileSync(path.join(media, 'Movies', 'بتمن آغاز می‌کند 2005 دوبله فارسی', 'a.mkv'), 'x');
+  const { api, db, media } = await withFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  fs.mkdirSync(path.join(media, 'Movies', 'بتمن آغاز می‌کند 2022 دوبله فارسی'), { recursive: true });
+  fs.writeFileSync(path.join(media, 'Movies', 'بتمن آغاز می‌کند 2022 دوبله فارسی', 'a.mkv'), 'x');
   await api.scan();
   await api.setSettings({ omdbKey: 'K', catalogPort: 0 });
   await api.startQueue(() => {});
+  db.prepare("UPDATE locations SET status = 'matched', title_id = (SELECT id FROM titles WHERE imdb_id = ?) WHERE folder_name LIKE ?")
+    .run(OMDB_BODY.imdbID, 'بتمن آغاز%');
+  await api.scan();
+  for (const entry of (await api.getEntries()).entries) await api.confirmGuess(entry.key);
   const r = await api.startCatalog();
   try {
     const base = `http://127.0.0.1:${new URL(r.url).port}`;

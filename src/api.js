@@ -564,10 +564,16 @@ function createApi({
   });
 
   // ---- phone catalog: a read-only page on the shop network, customers send back the films they want ----
+  const isPublicTitle = (entry) => entry?.attention === 'ok' && entry.kind !== 'collection';
+  const publicTitles = () => search.query({}).entries.filter(isPublicTitle);
+  const findPublicTitle = (key) => {
+    const entry = search.find(key);
+    return isPublicTitle(entry) ? entry : null;
+  };
   const catalogServer = createCatalogServer({
     viaTunnel: () => tunnel.status().state === 'on',
     films: (lang) => {
-      const list = search.query({}).entries.filter((e) => e.kind !== 'collection');
+      const list = publicTitles();
       const rel = relatedMap(list);
       return list.map((e) => {
         const row = catalogRow(e, lang);
@@ -576,26 +582,31 @@ function createApi({
       });
     },
     posterFile: (k) => {
-      const f = search.find(k)?.posterFile;
+      const f = findPublicTitle(k)?.posterFile;
       if (!f) return null;
       try { return fs.readFileSync(path.join(postersDir, path.basename(f))); } catch { return null; }
     },
     font: () => { try { return fs.readFileSync(path.join(__dirname, 'renderer', 'fonts', 'Vazirmatn-Variable.woff2')); } catch { return null; } },
     detail: async (k) => {
-      const entry = search.find(k);
-      if (!entry || entry.kind === 'collection') return null;
+      const entry = findPublicTitle(k);
+      if (!entry) return null;
       const archive = entry.locations.some((l) => l.season != null && !l.missing) ? (await seasonsOf(k, false)).seasons : [];
-      return catalogDetail(db, entry, archive, search.query({}).entries.filter((e) => e.kind !== 'collection'));
+      const current = findPublicTitle(k);
+      return current ? catalogDetail(db, current, archive, publicTitles()) : null;
     },
-    known: (k) => { const e = search.find(k); return e && e.kind !== 'collection' ? { key: e.key, title: e.title, year: e.year } : null; },
+    known: (k) => { const e = findPublicTitle(k); return e ? { key: e.key, title: e.title, year: e.year } : null; },
     submit: (w) => saveWish(db, w, now(), WISH_LIMIT),
     unchangedReceipt: (w) => unchangedReceipt(db, w),
     info: () => ({ prices: { movie: getSetting(db, 'priceMovie'), season: getSetting(db, 'priceSeason'), episode: getSetting(db, 'priceEpisode') }, shop: getSetting(db, 'shopName') }),
     // only a film that has season folders answers; the page then offers the seasons and episodes to pick from
-    seasons: async (k) => { const r = await seasonsOf(k, false); return r.ok && r.seasons.length ? r.seasons : null; },
+    seasons: async (k) => {
+      if (!findPublicTitle(k)) return null;
+      const r = await seasonsOf(k, false);
+      return r.ok && r.seasons.length && findPublicTitle(k) ? r.seasons : null;
+    },
     // a film that is already in the archive is not demand: only a missing one is counted in the request list
     ask: (name, who) => {
-      const found = inArchiveNamed(name);
+      const found = inArchiveNamed(name, publicTitles());
       if (found.length) return { ok: true, inArchive: found.map((f) => f.title) };
       return orders.addRequest(db, name, now(), who) ? { ok: true, inArchive: [] } : { ok: false };
     },
@@ -605,10 +616,10 @@ function createApi({
   let catalogPortNow = 0;
 
   // already here: the same name as a title or other name, or inside a folder name
-  function inArchiveNamed(name) {
+  function inArchiveNamed(name, entries = search.query({}).entries) {
     const key = orders.nameKey(name);
-    return search.query({}).entries.filter((e) => e.kind !== 'collection' && [e.title, ...e.aliases].some((n) => orders.nameKey(n) === key)
-      || (key.length >= 4 && e.locations.some((l) => orders.nameKey(l.folderName).includes(key)))).map((e) => ({ key: e.key, title: e.title }));
+    return entries.filter((e) => e.kind !== 'collection' && ([e.title, ...e.aliases].some((n) => orders.nameKey(n) === key)
+      || (key.length >= 4 && e.locations.some((l) => orders.nameKey(l.folderName).includes(key))))).map((e) => ({ key: e.key, title: e.title }));
   }
 
   // the internet part of the catalog info: the tunnel's state and, when it is on, its address with a QR
