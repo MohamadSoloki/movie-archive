@@ -52,7 +52,7 @@ const seasons = [1, 2].map((season) => ({
 }));
 const settle = () => new Promise(setImmediate);
 
-function page({ reduceMotion = false, darkMode = false, catalog = cards, local = new Map() } = {}) {
+function page({ reduceMotion = false, darkMode = false, catalog = cards, local = new Map(), episodeSeasons = seasons } = {}) {
   const html = pageHtml('fa');
   const nodes = Object.fromEntries(Array.from(html.matchAll(/<([a-z]+)[^>]*? id="([^"]+)"([^>]*?)>/g), ([, tag, id, tail]) =>
     [id, new Element(tag, /\bhidden\b/.test(tail) ? { id, hidden: '' } : { id })]));
@@ -89,7 +89,7 @@ function page({ reduceMotion = false, darkMode = false, catalog = cards, local =
     if (!url.startsWith('/api/detail')) throw new Error('Unexpected mock request: ' + url);
     const series = url.endsWith('t%3A2');
     return Response.json({ detail: { episodic: series, plot: 'داستان آزمایشی', actors: 'Test Actor', awards: 'Won 1 Emmy',
-      seasons: series ? seasons : [], related: series ? ['t:3'] : [], similar: series ? ['t:1'] : [] } });
+      seasons: series ? episodeSeasons : [], related: series ? ['t:3'] : [], similar: series ? ['t:1'] : [] } });
   };
   const root = new Element('html');
   const context = {
@@ -230,8 +230,9 @@ test('catalog disclosure preserves multiple genres and back restores the catalog
   assert.equal(get('title-t:3'), undefined);
 });
 
-test('quick series selection opens a menu and adds only confirmed seasons and episodes', async () => {
-  const { get, nodes: e, submissions } = page();
+test('quick series selection uses saved numbers when the drive is disconnected', async () => {
+  const episodeSeasons = seasons.map((season) => ({ ...season, episodes: null, choiceEpisodes: [1, 2, 3, 4, 5, 6, 7, 8] }));
+  const { get, nodes: e, submissions } = page({ episodeSeasons });
   await settle();
   get('pick-t:2').click();
   assert.ok(e.seasonPicker.open);
@@ -239,6 +240,7 @@ test('quick series selection opens a menu and adds only confirmed seasons and ep
   assert.equal(get('pick-t:2').attrs['aria-pressed'], 'false');
   const [first, second] = e.seasonPickerBody.all((node) => node.tag === 'input' && node.attrs.type === 'checkbox');
   const episode = e.seasonPickerBody.all((node) => node.tag === 'input' && node.attrs.type === 'text')[0];
+  assert.doesNotMatch(e.seasonPickerBody.textContent, /درایو|شمارهٔ قسمت‌های این فصل هنوز ثبت نشده/);
   const firstSeason = e.seasonPickerBody.all((node) => node.attrs.class === 'season season-selectable')[0];
   assert.equal(firstSeason.children[0].children[0], first);
   assert.equal(firstSeason.children[1].tag, 'details');
@@ -253,7 +255,7 @@ test('quick series selection opens a menu and adds only confirmed seasons and ep
   assert.match(episodeError.textContent, /عدد/);
   episode.value = '۱۱';
   episode.oninput();
-  assert.match(episodeError.textContent, /آخرین قسمت موجود ۳/);
+  assert.match(episodeError.textContent, /آخرین قسمت این فصل ۸/);
   assert.equal(episode.attrs['aria-invalid'], 'true');
   e.seasonPickerBody.all((node) => node.attrs.class === 'big season-apply')[0].click();
   assert.ok(e.seasonPicker.open);

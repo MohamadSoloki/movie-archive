@@ -1342,8 +1342,11 @@ test('phone catalog: prices, the seasons of a series and a list that names seaso
   } finally { await api.stopCatalog(); }
 });
 
-test('catalog details identify disconnected episode storage and restore selection on reconnection', async () => {
-  const { api, key, state } = await withShow({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+test('catalog customers can order episodes from saved metadata with an offline drive', async () => {
+  const { api, db, key, state } = await withShow({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  const titleId = Number(key.split(':')[1]);
+  const insert = db.prepare('INSERT OR IGNORE INTO episodes (title_id, season, number) VALUES (?, 1, ?)');
+  for (let n = 1; n <= 8; n++) insert.run(titleId, n);
   await api.confirmGuess(key);
   await api.setSettings({ catalogPort: 0 });
   const started = await api.startCatalog();
@@ -1356,10 +1359,18 @@ test('catalog details identify disconnected episode storage and restore selectio
   try {
     state.online = false;
     const offline = await details();
-    assert.deepEqual(offline.seasons.map((s) => [s.episodes, s.episodeAvailability]), Array(3).fill([null, 'offline']));
+    assert.equal(offline.seasons[0].episodes, null);
+    assert.deepEqual(offline.seasons[0].choiceEpisodes, [1, 2, 3, 4, 5, 6, 7, 8]);
+    const selection = { seasons: [], episodes: { 1: [3, 8] } };
+    const order = await fetch(new URL('/api/wish', url), {
+      method: 'POST', body: JSON.stringify({ name: 'Ali', keys: [key], picks: { [key]: selection } }),
+    });
+    assert.equal(order.status, 200);
+    assert.deepEqual((await api.getWishes())[0].items[0].sel, selection);
     state.online = true;
     const online = await details();
     assert.deepEqual(online.seasons.map((s) => s.episodes), [[1, 2], [1, 2, 3, 4], [1]]);
+    assert.deepEqual(online.seasons[0].choiceEpisodes, offline.seasons[0].choiceEpisodes);
   } finally { await api.stopCatalog(); }
 });
 

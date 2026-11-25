@@ -6,11 +6,12 @@ const { readTranslation } = require('./translate.js');
 
 const present = (value) => value && value !== 'N/A' ? value : null;
 
-// Public metadata only. Archive episodes are selectable; provider episodes can describe a season without making it selectable.
+// Episode requests use both saved provider numbers and files recognized in an archived season.
 function catalogDetail(db, entry, archiveSeasons, entries) {
-  const seasons = new Map(archiveSeasons.map(({ season, episodes, episodeAvailability }) => [season, {
-    season, episodes, ...(episodeAvailability ? { episodeAvailability } : {}), selectable: true, knownEpisodes: 0, runtimeByEpisode: {},
+  const seasons = new Map(archiveSeasons.map(({ season, episodes }) => [season, {
+    season, episodes, selectable: true, knownEpisodes: 0, runtimeByEpisode: {},
   }]));
+  const episodeChoices = new Map(archiveSeasons.map(({ season, episodes }) => [season, new Set(episodes ?? [])]));
   const ratings = new Map();
   const rows = db.prepare('SELECT season, number, rating, runtime FROM episodes WHERE title_id = ? ORDER BY season, number').all(entry.titleId ?? null);
   for (const row of rows) {
@@ -19,6 +20,7 @@ function catalogDetail(db, entry, archiveSeasons, entries) {
     }
     const season = seasons.get(row.season);
     season.knownEpisodes += 1;
+    if (Number.isInteger(row.number) && row.number > 0 && row.number < 10000) episodeChoices.get(row.season)?.add(row.number);
     if (present(row.runtime) && (!season.episodes || season.episodes.includes(row.number))) {
       season.runtimeByEpisode[row.number] = row.runtime;
     }
@@ -32,7 +34,8 @@ function catalogDetail(db, entry, archiveSeasons, entries) {
   }
   const result = [...seasons.values()].sort((a, b) => a.season - b.season).map((season) => {
     const r = ratings.get(season.season);
-    return { ...season, average: r ? Math.round(r.sum / r.count * 10) / 10 : null, ratedEpisodes: r?.count ?? 0 };
+    const choiceEpisodes = Array.from(episodeChoices.get(season.season) ?? []).sort((a, b) => a - b);
+    return { ...season, choiceEpisodes, average: r ? Math.round(r.sum / r.count * 10) / 10 : null, ratedEpisodes: r?.count ?? 0 };
   });
   const awards = entry.awards;
   const related = relatedTo(entry, entries).map((e) => e.key);

@@ -503,7 +503,6 @@ function createApi({
       if (!src && have) continue; // keep a connected copy ahead of an offline one
       const row = { season: n, episodes: src ? episodesIn(src) : null };
       if (includeBytes) row.bytes = src && fs.existsSync(src) ? transfer.treeSize(src) : null;
-      else if (!row.episodes) row.episodeAvailability = src ? 'unrecognized' : 'offline';
       seasons.set(n, row);
     }
     return { ok: true, seasons: [...seasons.values()].sort((a, b) => a.season - b.season) };
