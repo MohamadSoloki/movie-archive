@@ -177,6 +177,8 @@ test('series details add all seasons by default and submit only the edited episo
   get('title-t:2').click();
   await settle();
   assert.match(e.detailBody.textContent, /۹ میانگین IMDb/);
+  assert.match(e.detailBody.textContent, /۲ قسمت موجود/);
+  assert.doesNotMatch(e.detailBody.textContent, /قسمت موجود · ۱، ۳/);
   assert.match(e.detailBody.textContent, /۴۳ دقیقه/);
   e.detailAdd.click();
   assert.equal(e.detailAdd.textContent, 'در لیست شما');

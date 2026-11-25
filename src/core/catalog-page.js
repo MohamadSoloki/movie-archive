@@ -494,7 +494,6 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
         whole.onchange = function () { if (whole.checked && eps) eps.value = ''; update(); };
         if (eps) eps.oninput = function () { if (eps.value.trim()) whole.checked = false; update(); };
         panel.append(el('label', {}, [whole, T.wholeSeason]), eps || '');
-        if (s.episodes) panel.append(el('p', { class: 'subtle' }, [T.availableEpisodes + ' · ' + s.episodes.map(fa).join('، ')]));
       }
       if (times.length) {
         panel.append(el('details', { class: 'episode-times' }, [
