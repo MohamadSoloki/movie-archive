@@ -34,6 +34,11 @@
         "repo": "movie-archive",
         "releaseType": "release"
       }
-    ]
+    ],
+    "linux": {
+      "target": "AppImage",
+      "category": "AudioVideo",
+      "artifactName": "Movie-Archive-${version}.${ext}"
+    }
   }
 }

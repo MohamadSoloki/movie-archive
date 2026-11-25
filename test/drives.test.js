@@ -64,3 +64,41 @@ test('ejectDrive runs one fixed PowerShell command for a valid letter and refuse
   assert.deepEqual(await ejectDrive('F:\; calc', async () => assert.fail('must not run')), { ok: false, error: 'bad_drive' });
   assert.deepEqual(await ejectDrive('F:\\', async () => { throw new Error('x'); }), { ok: false, error: 'eject_failed' });
 });
+
+const { listDrivesLinux } = require('../src/core/drives.js');
+
+const lsblk = JSON.stringify({ blockdevices: [
+  { name: 'sda', type: 'disk', label: null, uuid: null, mountpoint: null, fstype: null, rm: false, children: [
+    { name: 'sda1', type: 'part', label: 'EFI', uuid: '1111-AAAA', mountpoint: '/boot/efi', fstype: 'vfat' },
+    { name: 'sda2', type: 'part', label: null, uuid: 'root-uuid', mountpoint: '/', fstype: 'ext4' },
+    { name: 'sda3', type: 'part', label: null, uuid: 'swap-uuid', mountpoint: '[SWAP]', fstype: 'swap' },
+  ] },
+  { name: 'sdb', type: 'disk', label: null, uuid: null, mountpoint: null, rm: '0', children: [
+    { name: 'sdb1', type: 'part', label: 'Films 1', uuid: 'film-uuid', mountpoint: '/media/me/Films 1', fstype: 'ntfs' },
+    { name: 'sdb2', type: 'part', label: null, uuid: 'idle-uuid', mountpoint: null, fstype: 'ext4' },
+  ] },
+  { name: 'loop0', type: 'loop', label: null, uuid: null, mountpoint: '/snap/core/1', fstype: 'squashfs' },
+  { name: 'nvme0n1', type: 'disk', mountpoint: null, children: [
+    { name: 'nvme0n1p1', type: 'part', label: 'Btrfs', uuid: 'btrfs-uuid', mountpoints: ['/data/sub', '/data'], fstype: 'btrfs' },
+    { name: 'nvme0n1p2', type: 'part', label: 'Btrfs', uuid: 'btrfs-uuid', mountpoint: '/data/other', fstype: 'btrfs' },
+  ] },
+] });
+
+test('listDrivesLinux lists mounted filesystems by UUID, with a slash-ended root, and skips boot, swap, snap and unmounted ones', async () => {
+  const drives = await listDrivesLinux(async () => lsblk);
+  assert.deepEqual(drives, [
+    { serial: 'root-uuid', label: '', root: '/' },
+    { serial: 'film-uuid', label: 'Films 1', root: '/media/me/Films 1/' },
+    { serial: 'btrfs-uuid', label: 'Btrfs', root: '/data/' },
+  ]);
+});
+
+test('listDrivesLinux returns [] for empty output', async () => {
+  assert.deepEqual(await listDrivesLinux(async () => ''), []);
+});
+
+test('toDriveRel works with Linux roots and prefers the longest mount', () => {
+  const drives = [{ serial: 'R', label: '', root: '/' }, { serial: 'F', label: '', root: '/media/me/Films 1/' }];
+  assert.deepEqual(toDriveRel(drives, '/media/me/Films 1/Movies/Action'), { serial: 'F', relPath: 'Movies/Action' });
+  assert.deepEqual(toDriveRel(drives, '/home/me/Movies'), { serial: 'R', relPath: 'home/me/Movies' });
+});

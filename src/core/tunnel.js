@@ -6,20 +6,27 @@ const path = require('node:path');
 // to the catalog port. The program is downloaded once from Cloudflare's official GitHub release into the app's data folder; nothing is
 // installed. The address changes on every start, and only what the catalog server already serves (names, posters, wish lists) goes through it.
 const URL_RE = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
-const WIN_URL = 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe';
+const BASE = 'https://github.com/cloudflare/cloudflared/releases/latest/download/';
+// the program for a system, with the first bytes a real build starts with (Windows "MZ", Linux "\x7fELF"); other systems install cloudflared themselves
+function programFor(platform, arch) {
+  if (platform === 'win32') return { url: `${BASE}cloudflared-windows-amd64.exe`, magic: 'MZ' };
+  if (platform === 'linux' && arch === 'x64') return { url: `${BASE}cloudflared-linux-amd64`, magic: '\x7fELF' };
+  return null;
+}
 
-async function defaultDownload(url, dest) {
+async function defaultDownload(url, dest, magic = 'MZ') {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`http ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length < 5_000_000 || buf.subarray(0, 2).toString('latin1') !== 'MZ') throw new Error('not_a_program'); // a real build is tens of MB
+  if (buf.length < 5_000_000 || buf.subarray(0, magic.length).toString('latin1') !== magic) throw new Error('not_a_program'); // a real build is tens of MB
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.writeFileSync(`${dest}.part`, buf);
+  fs.chmodSync(`${dest}.part`, 0o755);
   fs.renameSync(`${dest}.part`, dest);
 }
 
 function createTunnel({
-  dir, platform = process.platform, timeoutMs = 30000,
+  dir, platform = process.platform, arch = process.arch, timeoutMs = 30000,
   spawn = require('node:child_process').spawn, exists = fs.existsSync, download = defaultDownload,
 }) {
   const exe = path.join(dir, platform === 'win32' ? 'cloudflared.exe' : 'cloudflared');
@@ -31,8 +38,9 @@ function createTunnel({
 
   async function launch(port) {
     if (!exists(exe)) {
-      if (platform !== 'win32') return { ok: false, error: 'download' };
-      try { await download(WIN_URL, exe); } catch { return { ok: false, error: 'download' }; }
+      const program = programFor(platform, arch);
+      if (!program) return { ok: false, error: 'download' };
+      try { await download(program.url, exe, program.magic); } catch { return { ok: false, error: 'download' }; }
     }
     return new Promise((resolve) => {
       let done = false;
@@ -78,4 +86,4 @@ function createTunnel({
   };
 }
 
-module.exports = { createTunnel, WIN_URL };
+module.exports = { createTunnel };

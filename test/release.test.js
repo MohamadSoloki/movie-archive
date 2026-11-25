@@ -39,15 +39,27 @@ test('a hand-started release creates its tag first: GitHub refuses a published r
   assert.ok(workflow.indexOf('git/refs') < workflow.indexOf('electron-builder'));
 });
 
-test('the release is made once, as a draft, before electron-builder: its two parallel publishers would both create it (422 already_exists)', () => {
+test('the release is made once, as a draft, before any build: parallel publishers would each create it (422 already_exists)', () => {
   const create = workflow.indexOf('gh release create "v$VERSION" --draft');
   assert.ok(create > 0, 'draft release is created by the workflow');
   assert.ok(workflow.indexOf('git/refs') < create && create < workflow.indexOf('npx electron-builder'));
-  assert.match(workflow, /echo "VERSION=\$VERSION" >> "\$GITHUB_ENV"/);
+  assert.match(workflow, /echo "version=\$VERSION" >> "\$GITHUB_OUTPUT"/);
+  assert.match(workflow, /VERSION: \$\{\{ needs\.draft\.outputs\.version \}\}/);
 });
 
-test('the draft is published only after the build uploaded everything, and removed when the build fails', () => {
+test('Windows and Linux are built side by side into that draft, and the draft is published after both', () => {
+  assert.match(workflow, /matrix:[\s\S]*os: windows-latest[\s\S]*flag: --win[\s\S]*os: ubuntu-latest[\s\S]*flag: --linux/);
+  assert.match(workflow, /npx electron-builder \$\{\{ matrix\.flag \}\} --publish always/);
+  assert.match(workflow, /publish:\s*\n\s+needs: \[draft, build\]/);
   assert.match(workflow, /gh release edit "v\$VERSION" --draft=false --latest/);
   assert.ok(workflow.indexOf('npx electron-builder') < workflow.indexOf('--draft=false'));
-  assert.match(workflow, /if: failure\(\)[\s\S]*gh release delete "v\$VERSION" --yes/);
+});
+
+test('a failed run removes the unfinished draft (and the tag it made), but never a release that existed before', () => {
+  assert.match(workflow, /if: failure\(\) && needs\.draft\.result == 'success'[\s\S]*gh release delete "v\$VERSION" --yes/);
+});
+
+test('the Linux build is an AppImage, named without spaces so the update file points at it', () => {
+  assert.equal(pkg.build.linux.target, 'AppImage');
+  assert.equal(pkg.build.linux.artifactName, 'Movie-Archive-${version}.${ext}');
 });

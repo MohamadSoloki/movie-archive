@@ -76,7 +76,13 @@ test('tunnel: a missing program, a silent one and one that quits are errors, and
   assert.deepEqual(again.tunnel.status(), { state: 'off', url: null, error: null });
 });
 
-test('tunnel: only the Windows program is downloaded; elsewhere the owner must install cloudflared', async () => {
-  const { tunnel } = make({ platform: 'linux', exists: () => false });
-  assert.deepEqual(await tunnel.start(1), { ok: false, error: 'download' });
+test('tunnel: Linux x64 downloads its own program; other systems (macOS, ARM) must install cloudflared themselves', async () => {
+  const linux = make({ platform: 'linux', arch: 'x64', exists: () => false });
+  await linux.tunnel.start(1);
+  assert.equal(linux.calls.download[0][0], 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64');
+  assert.match(linux.calls.download[0][1], /cloudflared$/);
+  for (const [platform, arch] of [['darwin', 'arm64'], ['linux', 'arm64']]) {
+    const { tunnel } = make({ platform, arch, exists: () => false });
+    assert.deepEqual(await tunnel.start(1), { ok: false, error: 'download' });
+  }
 });

@@ -47,6 +47,35 @@ function toDriveRel(drives, absPath) {
   return { serial: hits[0].d.serial, relPath: rel };
 }
 
+const LSBLK_ARGS = ['-J', '-o', 'NAME,TYPE,LABEL,UUID,MOUNTPOINT,FSTYPE'];
+
+function lsblkRun() {
+  return new Promise((resolve, reject) => {
+    execFile('lsblk', LSBLK_ARGS, (err, stdout) => (err ? reject(err) : resolve(stdout)));
+  });
+}
+
+const SYSTEM_MOUNT = /^(\[SWAP\]|\/boot(\/|$)|\/efi(\/|$)|\/snap(\/|$)|\/var\/lib\/snapd(\/|$))/;
+
+// Linux: every mounted filesystem with a UUID (the serial, like a Windows volume serial) and its mount point as the root.
+// A filesystem mounted twice (btrfs subvolumes) is one drive, at its shortest mount point.
+async function listDrivesLinux(run = lsblkRun) {
+  const out = String(await run()).trim();
+  if (!out) return [];
+  const byUuid = new Map();
+  const walk = (dev) => {
+    const points = [].concat(dev.mountpoints || dev.mountpoint || []).filter((m) => m && !SYSTEM_MOUNT.test(m));
+    if (dev.uuid && dev.type !== 'loop' && dev.fstype !== 'swap' && points.length) {
+      const root = points.sort((x, y) => x.length - y.length)[0];
+      const known = byUuid.get(dev.uuid);
+      if (!known || root.length < known.root.length) byUuid.set(dev.uuid, { serial: dev.uuid, label: dev.label || '', root });
+    }
+    (dev.children || []).forEach(walk);
+  };
+  (JSON.parse(out).blockdevices || []).forEach(walk);
+  return [...byUuid.values()].map((d) => ({ ...d, root: d.root.replace(/\/?$/, '/') }));
+}
+
 const REMOVABLE_CMD = 'Get-CimInstance Win32_LogicalDisk -Filter "DriveType=2" | Select-Object DeviceID,VolumeName,Size,FreeSpace | ConvertTo-Json';
 
 function psRun(command) {
@@ -82,4 +111,8 @@ async function ejectDrive(root, run = psRun) {
   }
 }
 
-module.exports = { listDrives, refreshDrives, toDriveRel, listRemovable, ejectDrive, isDriveRoot };
+// What the running system uses. Removable-drive listing and eject are Windows only: Linux shows no flash-drive list.
+const listDrivesHere = process.platform === 'win32' ? listDrives : listDrivesLinux;
+const listRemovableHere = process.platform === 'win32' ? listRemovable : async () => [];
+
+module.exports = { listDrivesLinux, listDrivesHere, listRemovableHere, listDrives, refreshDrives, toDriveRel, listRemovable, ejectDrive, isDriveRoot };
