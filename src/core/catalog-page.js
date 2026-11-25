@@ -67,6 +67,7 @@ input, textarea, select { width: 100%; font: inherit; padding: 0.65rem 0.8rem; m
 .film .title-link:hover, .rec:hover { text-decoration: underline; }
 .title-link:focus-visible, .rec:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .film small { color: var(--muted); font-size: 0.8rem; }
+.film .subtitle, .detail-heading h1, .detail-heading .subtitle { text-align: match-parent; }
 .film button { margin-top: auto; min-height: 44px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 8px; padding: 0.35rem; font: inherit; font-size: 0.9rem; }
 .film.on { border-color: var(--accent); }
 .film.on button { background: var(--accent); color: var(--accent-ink); }
@@ -284,6 +285,8 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     grid.replaceChildren();
     list.slice(0, shown).forEach(function (f) {
       var on = !!chosen[f.k];
+      var title = f.t || f.f;
+      var subtitle = f.f && f.f !== title ? f.f : '';
       var tags = f.b.map(function (b) { return T.badge[b] || b; });
       if (f.s) tags.unshift(fa(f.s) + ' ' + T.seasons);
       var meta = [f.y, f.r ? '★ ' + f.r : ''].concat(tags).filter(Boolean).join(' · ');
@@ -294,10 +297,10 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       };
       pick.id = 'pick-' + f.k;
       var card = el('div', { 'class': 'film' + (on ? ' on' : '') }, [
-        detailLink(f, { class: 'img', 'aria-label': f.f || f.t, tabindex: '-1' }, [poster(f, 'card-poster', true)]),
+        detailLink(f, { class: 'img', 'aria-label': title, tabindex: '-1' }, [poster(f, 'card-poster', true)]),
         el('div', { class: 'body' }, [detailLink(f, { class: 'title-link', id: 'title-' + f.k }, [
-          el('b', { dir: 'auto' }, [f.f || f.t]),
-        ]), f.f ? el('small', { dir: 'ltr', 'class': 'orig' }, [f.t]) : '', el('small', {}, [meta]), pick])]);
+          el('b', { dir: 'auto' }, [title]),
+        ]), subtitle ? el('small', { dir: 'auto', class: 'subtitle' }, [subtitle]) : '', el('small', {}, [meta]), pick])]);
       grid.append(card);
     });
     var tail = el('div', { 'class': 'wide' }, []);
@@ -353,7 +356,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   }
   var catalogReady = false, activeDetail = null, detailData = new Map();
   function poster(f, style, lazy) {
-    if (!f.p) return el('span', { class: style, 'aria-hidden': 'true', dir: 'auto' }, [f.f || f.t]);
+    if (!f.p) return el('span', { class: style, 'aria-hidden': 'true', dir: 'auto' }, [f.t || f.f]);
     return el('img', { class: style, src: '/poster/' + encodeURIComponent(f.k), alt: '', loading: lazy ? 'lazy' : 'eager' });
   }
   function detailHash(key) { return '#title=' + encodeURIComponent(key); }

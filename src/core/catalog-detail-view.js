@@ -3,7 +3,8 @@
 // Embedded by catalog-page in the self-contained phone catalog.
 function renderDetailView({ body, title, data, text, element, fa, poster, link, controls, retry }) {
   const e = element;
-  const name = title.f || title.t;
+  const name = title.t || title.f;
+  const subtitle = title.f && title.f !== name ? title.f : '';
   const heading = e('h1', { id: 'detailTitle', dir: 'auto', tabindex: '-1' }, [name]);
   const facts = [title.y, title.r ? '★ ' + fa(title.r) + ' / ۱۰' : null];
   if (data?.runtime && !data.episodic) facts.push(data.runtime.replace(/^(\d+) min$/, (_, n) => fa(n) + ' دقیقه'));
@@ -11,7 +12,7 @@ function renderDetailView({ body, title, data, text, element, fa, poster, link, 
     poster(title, false),
     e('div', { class: 'detail-heading' }, [
       heading,
-      title.f ? e('div', { class: 'subtle', dir: 'auto' }, [title.t]) : '',
+      subtitle ? e('div', { class: 'subtitle subtle', dir: 'auto' }, [subtitle]) : '',
       e('div', { class: 'detail-meta', dir: 'auto' }, [facts.filter(Boolean).join(' · ')]),
       e('div', { class: 'detail-genres' }, title.g.map((genre) => e('span', {}, [genre]))),
     ]),
