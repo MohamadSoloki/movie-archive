@@ -1209,6 +1209,33 @@ test('phone catalog: a film of a series lists the keys of its related films (rl)
   } finally { await api.stopCatalog(); }
 });
 
+test('phone catalog: repeat sends replace one incoming list and keep its public reference', async () => {
+  const { api, keys } = await withFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  await api.setSettings({ catalogPort: 0 });
+  const started = await api.startCatalog();
+  const url = `http://127.0.0.1:${new URL(started.url).port}/api/wish`;
+  const editKey = 'af'.repeat(32);
+  const send = async (keys) => {
+    const r = await fetch(url, { method: 'POST', body: JSON.stringify({ name: 'Ali', keys, editKey }) });
+    assert.equal(r.status, 200);
+    return r.json();
+  };
+  try {
+    const first = await send([keys[0]]);
+    assert.deepEqual(await send([keys[0]]), first);
+    assert.deepEqual(await send([keys[1]]), first);
+    const [wish, ...others] = await api.getWishes();
+    assert.equal(others.length, 0);
+    assert.equal(wish.id, first.id);
+    assert.ok(wish.updated > wish.created);
+    assert.equal(wish.items[0].key, keys[1]);
+    assert.equal(wish.items.length, 1);
+    assert.ok(!Object.keys(wish).some((key) => /hash|editKey/.test(key)));
+    assert.deepEqual(await send([]), first);
+    assert.deepEqual((await api.getWishes())[0].items, []);
+  } finally { await api.stopCatalog(); }
+});
+
 test('phone catalog: prices, the seasons of a series and a list that names seasons and episodes', async () => {
   const { api, key } = await withShow({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
   await api.setSettings({ catalogPort: 0, priceMovie: 5000, priceSeason: 20000, priceEpisode: 2000, shopName: 'Net' });

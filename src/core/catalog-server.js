@@ -70,17 +70,23 @@ function createCatalogServer({ films, posterFile, known, submit, ask, info = () 
       let b;
       try { b = JSON.parse(text); } catch { json(res, 400, { ok: false, error: 'bad_json' }); return; }
       const name = clean(b?.name, 80);
+      const editKey = b?.editKey;
       const keys = Array.isArray(b?.keys) ? b.keys.filter((k) => typeof k === 'string') : [];
-      if (!name || !keys.length || keys.length > MAX_ITEMS) { json(res, 400, { ok: false, error: 'bad_list' }); return; }
+      const clear = editKey !== undefined && Array.isArray(b?.keys) && b.keys.length === 0;
+      if (!name || (!keys.length && !clear) || keys.length > MAX_ITEMS
+        || (editKey !== undefined && (typeof editKey !== 'string' || !/^[a-f0-9]{64}$/.test(editKey)))) {
+        json(res, 400, { ok: false, error: 'bad_list' }); return;
+      }
       const picks = b.picks && typeof b.picks === 'object' ? b.picks : {};
       const items = await Promise.all([...new Set(keys)].map((k) => known(k)).filter(Boolean).map(async (e) => {
         const sel = (await seasons(e.key))?.length ? cleanSel(picks[e.key]) : null; // a choice only makes sense for a film that has seasons
         return { key: e.key, title: e.title, year: e.year ?? null, ...(sel ? { sel } : {}) };
       }));
-      if (!items.length) { json(res, 400, { ok: false, error: 'bad_list' }); return; }
+      if (!items.length && !clear) { json(res, 400, { ok: false, error: 'bad_list' }); return; }
       if (limited(addressOf(req), 'wish')) { json(res, 429, { ok: false, error: 'slow_down' }); return; }
-      const id = submit({ name, phone: clean(b.phone, 30), note: clean(b.note, 200), items });
-      if (!id) json(res, 503, { ok: false, error: 'full' });
+      const id = submit({ name, phone: clean(b.phone, 30), note: clean(b.note, 200), items, editKey });
+      if (id === null) json(res, 400, { ok: false, error: 'bad_list' });
+      else if (!id) json(res, 503, { ok: false, error: 'full' });
       else json(res, 200, { ok: true, id });
     });
   }

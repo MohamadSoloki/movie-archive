@@ -32,7 +32,7 @@ const { singleDrive, catalogByGenre, duplicates } = require('./core/reports.js')
 const { exportData, importData } = require('./core/backup.js');
 const orders = require('./core/orders.js');
 const { normalizeFa } = require('./core/persian.js');
-const { diffWish } = require('./core/lists.js');
+const { diffWish, saveWish } = require('./core/lists.js');
 const { episodesIn, episodeFilter } = require('./core/seasons.js');
 const { ProviderError } = require('./core/errors.js');
 // the first private-network address of this computer: what a phone on the same Wi-Fi can reach
@@ -579,12 +579,7 @@ function createApi({
     },
     font: () => { try { return fs.readFileSync(path.join(__dirname, 'renderer', 'fonts', 'Vazirmatn-Variable.woff2')); } catch { return null; } },
     known: (k) => { const e = search.find(k); return e && e.kind !== 'collection' ? { key: e.key, title: e.title, year: e.year } : null; },
-    // 0 when the inbox is full, so a prank cannot fill the database
-    submit: (w) => {
-      if (db.prepare('SELECT COUNT(*) c FROM wishes').get().c >= WISH_LIMIT) return 0;
-      return Number(db.prepare('INSERT INTO wishes(name, phone, note, created, items) VALUES(?,?,?,?,?)')
-        .run(w.name, w.phone || null, w.note || null, now(), JSON.stringify(w.items)).lastInsertRowid);
-    },
+    submit: (w) => saveWish(db, w, now(), WISH_LIMIT),
     info: () => ({ prices: { movie: getSetting(db, 'priceMovie'), season: getSetting(db, 'priceSeason'), episode: getSetting(db, 'priceEpisode') }, shop: getSetting(db, 'shopName') }),
     // only a film that has season folders answers; the page then offers the seasons and episodes to pick from
     seasons: async (k) => { const r = await seasonsOf(k); return r.ok && r.seasons.length ? r.seasons : null; },
@@ -1327,8 +1322,8 @@ function createApi({
       return catalogInfo();
     },
     async getWishes() {
-      return db.prepare('SELECT * FROM wishes ORDER BY created DESC, id DESC').all()
-        .map((w) => ({ id: w.id, name: w.name, phone: w.phone, note: w.note, created: w.created, items: JSON.parse(w.items) }));
+      return db.prepare('SELECT id, name, phone, note, created, updated, items FROM wishes ORDER BY COALESCE(updated, created) DESC, id DESC').all()
+        .map((w) => ({ ...w, items: JSON.parse(w.items) }));
     },
     async removeWish(id) {
       db.prepare('DELETE FROM wishes WHERE id = ?').run(id);

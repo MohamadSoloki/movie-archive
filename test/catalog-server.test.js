@@ -67,6 +67,25 @@ test('a customer list is accepted once validated, and only known films are kept'
   } finally { await srv.stop(); }
 });
 
+test('a browser key reaches the list store, including when the customer removes every film', async () => {
+  const submissions = [];
+  const { srv } = make({ submit: (wish) => { submissions.push(wish); return 17; } });
+  const { port } = await srv.start(0, '127.0.0.1');
+  const url = `http://127.0.0.1:${port}/api/wish`;
+  const editKey = 'ab'.repeat(32);
+  try {
+    for (const keys of [['t:1'], []]) {
+      const response = await post(url, { name: 'Ali', editKey, keys });
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { ok: true, id: 17 });
+    }
+    assert.deepEqual(submissions.map((w) => [w.editKey, w.items.length]), [[editKey, 1], [editKey, 0]]);
+    assert.equal((await post(url, { name: 'Ali', editKey: '17', keys: ['t:1'] })).status, 400);
+    assert.equal((await post(url, { name: 'Ali', keys: [] })).status, 400);
+    assert.equal(submissions.length, 2);
+  } finally { await srv.stop(); }
+});
+
 test('one address can send only a few lists in ten minutes', async () => {
   const { srv, tick } = make();
   const { port } = await srv.start(0, '127.0.0.1');

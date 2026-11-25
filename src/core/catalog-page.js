@@ -5,7 +5,8 @@ const TEXT = {
     dir: 'rtl', lang: 'fa', other: 'English', otherLang: 'en', title: 'کاتالوگ فیلم و سریال', search: 'اسم فیلم، بازیگر یا کارگردان…',
     all: 'همه', movie: 'فیلم', series: 'سریال', animation: 'انیمیشن', anime: 'انیمه', pick: 'انتخاب', picked: 'انتخاب شد', send: 'ارسال لیست', mine: 'لیست من',
     name: 'اسم شما', phone: 'شماره تماس (اختیاری)', note: 'توضیح (اختیاری)', submit: 'ارسال', close: 'بستن', remove: 'حذف از لیست',
-    done: 'لیستت ثبت شد. شمارهٔ پیگیری:', fail: 'ارسال نشد. بعداً دوباره امتحان کن.', slow: 'چند بار پشت هم فرستادی. چند دقیقه بعد دوباره امتحان کن.',
+    done: 'لیستت ثبت شد. شمارهٔ پیگیری:', updated: 'لیستت به‌روز شد. شمارهٔ پیگیری:', updateList: 'به‌روزرسانی لیست',
+    fail: 'ارسال نشد. بعداً دوباره امتحان کن.', slow: 'چند بار پشت هم فرستادی. چند دقیقه بعد دوباره امتحان کن.',
     full: 'الان لیست جدید قبول نمی‌کنیم. به مغازه بگو.', none: 'چیزی پیدا نشد.', more: 'نمایش بیشتر', loadFail: 'کاتالوگ باز نشد. دوباره امتحان کن.', retry: 'تلاش دوباره',
     sortNew: 'تازه‌اضافه‌شده', sortName: 'الفبا', sortRating: 'امتیاز', sortYear: 'سال', sort: 'مرتب‌سازی', seasons: 'فصل', stars: 'امتیاز',
     askTitle: 'پیدا نکردی؟', askText: 'اسم فیلم رو بنویس تا برات تهیه کنیم.', askGo: 'درخواست', askThanks: 'ثبت شد. اگه تهیه کردیم بهت خبر می‌دیم.',
@@ -177,6 +178,16 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     return parts.join(' · ');
   }
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { /* private mode */ } return null; }
+  var editKey = store('wishEditKey') || '', wishId = editKey ? Number(store('wishId')) : 0;
+  function browserEditKey() {
+    editKey = store('wishEditKey') || editKey;
+    if (!editKey) {
+      var bytes = window.crypto.getRandomValues(new Uint8Array(32));
+      editKey = Array.from(bytes, function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+      store('wishEditKey', editKey);
+    }
+    return editKey;
+  }
   var SORTS = {
     sortNew: function (a, b) { return b.o - a.o; },
     sortName: function (a, b) { return (a.f || a.t).localeCompare(b.f || b.t, 'fa'); },
@@ -262,8 +273,8 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     if (films.length) tail.append(askBox($('q').value.trim()));
     grid.append(tail);
     var n = Object.keys(chosen).length;
-    $('bar').className = 'bar' + (n ? ' show' : '');
-    $('open').textContent = T.send + ' (' + n + ')' + (hasPrice() ? ' · ' + money(priceOfCounts(totals())) : '');
+    $('bar').className = 'bar' + (n || wishId ? ' show' : '');
+    $('open').textContent = (wishId ? T.updateList : T.send) + ' (' + fa(n) + ')' + (hasPrice() ? ' · ' + money(priceOfCounts(totals())) : '');
   }
   function save() { store('pick', JSON.stringify(Object.keys(chosen))); store('sel', JSON.stringify(sel)); }
   function chips(box, items, current, set) {
@@ -351,12 +362,14 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   $('q').addEventListener('input', function () { clearTimeout(typing); typing = setTimeout(function () { shown = PAGE; render(); }, 150); });
   $('name').value = store('name') || '';
   $('phone').value = store('phone') || '';
+  $('note').value = store('wishNote') || '';
   function listBox() {
     var ul = $('mine');
     ul.replaceChildren();
+    $('submit').textContent = wishId ? T.updateList : T.submit;
     Object.keys(chosen).forEach(function (k) {
       var x = el('button', { type: 'button', 'aria-label': T.remove }, ['×']);
-      x.onclick = function () { delete chosen[k]; delete sel[k]; save(); render(); if (Object.keys(chosen).length) listBox(); else $('dlg').close(); };
+      x.onclick = function () { delete chosen[k]; delete sel[k]; save(); render(); if (Object.keys(chosen).length || wishId) listBox(); else $('dlg').close(); };
       var what = selText(k);
       var cost = hasPrice() ? el('span', { 'class': 'price' }, [money(priceOfCounts(itemCounts(k)))]) : '';
       ul.append(el('li', { 'class': 'row' }, [el('span', { dir: 'auto' }, [chosen[k].f ? chosen[k].f + ' (' + chosen[k].t + ')' : chosen[k].t, what ? el('small', { style: 'display:block;color:var(--muted)' }, [what]) : '']), cost, x]));
@@ -375,19 +388,23 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   $('open').onclick = function () { listBox(); $('msg').textContent = ''; $('msg').className = 'msg'; $('dlg').showModal(); };
   $('close').onclick = function () { $('dlg').close(); };
   $('sclose').onclick = function () { $('sdlg').close(); };
-  $('clearAll').onclick = function () { chosen = {}; sel = {}; save(); render(); $('dlg').close(); };
+  $('clearAll').onclick = function () { chosen = {}; sel = {}; save(); render(); if (wishId) listBox(); else $('dlg').close(); };
   $('form').onsubmit = function (ev) {
     ev.preventDefault();
     var sendBtn = $('submit');
+    if (sendBtn.disabled) return;
     sendBtn.disabled = true;
-    var body = { name: $('name').value, phone: $('phone').value, note: $('note').value, keys: Object.keys(chosen), picks: sel };
-    store('name', $('name').value); store('phone', $('phone').value);
+    var body = { name: $('name').value, phone: $('phone').value, note: $('note').value, keys: Object.keys(chosen), picks: sel, editKey: browserEditKey() };
+    store('name', $('name').value); store('phone', $('phone').value); store('wishNote', $('note').value);
     fetch('/api/wish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) { return [r.status, j]; });
     }).then(function (a) {
       if (a[0] === 200) {
-        $('note').value = ''; // the selection stays: sending again after a change updates the same list at the shop
-        $('msg').className = 'msg'; $('msg').textContent = T.done + ' ' + a[1].id + ' · ' + T.doneNote;
+        var edited = wishId === a[1].id;
+        wishId = a[1].id;
+        store('wishId', String(wishId));
+        listBox(); render();
+        $('msg').className = 'msg'; $('msg').textContent = (edited ? T.updated : T.done) + ' ' + wishId + ' · ' + T.doneNote;
         setTimeout(function () { sendBtn.disabled = false; }, 4000);
       } else {
         $('msg').className = 'msg bad'; $('msg').textContent = a[0] === 429 ? T.slow : a[0] === 503 ? T.full : T.fail;

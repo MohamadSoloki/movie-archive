@@ -107,6 +107,10 @@ function openDb(file = ':memory:') {
   if (!db.prepare('PRAGMA table_info(roots)').all().some((c) => c.name === 'single')) {
     db.exec('ALTER TABLE roots ADD COLUMN single INTEGER NOT NULL DEFAULT 0');
   }
+  const wishColumns = db.prepare('PRAGMA table_info(wishes)').all().map((c) => c.name);
+  if (!wishColumns.includes('edit_key_hash')) db.exec('ALTER TABLE wishes ADD COLUMN edit_key_hash TEXT');
+  if (!wishColumns.includes('updated')) db.exec('ALTER TABLE wishes ADD COLUMN updated INTEGER');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS wishes_edit_key ON wishes(edit_key_hash)');
   for (const [name, type] of TITLE_COLUMNS) {
     if (!have.includes(name)) db.exec(`ALTER TABLE titles ADD COLUMN ${name} ${type}`);
   }
