@@ -1221,8 +1221,10 @@ test('phone catalog: repeat sends replace one incoming list and keep its public 
     return r.json();
   };
   try {
-    const first = await send([keys[0]]);
-    assert.deepEqual(await send([keys[0]]), first);
+    const [first, retry] = await Promise.all([send([keys[0]]), send([keys[0]])]);
+    assert.deepEqual(retry, first);
+    for (let i = 0; i < 7; i++) assert.deepEqual(await send([keys[0]]), first);
+    assert.equal((await api.getWishes())[0].updated, null);
     assert.deepEqual(await send([keys[1]]), first);
     const [wish, ...others] = await api.getWishes();
     assert.equal(others.length, 0);
@@ -1233,6 +1235,14 @@ test('phone catalog: repeat sends replace one incoming list and keep its public 
     assert.ok(!Object.keys(wish).some((key) => /hash|editKey/.test(key)));
     assert.deepEqual(await send([]), first);
     assert.deepEqual((await api.getWishes())[0].items, []);
+    assert.deepEqual(await send(keys), first);
+    const changed = (await api.getWishes())[0].updated;
+    assert.deepEqual(await send([...keys].reverse()), first);
+    assert.equal((await api.getWishes())[0].updated, changed);
+    assert.deepEqual(await send([keys[0]]), first);
+    assert.deepEqual(await send([keys[0]]), first); // still returns the receipt at the quota
+    const blocked = await fetch(url, { method: 'POST', body: JSON.stringify({ name: 'Ali', keys: [], editKey }) });
+    assert.equal(blocked.status, 429);
   } finally { await api.stopCatalog(); }
 });
 

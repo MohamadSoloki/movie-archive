@@ -11,7 +11,7 @@ const clean = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, m
  * The phone catalog: a small read-only web server for the shop's local network. Customers browse the film list on their
  * phone and send back the list they want. No file path, drive or folder name ever leaves it; sent lists only reach `submit`.
  */
-function createCatalogServer({ films, posterFile, known, submit, ask, info = () => ({ prices: {}, shop: '' }), seasons = () => null, font = () => null, viaTunnel = () => false, clock = Date.now }) {
+function createCatalogServer({ films, posterFile, known, submit, unchangedReceipt = () => null, ask, info = () => ({ prices: {}, shop: '' }), seasons = () => null, font = () => null, viaTunnel = () => false, clock = Date.now }) {
   let server = null;
   const sent = new Map(); // address -> times of its recent lists
 
@@ -79,12 +79,15 @@ function createCatalogServer({ films, posterFile, known, submit, ask, info = () 
       }
       const picks = b.picks && typeof b.picks === 'object' ? b.picks : {};
       const items = await Promise.all([...new Set(keys)].map((k) => known(k)).filter(Boolean).map(async (e) => {
-        const sel = (await seasons(e.key))?.length ? cleanSel(picks[e.key]) : null; // a choice only makes sense for a film that has seasons
+        const sel = picks[e.key] && (await seasons(e.key))?.length ? cleanSel(picks[e.key]) : null;
         return { key: e.key, title: e.title, year: e.year ?? null, ...(sel ? { sel } : {}) };
       }));
       if (!items.length && !clear) { json(res, 400, { ok: false, error: 'bad_list' }); return; }
+      const wish = { name, phone: clean(b.phone, 30), note: clean(b.note, 200), items, editKey };
+      const receipt = unchangedReceipt(wish);
+      if (receipt) { json(res, 200, { ok: true, id: receipt }); return; }
       if (limited(addressOf(req), 'wish')) { json(res, 429, { ok: false, error: 'slow_down' }); return; }
-      const id = submit({ name, phone: clean(b.phone, 30), note: clean(b.note, 200), items, editKey });
+      const id = submit(wish);
       if (id === null) json(res, 400, { ok: false, error: 'bad_list' });
       else if (!id) json(res, 503, { ok: false, error: 'full' });
       else json(res, 200, { ok: true, id });

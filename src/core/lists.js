@@ -1,9 +1,22 @@
 'use strict';
 const { createHash } = require('node:crypto');
+const { wishSignature } = require('./wish-signature.js');
+
+function wishKeyHash(key) {
+  return key ? createHash('sha256').update(key).digest('hex') : null;
+}
+
+function unchangedReceipt(db, wish) {
+  if (!wish.editKey) return null;
+  const row = db.prepare('SELECT * FROM wishes WHERE edit_key_hash = ?').get(wishKeyHash(wish.editKey));
+  if (!row) return null;
+  const previous = wishSignature({ ...row, items: JSON.parse(row.items) });
+  return previous === wishSignature(wish) ? row.id : null;
+}
 
 // The browser owns one editable row. The public reference cannot be used as its private edit key.
 function saveWish(db, { name, phone, note, editKey, items }, now, limit) {
-  const keyHash = editKey ? createHash('sha256').update(editKey).digest('hex') : null;
+  const keyHash = wishKeyHash(editKey);
   const previous = keyHash ? db.prepare('SELECT * FROM wishes WHERE edit_key_hash = ?').get(keyHash) : null;
   const values = [name, phone || null, note || null, JSON.stringify(items)];
   if (previous) {
@@ -33,4 +46,4 @@ function diffWish({ have = [], fromPhone = [], wanted = [] }) {
   return { add, remove };
 }
 
-module.exports = { diffWish, saveWish };
+module.exports = { diffWish, saveWish, unchangedReceipt };

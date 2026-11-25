@@ -1,11 +1,14 @@
 'use strict';
 
+const { wishSignature } = require('./wish-signature.js');
+
 const TEXT = {
   fa: {
     dir: 'rtl', lang: 'fa', other: 'English', otherLang: 'en', title: 'کاتالوگ فیلم و سریال', search: 'اسم فیلم، بازیگر یا کارگردان…',
     all: 'همه', movie: 'فیلم', series: 'سریال', animation: 'انیمیشن', anime: 'انیمه', pick: 'انتخاب', picked: 'انتخاب شد', send: 'ارسال لیست', mine: 'لیست من',
     name: 'اسم شما', phone: 'شماره تماس (اختیاری)', note: 'توضیح (اختیاری)', submit: 'ارسال', close: 'بستن', remove: 'حذف از لیست',
     done: 'لیستت ثبت شد. شمارهٔ پیگیری:', updated: 'لیستت به‌روز شد. شمارهٔ پیگیری:', updateList: 'به‌روزرسانی لیست',
+    saved: 'ثبت شده', receipt: 'شمارهٔ پیگیری',
     fail: 'ارسال نشد. بعداً دوباره امتحان کن.', slow: 'چند بار پشت هم فرستادی. چند دقیقه بعد دوباره امتحان کن.',
     full: 'الان لیست جدید قبول نمی‌کنیم. به مغازه بگو.', none: 'چیزی پیدا نشد.', more: 'نمایش بیشتر', loadFail: 'کاتالوگ باز نشد. دوباره امتحان کن.', retry: 'تلاش دوباره',
     sortNew: 'تازه‌اضافه‌شده', sortName: 'الفبا', sortRating: 'امتیاز', sortYear: 'سال', sort: 'مرتب‌سازی', seasons: 'فصل', stars: 'امتیاز',
@@ -121,6 +124,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 </dialog>
 <script>
 (function () {
+  ${wishSignature.toString()}
   var T = ${client};
   var PAGE = 60;
   var films = [], kind = '', genre = '', shown = PAGE, chosen = {}, sel = {}, P = { movie: 0, season: 0, episode: 0 };
@@ -142,8 +146,8 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   // "1-5, 7 9" -> [1,2,3,4,5,7,9]
   function parseEps(text) {
     var out = {};
-    norm(text).split(/[,،\s]+/).forEach(function (p) {
-      var m = /^(\d{1,4})(?:[-–](\d{1,4}))?$/.exec(p);
+    norm(text).split(/[,،\\s]+/).forEach(function (p) {
+      var m = /^(\\d{1,4})(?:[-–](\\d{1,4}))?$/.exec(p);
       if (!m) return;
       var a = +m[1], b = m[2] === undefined ? a : +m[2], t;
       if (a > b) { t = a; a = b; b = t; }
@@ -179,6 +183,21 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   }
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { /* private mode */ } return null; }
   var editKey = store('wishEditKey') || '', wishId = editKey ? Number(store('wishId')) : 0;
+  var lastSent = wishId ? store('wishSnapshot') : null, sending = false;
+  function draft() {
+    return { name: $('name').value, phone: $('phone').value, note: $('note').value, keys: Object.keys(chosen), picks: sel };
+  }
+  function signature(body) {
+    return wishSignature({ ...body, items: body.keys.map(function (key) { return { key: key, sel: body.picks[key] }; }) });
+  }
+  function syncSend() {
+    var saved = Boolean(wishId && lastSent && signature(draft()) === lastSent);
+    $('submit').disabled = sending || saved;
+    $('submit').textContent = saved ? T.saved : wishId ? T.updateList : T.submit;
+    var n = Object.keys(chosen).length;
+    var label = saved ? T.saved + ' · ' + T.receipt + ' ' + fa(wishId) : (wishId ? T.updateList : T.send) + ' (' + fa(n) + ')';
+    $('open').textContent = label + (hasPrice() ? ' · ' + money(priceOfCounts(totals())) : '');
+  }
   function browserEditKey() {
     editKey = store('wishEditKey') || editKey;
     if (!editKey) {
@@ -274,7 +293,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     grid.append(tail);
     var n = Object.keys(chosen).length;
     $('bar').className = 'bar' + (n || wishId ? ' show' : '');
-    $('open').textContent = (wishId ? T.updateList : T.send) + ' (' + fa(n) + ')' + (hasPrice() ? ' · ' + money(priceOfCounts(totals())) : '');
+    syncSend();
   }
   function save() { store('pick', JSON.stringify(Object.keys(chosen))); store('sel', JSON.stringify(sel)); }
   function chips(box, items, current, set) {
@@ -366,7 +385,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   function listBox() {
     var ul = $('mine');
     ul.replaceChildren();
-    $('submit').textContent = wishId ? T.updateList : T.submit;
+    syncSend();
     Object.keys(chosen).forEach(function (k) {
       var x = el('button', { type: 'button', 'aria-label': T.remove }, ['×']);
       x.onclick = function () { delete chosen[k]; delete sel[k]; save(); render(); if (Object.keys(chosen).length || wishId) listBox(); else $('dlg').close(); };
@@ -385,32 +404,40 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     }
     $('sum').replaceChildren.apply($('sum'), lines.map(function (l, i) { return el(i === lines.length - 1 ? 'b' : 'span', {}, [l]); }));
   }
-  $('open').onclick = function () { listBox(); $('msg').textContent = ''; $('msg').className = 'msg'; $('dlg').showModal(); };
+  function showReference() {
+    $('msg').textContent = wishId ? T.receipt + ' ' + fa(wishId) : '';
+    $('msg').className = 'msg';
+  }
+  $('form').addEventListener('input', function () { syncSend(); showReference(); });
+  $('open').onclick = function () { listBox(); showReference(); $('dlg').showModal(); };
   $('close').onclick = function () { $('dlg').close(); };
   $('sclose').onclick = function () { $('sdlg').close(); };
   $('clearAll').onclick = function () { chosen = {}; sel = {}; save(); render(); if (wishId) listBox(); else $('dlg').close(); };
   $('form').onsubmit = function (ev) {
     ev.preventDefault();
-    var sendBtn = $('submit');
-    if (sendBtn.disabled) return;
-    sendBtn.disabled = true;
-    var body = { name: $('name').value, phone: $('phone').value, note: $('note').value, keys: Object.keys(chosen), picks: sel, editKey: browserEditKey() };
+    var body = draft(), snapshot = signature(body);
+    if (sending || (wishId && snapshot === lastSent)) return;
+    body.editKey = browserEditKey();
+    sending = true;
+    syncSend();
     store('name', $('name').value); store('phone', $('phone').value); store('wishNote', $('note').value);
     fetch('/api/wish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) { return [r.status, j]; });
     }).then(function (a) {
-      if (a[0] === 200) {
+      sending = false;
+      if (a[0] === 200 && a[1].ok && a[1].id) {
         var edited = wishId === a[1].id;
         wishId = a[1].id;
         store('wishId', String(wishId));
+        lastSent = snapshot;
+        store('wishSnapshot', lastSent);
         listBox(); render();
         $('msg').className = 'msg'; $('msg').textContent = (edited ? T.updated : T.done) + ' ' + wishId + ' · ' + T.doneNote;
-        setTimeout(function () { sendBtn.disabled = false; }, 4000);
       } else {
         $('msg').className = 'msg bad'; $('msg').textContent = a[0] === 429 ? T.slow : a[0] === 503 ? T.full : T.fail;
-        sendBtn.disabled = false;
+        syncSend();
       }
-    }, function () { $('msg').className = 'msg bad'; $('msg').textContent = T.fail; sendBtn.disabled = false; });
+    }, function () { sending = false; $('msg').className = 'msg bad'; $('msg').textContent = T.fail; syncSend(); });
   };
   load();
 }());

@@ -32,7 +32,7 @@ const { singleDrive, catalogByGenre, duplicates } = require('./core/reports.js')
 const { exportData, importData } = require('./core/backup.js');
 const orders = require('./core/orders.js');
 const { normalizeFa } = require('./core/persian.js');
-const { diffWish, saveWish } = require('./core/lists.js');
+const { diffWish, saveWish, unchangedReceipt } = require('./core/lists.js');
 const { episodesIn, episodeFilter } = require('./core/seasons.js');
 const { ProviderError } = require('./core/errors.js');
 // the first private-network address of this computer: what a phone on the same Wi-Fi can reach
@@ -580,6 +580,7 @@ function createApi({
     font: () => { try { return fs.readFileSync(path.join(__dirname, 'renderer', 'fonts', 'Vazirmatn-Variable.woff2')); } catch { return null; } },
     known: (k) => { const e = search.find(k); return e && e.kind !== 'collection' ? { key: e.key, title: e.title, year: e.year } : null; },
     submit: (w) => saveWish(db, w, now(), WISH_LIMIT),
+    unchangedReceipt: (w) => unchangedReceipt(db, w),
     info: () => ({ prices: { movie: getSetting(db, 'priceMovie'), season: getSetting(db, 'priceSeason'), episode: getSetting(db, 'priceEpisode') }, shop: getSetting(db, 'shopName') }),
     // only a film that has season folders answers; the page then offers the seasons and episodes to pick from
     seasons: async (k) => { const r = await seasonsOf(k); return r.ok && r.seasons.length ? r.seasons : null; },

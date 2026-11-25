@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { diffWish, saveWish } = require('../src/core/lists.js');
+const { diffWish, saveWish, unchangedReceipt } = require('../src/core/lists.js');
 const { openDb } = require('../src/core/db.js');
 
 test('diffWish: films the customer newly picked are added, films they dropped are removed', () => {
@@ -44,4 +44,20 @@ test('one wish per browser keeps its reference, replaces choices, and accepts re
   assert.equal(db.prepare('SELECT items FROM wishes WHERE id = ?').get(other).items, '[{"key":"private-to-other"}]');
   assert.equal(db.prepare('SELECT COUNT(*) n FROM wishes').get().n, 2);
   db.close();
+});
+
+test('duplicate receipt compares the private owner, customer fields and episode choices', () => {
+  const db = openDb();
+  try {
+    const editKey = 'cd'.repeat(32);
+    const item = { key: 'show', title: 'Show', sel: { seasons: [3, 2], episodes: { 1: [2, 1] } } };
+    const wish = { editKey, name: 'Ali', phone: '', note: 'after five', items: [item] };
+    const id = saveWish(db, wish, 100, 10);
+    const reordered = { ...item, title: 'Updated catalog title', sel: { seasons: [2, 3], episodes: { 1: [1, 2], 3: [1] } } };
+    assert.equal(unchangedReceipt(db, { ...wish, note: 'after   five ', items: [reordered] }), id);
+    for (const change of [{ editKey: 'ab'.repeat(32) }, { name: 'Bob' }, { phone: '123' }, { note: '' },
+      { items: [{ ...item, sel: { seasons: [3, 2], episodes: { 1: [2] } } }] }]) {
+      assert.equal(unchangedReceipt(db, { ...wish, ...change }), null);
+    }
+  } finally { db.close(); }
 });
