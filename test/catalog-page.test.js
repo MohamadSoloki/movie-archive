@@ -52,7 +52,7 @@ const seasons = [1, 2].map((season) => ({
 }));
 const settle = () => new Promise(setImmediate);
 
-function page({ reduceMotion = false } = {}) {
+function page({ reduceMotion = false, catalog = cards } = {}) {
   const html = pageHtml('fa');
   const nodes = Object.fromEntries(Array.from(html.matchAll(/<([a-z]+)[^>]*? id="([^"]+)"([^>]*?)>/g), ([, tag, id, tail]) =>
     [id, new Element(tag, /\bhidden\b/.test(tail) ? { id, hidden: '' } : { id })]));
@@ -80,7 +80,7 @@ function page({ reduceMotion = false } = {}) {
   };
   const submissions = [];
   const fetch = async (url, options) => {
-    if (url.startsWith('/api/films')) return Response.json(cards);
+    if (url.startsWith('/api/films')) return Response.json(catalog);
     if (url === '/api/info') return Response.json({ prices: {} });
     if (url === '/api/wish') {
       submissions.push(JSON.parse(options.body));
@@ -99,6 +99,29 @@ function page({ reduceMotion = false } = {}) {
   });
   return { get: byId, nodes, win, submissions, entrances };
 }
+
+test('quick selection keeps the grid and search intact and updates the review button', async () => {
+  const { get, nodes } = page();
+  await settle();
+  const before = get('pick-t:1');
+  before.click();
+  assert.equal(get('pick-t:1'), before);
+  assert.equal(before.attrs['aria-pressed'], 'true');
+  assert.match(nodes.open.textContent, /مرور لیست.*۱/);
+  before.click();
+  assert.equal(before.attrs['aria-pressed'], 'false');
+  assert.equal(nodes.bar.className, 'bar');
+});
+
+test('cartoon search finds animation and anime even without a Persian title', async () => {
+  const catalog = cards.map((f, i) => ({ ...f, f: '', kd: ['movie', 'animation', 'anime'][i] }));
+  const { nodes, get } = page({ catalog });
+  await settle();
+  nodes.q.value = 'کارتون';
+  nodes.q.events.input();
+  assert.equal(get('title-t:1'), undefined);
+  assert.ok(get('title-t:2') && get('title-t:3'));
+});
 
 test('details animate on tap, including late sections, and cancel the entrance when leaving', async () => {
   const { get, nodes: e, entrances } = page();

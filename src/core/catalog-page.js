@@ -41,36 +41,57 @@ function pageHtml(lang) {
 <title>${x.title}</title>
 <style>
 @font-face { font-family: "Vazirmatn"; src: url("/font.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
-:root { --bg: #eceff5; --card: #fff; --ink: #141925; --muted: #586276; --accent: #3a46d6; --accent-ink: #fff; --line: #dde2ec; --ok: #1f7a52; }
-@media (prefers-color-scheme: dark) { :root { --bg: #11141c; --card: #1a1f2b; --ink: #eef0f6; --muted: #a2abbd; --accent: #8b95ff; --accent-ink: #141925; --line: #2a3142; --ok: #5fd39a; } }
+:root { color-scheme: light; --bg: #f7f5ef; --card: #fffdf8; --ink: #162d29; --muted: #53655e; --accent: #14604d; --accent-ink: #fff; --line: #cbcfc4; --wash: #e5ede4; --ok: #136244; --error: #a53122; --gutter: clamp(0.85rem, 3vw, 2rem); }
+@media (prefers-color-scheme: dark) { :root { color-scheme: dark; --bg: #101a18; --card: #182622; --ink: #f4f3e9; --muted: #b2c2b8; --accent: #a2ddba; --accent-ink: #123428; --line: #3b5047; --wash: #263d33; --ok: #a2ddba; --error: #ffad98; } }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; font: 17px/1.5 "Vazirmatn", system-ui, Tahoma, sans-serif; background: var(--bg); color: var(--ink); padding-bottom: 6rem; }
-header { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 0.6rem 1rem 0.6rem; border-bottom: 1px solid var(--line); }
-.filters { padding: 0 1rem; }
-.top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.3rem; }
-h1 { font-size: 1.1rem; margin: 0; }
-a.lang { color: var(--accent); text-decoration: none; font-size: 0.9rem; padding: 0.4rem 0.2rem; }
+header { background: #173a32; color: #fff9ea; border-bottom: 3px solid #d6aa63; }
+.masthead, .filters, #grid { max-width: 76rem; margin-inline: auto; }
+.masthead { display: grid; gap: .8rem; padding: 1.1rem var(--gutter); }
+.top { display: flex; align-items: center; gap: .7rem; }
+.top::before { content: ''; flex: none; width: 1.65rem; height: 1.65rem; border-radius: .25rem; background: repeating-linear-gradient(120deg,#e6bc76 0 5px,#173a32 5px 9px) top / 100% 32% no-repeat; border: 2px solid #e6bc76; }
+h1 { font-size: clamp(1.45rem,4vw,2.25rem); line-height: 1.4; margin: 0; }
+.filters { padding: .55rem var(--gutter) 0; }
+.lookup { position: relative; }
+.lookup::before { content: ''; position: absolute; width: .75rem; height: .75rem; border: 2px solid var(--muted); border-radius: 100%; inset-inline-start: .9rem; top: .85rem; pointer-events: none; }
+.lookup::after { content: ''; position: absolute; width: .48rem; height: 2px; background: var(--muted); inset-inline-start: .65rem; top: 1.72rem; transform: rotate(-48deg); pointer-events: none; }
+#q { padding-inline-start: 2.65rem; }
+::placeholder { color: var(--muted); opacity: 1; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+#q:focus-visible { outline-color: #e6bc76; }
+@media (min-width: 48rem) { .masthead { grid-template-columns: 1fr minmax(16rem, 42%); align-items: center; padding-block: 1.6rem; } .masthead .tariff { grid-column: 1 / -1; } }
 input, textarea, select, button { font-family: inherit; }
 input, textarea, select { width: 100%; font: inherit; padding: 0.65rem 0.8rem; min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
 .tools { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
 .tools select { flex: 1; min-width: 0; }
+.tools label { align-self: center; color: var(--muted); font-size: .88rem; }
 .chips { display: flex; gap: 0.4rem; overflow-x: auto; padding: 0.5rem 0 0; scrollbar-width: none; }
-.chip { flex: none; min-height: 40px; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 0.2rem 0.9rem; font: inherit; font-size: 0.9rem; }
+.chip { flex: none; min-height: 44px; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 0.2rem 0.8rem; font: inherit; font-size: 0.9rem; }
+#kinds { flex-wrap: wrap; }
 .chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-#grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(128px, 100%), 1fr)); gap: 0.8rem; padding: 1rem; }
+#grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.15rem .75rem; padding: 1rem var(--gutter); }
+@media (min-width: 36rem) { #grid { grid-template-columns: repeat(auto-fill, minmax(10.6rem, 1fr)); gap: 1.2rem; } }
+@media (max-width: 18rem) { #grid { grid-template-columns: 1fr; } }
 .film { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
-.film .img { aspect-ratio: 2 / 3; background: var(--line); display: grid; place-items: center; text-align: center; padding: 0.5rem; color: var(--muted); }
+.film .img { position: relative; aspect-ratio: 2 / 3; overflow: hidden; background: var(--wash); display: grid; place-items: center; text-align: center; color: var(--accent); }
+.film .rating { position: absolute; bottom: .45rem; inset-inline-end: .45rem; background: #17251ff2; color: #ffe2a5; font: 700 .86rem/1.5 "Vazirmatn",sans-serif; padding: .12rem .46rem; border-radius: .3rem; }
+span.card-poster { display: grid; place-items: center; padding: 1rem; border-block: .45rem double var(--line); font-weight: 700; }
 .film img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.film .body { padding: 0.5rem 0.6rem 0.6rem; display: flex; flex-direction: column; gap: 0.2rem; flex: 1; }
-.film b { font-size: 0.95rem; line-height: 1.35; }
+.film .body { padding: .65rem; display: flex; flex-direction: column; gap: .25rem; flex: 1; }
+.film b { font-size: 1.06rem; line-height: 1.35; }
 .film a { display: block; color: inherit; text-decoration: none; overflow-wrap: anywhere; }
 .film .title-link:hover, .rec:hover { text-decoration: underline; }
 .title-link:focus-visible, .rec:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.film small { color: var(--muted); font-size: 0.8rem; }
+.film small { color: var(--muted); font-size: .875rem; }
 .film .subtitle, .detail-heading h1, .detail-heading .subtitle { text-align: match-parent; }
-.film button { margin-top: auto; min-height: 44px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 8px; padding: 0.35rem; font: inherit; font-size: 0.9rem; }
+.film button { margin-top: auto; min-height: 44px; border: 1px solid var(--line); background: var(--wash); color: var(--accent); border-radius: 8px; padding: .35rem; font: 650 .94rem "Vazirmatn",sans-serif; }
+.film button::before { content: '+ '; }
+.film.on button::before { content: '✓ '; }
+.film .meta { display: flex; flex-wrap: wrap; gap: .2rem .45rem; padding-bottom: .35rem; }
+.film .meta bdi { white-space: nowrap; }
 .film.on { border-color: var(--accent); }
+@media (hover: hover) and (pointer: fine) { .film:hover { border-color: var(--muted); } .film button:hover { border-color: var(--accent); } }
 .film.on button { background: var(--accent); color: var(--accent-ink); }
 .bar { position: fixed; z-index: 3; inset-inline: 0; bottom: 0; padding: 0.7rem 1rem calc(0.7rem + env(safe-area-inset-bottom)); background: var(--bg); border-top: 1px solid var(--line); display: none; }
 .bar.show { display: block; }
@@ -83,7 +104,7 @@ form { display: grid; gap: 0.6rem; }
 ul { margin: 0; padding: 0; list-style: none; max-height: 30vh; overflow: auto; }
 li.row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.2rem 0; }
 li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--muted); font-size: 1.2rem; }
-.tariff { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.85rem; }
+.tariff { margin: 0; color: #d1e3d8; font-size: .85rem; }
 #genres { flex-wrap: wrap; overflow: visible; }
 #genreToggle { min-height: 44px; max-width: 65%; }
 #detailView { width: min(100%, 740px); margin-inline: auto; padding: 1rem 1rem 3rem; }
@@ -109,7 +130,9 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     to { opacity: 1; transform: translateY(0); }
   }
 }
-.detail-section h2 { margin: 0 0 0.45rem; font-size: 1.05rem; }
+.detail-section h2 { margin: 0 0 .65rem; padding-inline-start: .6rem; border-inline-start: 3px solid var(--accent); font-size: 1.12rem; }
+.detail-section p { line-height: 1.85; }
+.detail-hero { padding-block: .65rem 1rem; }
 .detail-section p, .detail-section dl { margin: 0.25rem 0 0.5rem; overflow-wrap: anywhere; }
 .detail-section p, .detail-section dd { unicode-bidi: plaintext; }
 .detail-section dt, .subtle { color: var(--muted); font-size: 0.88rem; }
@@ -118,7 +141,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 .detail-section details > summary { color: var(--accent); }
 .season { background: var(--card); padding-inline: 0.65rem; border-radius: 10px; margin-block: 0.4rem; border: 1px solid var(--line); }
 .season-name { font-weight: 700; color: var(--ink); }
-.season-info { display: inline; color: var(--muted); font-size: 0.82rem; }
+.season-info { display: block; color: var(--muted); font-size: .875rem; font-variant-numeric: tabular-nums; }
 .season label { display: flex; align-items: center; gap: 0.5rem; min-height: 44px; }
 .season input[type=checkbox] { width: 20px; height: 20px; min-height: 0; flex: none; }
 .season input[type=text] { margin-bottom: 0.5rem; }
@@ -131,7 +154,15 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 .sum b { color: var(--accent); }
 .price { color: var(--accent); font-size: 0.85rem; white-space: nowrap; }
 .msg { color: var(--ok); font-weight: 600; margin: 0; }
-.msg.bad { color: #d83a2b; }
+.msg.bad { color: var(--error); }
+#open { display: block; max-width: 44rem; margin-inline: auto; }
+#dlg { max-height: 90dvh; border: 1px solid var(--line); }
+#dlg h2 { margin: 0; font-size: 1.35rem; }
+#dlg label { display: grid; gap: .25rem; color: var(--muted); font-size: .9rem; }
+#dlg label :is(input,textarea) { font-size: 1rem; }
+#dlg .sum:not(:empty) { padding: .65rem .8rem; background: var(--wash); border-radius: .5rem; }
+#mine .row { border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+@media (max-width: 36rem) { #dlg { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 1.25rem 1.25rem 0 0; padding-bottom: calc(1rem + env(safe-area-inset-bottom)); } }
 .wide { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 1.2rem 0; display: grid; gap: 0.6rem; justify-items: center; }
 .wide .ask { width: 100%; max-width: 420px; text-align: start; display: grid; gap: 0.5rem; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 0.9rem; color: var(--ink); }
 .wide .ask p { margin: 0; }
@@ -140,13 +171,14 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 </head>
 <body>
 <header id="catalogHead">
-  <div class="top"><h1>${x.title}</h1></div>
+  <div class="masthead"><div class="top"><h1>${x.title}</h1></div>
+  <div class="lookup"><input id="q" type="search" placeholder="${x.search}" autocomplete="off" aria-label="${x.search}"></div>
   <p class="tariff" id="tariff" hidden></p>
-  <input id="q" type="search" placeholder="${x.search}" autocomplete="off" aria-label="${x.search}">
+  </div>
 </header>
 <section class="filters" id="catalogFilters">
   <div class="chips" id="kinds" role="group"></div>
-  <div class="tools"><select id="sort" aria-label="${x.sort}"></select><button class="chip" type="button" id="genreToggle" aria-expanded="false" aria-controls="genres">${x.genres} ▾</button></div>
+  <div class="tools"><label for="sort">${x.sort}</label><select id="sort" aria-label="${x.sort}"></select><button class="chip" type="button" id="genreToggle" aria-expanded="false" aria-controls="genres">${x.genres} ▾</button></div>
   <div class="chips" id="genres" role="group" aria-label="${x.genres}" hidden></div>
 </section>
 <main id="grid"></main>
@@ -159,14 +191,14 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   <button id="detailAdd" type="button" class="big">${x.addToList}</button>
   <button id="detailCart" type="button" class="chip" hidden>${x.mine}</button>
 </div></div>
-<dialog id="dlg">
+<dialog id="dlg" aria-labelledby="listHeading">
   <form id="form" method="dialog">
-    <h2 style="margin:0;font-size:1.05rem">${x.mine}</h2>
+    <h2 id="listHeading">${x.mine}</h2>
     <ul id="mine"></ul>
     <div class="sum" id="sum"></div>
-    <input id="name" maxlength="80" placeholder="${x.name}" aria-label="${x.name}" autocomplete="name" required>
-    <input id="phone" maxlength="30" inputmode="tel" placeholder="${x.phone}" aria-label="${x.phone}" autocomplete="tel">
-    <textarea id="note" maxlength="200" rows="2" placeholder="${x.note}" aria-label="${x.note}"></textarea>
+    <label>${x.name}<input id="name" maxlength="80" autocomplete="name" required></label>
+    <label>${x.phone}<input id="phone" maxlength="30" inputmode="tel" dir="ltr" autocomplete="tel"></label>
+    <label>${x.note}<textarea id="note" maxlength="200" rows="2"></textarea></label>
     <p class="msg" id="msg" role="status"></p>
     <button type="submit" id="submit" class="big">${x.submit}</button>
     <button type="button" id="clearAll" class="big quiet">${x.clearAll}</button>
@@ -247,7 +279,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     $('submit').disabled = sending || saved;
     $('submit').textContent = saved ? T.saved : wishId ? T.updateList : T.submit;
     var n = Object.keys(chosen).length;
-    var label = saved ? T.saved + ' · ' + T.receipt + ' ' + fa(wishId) : (wishId ? T.updateList : T.send) + ' (' + fa(n) + ')';
+    var label = saved ? T.saved + ' · ' + T.receipt + ' ' + fa(wishId) : 'مرور لیست (' + fa(n) + ')';
     $('open').textContent = label + (hasPrice() ? ' · ' + money(priceOfCounts(totals())) : '');
   }
   function browserEditKey() {
@@ -302,18 +334,23 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       var subtitle = f.f && f.f !== title ? f.f : '';
       var tags = f.b.map(function (b) { return T.badge[b] || b; });
       if (f.s) tags.unshift(fa(f.s) + ' ' + T.seasons);
-      var meta = [f.y, f.r ? '★ ' + f.r : ''].concat(tags).filter(Boolean).join(' · ');
+      var meta = [f.y].concat(tags).filter(Boolean).map(function (value) { return el('bdi', { dir: 'auto' }, [String(value)]); });
       var pick = el('button', { type: 'button', 'aria-pressed': String(on) }, [on ? T.picked : T.pick]);
       pick.onclick = function () {
-        setChoice(f, !chosen[f.k], null);
-        $(pick.id)?.focus({ preventScroll: true });
+        var selected = !chosen[f.k];
+        setChoice(f, selected, null, false);
+        card.className = selected ? 'film on' : 'film';
+        pick.setAttribute('aria-pressed', String(selected));
+        pick.textContent = selected ? T.picked : T.pick;
+        updateBar();
       };
       pick.id = 'pick-' + f.k;
       var card = el('div', { 'class': 'film' + (on ? ' on' : '') }, [
-        detailLink(f, { class: 'img', 'aria-label': title, tabindex: '-1' }, [poster(f, 'card-poster', true)]),
+        detailLink(f, { class: 'img', 'aria-label': title, tabindex: '-1' }, [poster(f, 'card-poster', true),
+          f.r ? el('span', { class: 'rating', dir: 'ltr' }, ['★ ' + f.r]) : '']),
         el('div', { class: 'body' }, [detailLink(f, { class: 'title-link', id: 'title-' + f.k }, [
           el('b', { dir: 'auto' }, [title]),
-        ]), subtitle ? el('small', { dir: 'auto', class: 'subtitle' }, [subtitle]) : '', el('small', {}, [meta]), pick])]);
+        ]), subtitle ? el('small', { dir: 'auto', class: 'subtitle' }, [subtitle]) : '', el('small', { class: 'meta' }, meta), pick])]);
       grid.append(card);
     });
     var tail = el('div', { 'class': 'wide' }, []);
@@ -325,15 +362,19 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     }
     if (films.length) tail.append(askBox($('q').value.trim()));
     grid.append(tail);
+    updateBar();
+  }
+  function updateBar() {
     var n = Object.keys(chosen).length;
     $('bar').className = 'bar' + (n || wishId ? ' show' : '');
     syncSend();
   }
   function save() { store('pick', JSON.stringify(Object.keys(chosen))); store('sel', JSON.stringify(sel)); }
-  function setChoice(f, include, selection) {
+  function setChoice(f, include, selection, refreshGrid = true) {
     if (include) chosen[f.k] = f; else delete chosen[f.k];
     if (include && selection) sel[f.k] = selection; else delete sel[f.k];
-    save(); render();
+    save();
+    if (refreshGrid) render();
   }
   function chips(box, items, selected, set) {
     box.replaceChildren();
@@ -481,7 +522,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       if (s.average != null) description.push('★ ' + fa(s.average) + ' ' + T.average + ' · ' + fa(s.ratedEpisodes) + ' ' + T.ratingsCount);
       var summary = el('summary', {}, [
         el('span', { class: 'season-name' }, [T.seasonN + ' ' + fa(s.season)]),
-        description.length ? el('span', { class: 'season-info' }, [' · ' + description.join(' · ')]) : '',
+        description.length ? el('span', { class: 'season-info' }, [description.join(' · ')]) : '',
       ]);
       var panel = el('details', { class: 'season' }, [summary]);
       var times = Object.entries(s.runtimeByEpisode);
@@ -504,7 +545,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       if (s.selectable || times.length) block.append(panel);
       else block.append(el('div', { class: 'season' }, [
         el('span', { class: 'season-name' }, [T.seasonN + ' ' + fa(s.season)]),
-        description.length ? el('span', { class: 'season-info' }, [' · ' + description.join(' · ')]) : '',
+        description.length ? el('span', { class: 'season-info' }, [description.join(' · ')]) : '',
       ]));
     });
     edit.hidden = !chosen[f.k] || !rows.length;
@@ -542,7 +583,11 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   function load() {
     loadPrices();
     fetch('/api/films?lang=' + T.lang).then(function (r) { if (!r.ok) throw new Error('bad'); return r.json(); }).then(function (list) {
-      films = list.map(function (f) { f._n = norm([f.t, f.f || ''].concat(f.a || []).join(' ') + ' ' + (f.y || '')); return f; });
+      films = list.map(function (f) {
+        var cartoon = f.kd === 'animation' || f.kd === 'anime' ? 'کارتون انیمیشن' : '';
+        f._n = norm([f.t, f.f, f.y, T[f.kd], cartoon].concat(f.a || [], f.g || []).filter(Boolean).join(' '));
+        return f;
+      });
       filmByKey = new Map(films.map(function (f) { return [f.k, f]; }));
       var kinds = [['', T.all]];
       ['movie', 'series', 'animation', 'anime'].forEach(function (k) { if (films.some(function (f) { return f.kd === k; })) kinds.push([k, T[k]]); });
@@ -577,7 +622,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     ul.replaceChildren();
     syncSend();
     Object.keys(chosen).forEach(function (k) {
-      var x = el('button', { type: 'button', 'aria-label': T.remove }, ['×']);
+      var x = el('button', { type: 'button', 'aria-label': T.remove + ' ' + (chosen[k].f || chosen[k].t) }, ['×']);
       x.onclick = function () { delete chosen[k]; delete sel[k]; save(); render(); if (Object.keys(chosen).length || wishId) listBox(); else $('dlg').close(); };
       var what = selText(k);
       var cost = hasPrice() ? el('span', { 'class': 'price' }, [money(priceOfCounts(itemCounts(k)))]) : '';
