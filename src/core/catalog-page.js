@@ -3,7 +3,7 @@
 const { wishSignature } = require('./wish-signature.js');
 const { renderDetailView } = require('./catalog-detail-view.js');
 const DETAIL_EASE = 'cubic-bezier(0.23, 1, 0.32, 1)';
-const DARK_PALETTE = 'color-scheme: dark; --bg: #101a18; --card: #182622; --ink: #f4f3e9; --muted: #b2c2b8; --accent: #a2ddba; --accent-ink: #123428; --line: #3b5047; --wash: #263d33; --ok: #a2ddba; --error: #ffad98;';
+const DARK_PALETTE = 'color-scheme: dark; --bg: #101722; --card: #1b2636; --ink: #f0f3f8; --muted: #b5c2d4; --accent: #b2ccef; --accent-ink: #14273d; --line: #3c4e65; --wash: #28394f; --ok: #b2ccef; --error: #ffad98;';
 
 const TEXT = {
   fa: {
@@ -48,22 +48,22 @@ try {
 </script>
 <style>
 @font-face { font-family: "Vazirmatn"; src: url("/font.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
-:root { color-scheme: light; --bg: #f7f5ef; --card: #fffdf8; --ink: #162d29; --muted: #53655e; --accent: #14604d; --accent-ink: #fff; --line: #cbcfc4; --wash: #e5ede4; --ok: #136244; --error: #a53122; --gutter: clamp(0.85rem, 3vw, 2rem); }
+:root { color-scheme: light; --bg: #f7f5ef; --card: #fffdf8; --ink: #192b41; --muted: #4f5e72; --accent: #24476e; --accent-ink: #fff; --line: #c9d1dc; --wash: #e5edf6; --ok: #24476e; --error: #a53122; --masthead: #17283b; --masthead-muted: #cbd8eb; --gutter: clamp(0.85rem, 3vw, 2rem); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme]) { ${DARK_PALETTE} } }
 :root[data-theme="dark"] { ${DARK_PALETTE} }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; font: 17px/1.5 "Vazirmatn", system-ui, Tahoma, sans-serif; background: var(--bg); color: var(--ink); padding-bottom: 6rem; }
-header { background: #173a32; color: #fff9ea; border-bottom: 3px solid #d6aa63; }
+header { background: var(--masthead); color: #fff9ea; border-bottom: 3px solid #d6aa63; }
 .masthead, .filters, #grid { max-width: 76rem; margin-inline: auto; }
 .masthead { display: grid; gap: .8rem; padding: 1.1rem var(--gutter); }
 .top { display: flex; align-items: center; gap: .7rem; }
 .top h1 { flex: 1; }
 .theme-toggle { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: var(--card); color: var(--ink); font-size: 1.45rem; line-height: 1; cursor: pointer; }
-.masthead .theme-toggle { background: transparent; border-color: #d1e3d8; color: #ffe2a5; }
+.masthead .theme-toggle { background: transparent; border-color: var(--masthead-muted); color: #ffe2a5; }
 .masthead .theme-toggle:focus-visible { outline-color: #e6bc76; }
 .detail-toolbar { display: flex; justify-content: space-between; align-items: start; gap: .7rem; }
-.top::before { content: ''; flex: none; width: 1.65rem; height: 1.65rem; border-radius: .25rem; background: repeating-linear-gradient(120deg,#e6bc76 0 5px,#173a32 5px 9px) top / 100% 32% no-repeat; border: 2px solid #e6bc76; }
+.top::before { content: ''; flex: none; width: 1.65rem; height: 1.65rem; border-radius: .25rem; background: repeating-linear-gradient(120deg,#e6bc76 0 5px,var(--masthead) 5px 9px) top / 100% 32% no-repeat; border: 2px solid #e6bc76; }
 h1 { font-size: clamp(1.45rem,4vw,2.25rem); line-height: 1.4; margin: 0; }
 .filters { padding: .55rem var(--gutter) 0; }
 .lookup { position: relative; }
@@ -88,7 +88,7 @@ input, textarea, select { width: 100%; font: inherit; padding: 0.65rem 0.8rem; m
 @media (max-width: 18rem) { #grid { grid-template-columns: 1fr; } }
 .film { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
 .film .img { position: relative; aspect-ratio: 2 / 3; overflow: hidden; background: var(--wash); display: grid; place-items: center; text-align: center; color: var(--accent); }
-.film .rating { position: absolute; bottom: .45rem; inset-inline-end: .45rem; background: #17251ff2; color: #ffe2a5; font: 700 .86rem/1.5 "Vazirmatn",sans-serif; padding: .12rem .46rem; border-radius: .3rem; }
+.film .rating { position: absolute; bottom: .45rem; inset-inline-end: .45rem; background: #17283bf2; color: #ffe2a5; font: 700 .86rem/1.5 "Vazirmatn",sans-serif; padding: .12rem .46rem; border-radius: .3rem; }
 span.card-poster { display: grid; place-items: center; padding: 1rem; border-block: .45rem double var(--line); font-weight: 700; }
 .film img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .film .body { padding: .65rem; display: flex; flex-direction: column; gap: .25rem; flex: 1; }
@@ -117,7 +117,7 @@ form { display: grid; gap: 0.6rem; }
 ul { margin: 0; padding: 0; list-style: none; max-height: 30vh; overflow: auto; }
 li.row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.2rem 0; }
 li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--muted); font-size: 1.2rem; }
-.tariff { margin: 0; color: #d1e3d8; font-size: .85rem; }
+.tariff { margin: 0; color: var(--masthead-muted); font-size: .85rem; }
 #genres { flex-wrap: wrap; overflow: visible; }
 #genreToggle { min-height: 44px; max-width: 65%; }
 #detailView { width: min(100%, 740px); margin-inline: auto; padding: 1rem 1rem 3rem; }
