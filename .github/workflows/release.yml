@@ -59,6 +59,7 @@ jobs:
             echo "Release v$VERSION already exists. Use a higher version number."
             exit 1
           fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           VERSION="$VERSION" node -e '
             const fs = require("fs");
             const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
@@ -77,7 +78,31 @@ jobs:
         run: |
           VERSION="${INPUT_VERSION#v}"
           gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v${VERSION}" -f sha="$GITHUB_SHA"
+      # electron-builder uploads the installer and its blockmap through two publishers at the same time; with no release yet
+      # both create it and the second gets 422 already_exists. So the release is made here once, as a draft (the publishers reuse
+      # a draft), and published below after every file is uploaded. The updater never sees a half-uploaded release.
+      - name: Create the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "v$VERSION" --draft --title "$VERSION" --notes ""
       - run: npm ci
       - run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "v$VERSION" --draft=false --latest
+      # A failed run leaves nothing behind, so the same version can be run again.
+      - name: Remove the unfinished release
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete "v$VERSION" --yes || true
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/v$VERSION" || true
+          fi

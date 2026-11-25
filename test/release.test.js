@@ -38,3 +38,16 @@ test('a hand-started release creates its tag first: GitHub refuses a published r
   assert.match(workflow, /if: github\.event_name == 'workflow_dispatch'\s*\n\s+shell: bash\s*\n\s+env:\s*\n\s+GH_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}\s*\n\s+INPUT_VERSION: \$\{\{ github\.event\.inputs\.version \}\}\s*\n\s+run: \|[\s\S]*gh api "repos\/\$GITHUB_REPOSITORY\/git\/refs"[\s\S]*refs\/tags\/v\$\{VERSION\}/);
   assert.ok(workflow.indexOf('git/refs') < workflow.indexOf('electron-builder'));
 });
+
+test('the release is made once, as a draft, before electron-builder: its two parallel publishers would both create it (422 already_exists)', () => {
+  const create = workflow.indexOf('gh release create "v$VERSION" --draft');
+  assert.ok(create > 0, 'draft release is created by the workflow');
+  assert.ok(workflow.indexOf('git/refs') < create && create < workflow.indexOf('npx electron-builder'));
+  assert.match(workflow, /echo "VERSION=\$VERSION" >> "\$GITHUB_ENV"/);
+});
+
+test('the draft is published only after the build uploaded everything, and removed when the build fails', () => {
+  assert.match(workflow, /gh release edit "v\$VERSION" --draft=false --latest/);
+  assert.ok(workflow.indexOf('npx electron-builder') < workflow.indexOf('--draft=false'));
+  assert.match(workflow, /if: failure\(\)[\s\S]*gh release delete "v\$VERSION" --yes/);
+});
