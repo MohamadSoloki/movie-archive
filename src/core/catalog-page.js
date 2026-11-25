@@ -3,6 +3,7 @@
 const { wishSignature } = require('./wish-signature.js');
 const { renderDetailView } = require('./catalog-detail-view.js');
 const DETAIL_EASE = 'cubic-bezier(0.23, 1, 0.32, 1)';
+const DARK_PALETTE = 'color-scheme: dark; --bg: #101a18; --card: #182622; --ink: #f4f3e9; --muted: #b2c2b8; --accent: #a2ddba; --accent-ink: #123428; --line: #3b5047; --wash: #263d33; --ok: #a2ddba; --error: #ffad98;';
 
 const TEXT = {
   fa: {
@@ -39,10 +40,17 @@ function pageHtml(lang) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${x.title}</title>
+<script id="catalog-theme-init">
+try {
+  var savedTheme = localStorage.getItem('catalogTheme');
+  if (savedTheme === 'light' || savedTheme === 'dark') document.documentElement.setAttribute('data-theme', savedTheme);
+} catch (error) { /* system colors still apply */ }
+</script>
 <style>
 @font-face { font-family: "Vazirmatn"; src: url("/font.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 :root { color-scheme: light; --bg: #f7f5ef; --card: #fffdf8; --ink: #162d29; --muted: #53655e; --accent: #14604d; --accent-ink: #fff; --line: #cbcfc4; --wash: #e5ede4; --ok: #136244; --error: #a53122; --gutter: clamp(0.85rem, 3vw, 2rem); }
-@media (prefers-color-scheme: dark) { :root { color-scheme: dark; --bg: #101a18; --card: #182622; --ink: #f4f3e9; --muted: #b2c2b8; --accent: #a2ddba; --accent-ink: #123428; --line: #3b5047; --wash: #263d33; --ok: #a2ddba; --error: #ffad98; } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme]) { ${DARK_PALETTE} } }
+:root[data-theme="dark"] { ${DARK_PALETTE} }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; font: 17px/1.5 "Vazirmatn", system-ui, Tahoma, sans-serif; background: var(--bg); color: var(--ink); padding-bottom: 6rem; }
@@ -50,6 +58,11 @@ header { background: #173a32; color: #fff9ea; border-bottom: 3px solid #d6aa63; 
 .masthead, .filters, #grid { max-width: 76rem; margin-inline: auto; }
 .masthead { display: grid; gap: .8rem; padding: 1.1rem var(--gutter); }
 .top { display: flex; align-items: center; gap: .7rem; }
+.top h1 { flex: 1; }
+.theme-toggle { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: var(--card); color: var(--ink); font-size: 1.45rem; line-height: 1; cursor: pointer; }
+.masthead .theme-toggle { background: transparent; border-color: #d1e3d8; color: #ffe2a5; }
+.masthead .theme-toggle:focus-visible { outline-color: #e6bc76; }
+.detail-toolbar { display: flex; justify-content: space-between; align-items: start; gap: .7rem; }
 .top::before { content: ''; flex: none; width: 1.65rem; height: 1.65rem; border-radius: .25rem; background: repeating-linear-gradient(120deg,#e6bc76 0 5px,#173a32 5px 9px) top / 100% 32% no-repeat; border: 2px solid #e6bc76; }
 h1 { font-size: clamp(1.45rem,4vw,2.25rem); line-height: 1.4; margin: 0; }
 .filters { padding: .55rem var(--gutter) 0; }
@@ -171,7 +184,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 </head>
 <body>
 <header id="catalogHead">
-  <div class="masthead"><div class="top"><h1>${x.title}</h1></div>
+  <div class="masthead"><div class="top"><h1>${x.title}</h1><button id="themeToggle" class="theme-toggle" type="button" hidden></button></div>
   <div class="lookup"><input id="q" type="search" placeholder="${x.search}" autocomplete="off" aria-label="${x.search}"></div>
   <p class="tariff" id="tariff" hidden></p>
   </div>
@@ -183,7 +196,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 </section>
 <main id="grid"></main>
 <main id="detailView" hidden>
-  <button id="detailBack" type="button" class="chip">${x.back}</button>
+  <div class="detail-toolbar"><button id="detailBack" type="button" class="chip">${x.back}</button><button id="detailThemeToggle" class="theme-toggle" type="button" hidden></button></div>
   <div id="detailBody"></div>
 </main>
 <div class="bar" id="bar"><button id="open" class="big" type="button"></button></div>
@@ -266,6 +279,34 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     return parts.join(' · ');
   }
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { /* private mode */ } return null; }
+  var deviceTheme = window.matchMedia?.('(prefers-color-scheme: dark)');
+  var storedTheme = store('catalogTheme');
+  var themeOverride = storedTheme === 'light' || storedTheme === 'dark' ? storedTheme : null;
+  var themeButtons = [$('themeToggle'), $('detailThemeToggle')];
+  function nextTheme() {
+    return (themeOverride || (deviceTheme?.matches ? 'dark' : 'light')) === 'dark' ? 'light' : 'dark';
+  }
+  function updateThemeButtons() {
+    var switchToLight = nextTheme() === 'light';
+    var label = switchToLight ? 'فعال کردن حالت روشن' : 'فعال کردن حالت تیره';
+    themeButtons.forEach(function (button) {
+      button.textContent = switchToLight ? '☀︎' : '☾';
+      button.setAttribute('aria-label', label);
+      button.setAttribute('title', label);
+      button.hidden = false;
+    });
+  }
+  themeButtons.forEach(function (button) {
+    button.onclick = function () {
+      themeOverride = nextTheme();
+      document.documentElement.setAttribute('data-theme', themeOverride);
+      store('catalogTheme', themeOverride);
+      updateThemeButtons();
+    };
+  });
+  if (deviceTheme?.addEventListener) deviceTheme.addEventListener('change', updateThemeButtons);
+  else deviceTheme?.addListener?.(updateThemeButtons);
+  updateThemeButtons();
   var editKey = store('wishEditKey') || '', wishId = editKey ? Number(store('wishId')) : 0;
   var lastSent = wishId ? store('wishSnapshot') : null, sending = false;
   function draft() {

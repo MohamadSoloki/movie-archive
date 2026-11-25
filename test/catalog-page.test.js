@@ -52,7 +52,7 @@ const seasons = [1, 2].map((season) => ({
 }));
 const settle = () => new Promise(setImmediate);
 
-function page({ reduceMotion = false, catalog = cards } = {}) {
+function page({ reduceMotion = false, darkMode = false, catalog = cards, local = new Map() } = {}) {
   const html = pageHtml('fa');
   const nodes = Object.fromEntries(Array.from(html.matchAll(/<([a-z]+)[^>]*? id="([^"]+)"([^>]*?)>/g), ([, tag, id, tail]) =>
     [id, new Element(tag, /\bhidden\b/.test(tail) ? { id, hidden: '' } : { id })]));
@@ -91,14 +91,41 @@ function page({ reduceMotion = false, catalog = cards } = {}) {
     return Response.json({ detail: { episodic: series, plot: 'داستان آزمایشی', actors: 'Test Actor', awards: 'Won 1 Emmy',
       seasons: series ? seasons : [], related: series ? ['t:3'] : [], similar: series ? ['t:1'] : [] } });
   };
-  const local = new Map();
-  vm.runInNewContext(html.match(/<script>([\s\S]+)<\/script>/)[1], {
-    document: { getElementById: byId, createElement: (tag) => new Element(tag) },
+  const root = new Element('html');
+  const context = {
+    document: { documentElement: root, getElementById: byId, createElement: (tag) => new Element(tag) },
     fetch, window: win, localStorage: { getItem: (k) => local.get(k), setItem: (k, v) => local.set(k, v) },
     setTimeout: (fn) => fn(), clearTimeout() {},
-  });
-  return { get: byId, nodes, win, submissions, entrances };
+  };
+  let onSystemTheme;
+  const colorScheme = { matches: darkMode, addEventListener: (_, callback) => { onSystemTheme = callback; } };
+  win.matchMedia = (query) => query.includes('color-scheme') ? colorScheme : { matches: reduceMotion };
+  const init = html.match(/<script id="catalog-theme-init">([\s\S]*?)<\/script>/);
+  if (init) vm.runInNewContext(init[1], context);
+  vm.runInNewContext(html.match(/<script>([\s\S]+)<\/script>/)[1], context);
+  return { get: byId, nodes, win, submissions, entrances, root, systemTheme(matches) { colorScheme.matches = matches; onSystemTheme?.(); } };
 }
+
+test('catalog theme follows device changes until manually changed and keeps the override across visits', async () => {
+  const local = new Map();
+  const initial = page({ darkMode: true, local });
+  await settle();
+  assert.equal(initial.root.attrs['data-theme'], undefined);
+  assert.match(initial.nodes.themeToggle.textContent, /☀/);
+  initial.systemTheme(false);
+  assert.match(initial.nodes.themeToggle.textContent, /☾/);
+  initial.nodes.themeToggle.click();
+  assert.equal(initial.root.attrs['data-theme'], 'dark');
+  assert.match(initial.nodes.detailThemeToggle.textContent, /☀/);
+  initial.systemTheme(false);
+  assert.equal(initial.root.attrs['data-theme'], 'dark');
+  const reopened = page({ darkMode: false, local });
+  await settle();
+  assert.equal(reopened.root.attrs['data-theme'], 'dark');
+  reopened.nodes.detailThemeToggle.click();
+  assert.equal(reopened.root.attrs['data-theme'], 'light');
+  assert.match(reopened.nodes.themeToggle.textContent, /☾/);
+});
 
 test('quick selection keeps the grid and search intact and updates the review button', async () => {
   const { get, nodes } = page();
