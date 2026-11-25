@@ -22,6 +22,7 @@ const TEXT = {
     episodesHint: 'شمارهٔ قسمت‌ها، مثلاً ۱-۵ یا ۲ ۵ ۷', wholeSeason: 'همهٔ قسمت‌های موجود', invalidEpisodes: 'شمارهٔ قسمت‌های موجود را وارد کن.',
     genres: 'ژانرها', genreCount: 'انتخاب', addToList: 'اضافه به لیست سینمایی', inList: 'در لیست شما', updatePick: 'ثبت انتخاب فصل و قسمت',
     editSeasons: 'ویرایش فصل و قسمت', loading: 'در حال بارگذاری جزئیات…', detailError: 'جزئیات در دسترس نیست.', unknownTitle: 'این عنوان در کاتالوگ پیدا نشد.',
+    wholeSeries: 'انتخاب کل سریال', seasonPicker: 'انتخاب فصل و قسمت', applySeasonPick: 'ثبت انتخاب', seasonPickerHint: 'برای انتخاب بخشی از سریال، فصل را باز کن. می‌توانی کل فصل را تیک بزنی یا شمارهٔ قسمت‌ها را وارد کنی.',
     synopsis: 'خلاصهٔ داستان', morePlot: 'ادامهٔ توضیحات', people: 'بازیگران و عوامل', cast: 'بازیگران', director: 'کارگردان', awards: 'جوایز',
     availableSeasons: 'فصل موجود', availableEpisodes: 'قسمت موجود', totalSeasons: 'فصل در مجموع', knownEpisodes: 'قسمت ثبت‌شده',
     typicalRuntime: 'مدت معمول هر قسمت', average: 'میانگین IMDb', ratingsCount: 'قسمت امتیازدار', episodeTimes: 'مدت قسمت‌ها',
@@ -170,12 +171,17 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 .msg.bad { color: var(--error); }
 #open { display: block; max-width: 44rem; margin-inline: auto; }
 #dlg { max-height: 90dvh; border: 1px solid var(--line); }
+#seasonPicker { max-height: 90dvh; border: 1px solid var(--line); }
+#seasonPicker h2 { margin: 0 0 .6rem; font-size: 1.25rem; }
+#seasonPicker .season summary { cursor: pointer; min-height: 44px; padding-block: .55rem; }
+#seasonPicker .season-apply { margin-block-start: .55rem; }
+#seasonPickerBody { margin-block-start: .65rem; }
 #dlg h2 { margin: 0; font-size: 1.35rem; }
 #dlg label { display: grid; gap: .25rem; color: var(--muted); font-size: .9rem; }
 #dlg label :is(input,textarea) { font-size: 1rem; }
 #dlg .sum:not(:empty) { padding: .65rem .8rem; background: var(--wash); border-radius: .5rem; }
 #mine .row { border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
-@media (max-width: 36rem) { #dlg { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 1.25rem 1.25rem 0 0; padding-bottom: calc(1rem + env(safe-area-inset-bottom)); } }
+@media (max-width: 36rem) { #dlg, #seasonPicker { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 1.25rem 1.25rem 0 0; padding-bottom: calc(1rem + env(safe-area-inset-bottom)); } }
 .wide { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 1.2rem 0; display: grid; gap: 0.6rem; justify-items: center; }
 .wide .ask { width: 100%; max-width: 420px; text-align: start; display: grid; gap: 0.5rem; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 0.9rem; color: var(--ink); }
 .wide .ask p { margin: 0; }
@@ -217,6 +223,12 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     <button type="button" id="clearAll" class="big quiet">${x.clearAll}</button>
     <button type="button" id="close" class="big quiet">${x.close}</button>
   </form>
+</dialog>
+<dialog id="seasonPicker" aria-labelledby="seasonPickerTitle">
+  <h2 id="seasonPickerTitle">${x.seasonPicker}</h2>
+  <button id="pickWholeSeries" type="button" class="big" hidden>${x.wholeSeries}</button>
+  <div id="seasonPickerBody"></div>
+  <button id="closeSeasonPicker" type="button" class="big quiet">${x.close}</button>
 </dialog>
 <script>
 (function () {
@@ -376,7 +388,9 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       if (f.s) tags.unshift(fa(f.s) + ' ' + T.seasons);
       var meta = [f.y].concat(tags).filter(Boolean).map(function (value) { return el('bdi', { dir: 'auto' }, [String(value)]); });
       var pick = el('button', { type: 'button', 'aria-pressed': String(on) }, [on ? T.picked : T.pick]);
+      if (f.s > 0) pick.setAttribute('aria-haspopup', 'dialog');
       pick.onclick = function () {
+        if (f.s > 0) { openSeasonPicker(f); return; }
         var selected = !chosen[f.k];
         setChoice(f, selected, null, false);
         card.className = selected ? 'film on' : 'film';
@@ -520,15 +534,17 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       add.disabled = disabled;
       $('detailCart').hidden = !(Object.keys(chosen).length || wishId);
     }
-    label(chosen[f.k] ? T.inList : T.addToList, !!chosen[f.k]);
+    var canPickSeasons = f.s > 0 || data?.seasons.some(function (season) { return season.selectable; });
+    label(chosen[f.k] ? (canPickSeasons ? T.editSeasons : T.inList) : T.addToList, !!chosen[f.k] && !canPickSeasons);
     add.onclick = function () {
+      if (canPickSeasons) { openSeasonPicker(f); return; }
       setChoice(f, true, null);
       label(T.inList, true);
     };
     renderDetailView({
       body: $('detailBody'), title: f, data: data, text: T, element: el, fa: fa,
       poster: function (film) { return poster(film, 'detail-poster', false); }, link: recommendation,
-      controls: function (seasons) { return seasonEditor(f, seasons, label); },
+      controls: function (seasons) { return seasonEditor(f, seasons, label, add); },
       retry: retry ? function () { renderTitle(f); } : null,
       animateSections: animateSections,
     });
@@ -549,10 +565,52 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     });
   }
 
-  function seasonEditor(f, seasons, label) {
+  var seasonPickerRequest = 0;
+  $('closeSeasonPicker').onclick = function () { $('seasonPicker').close(); };
+  function openSeasonPicker(f) {
+    var dialog = $('seasonPicker'), body = $('seasonPickerBody'), whole = $('pickWholeSeries');
+    var request = ++seasonPickerRequest;
+    $('seasonPickerTitle').textContent = T.seasonPicker + ' · ' + (f.f || f.t);
+    whole.hidden = true;
+    body.replaceChildren(el('p', { role: 'status' }, [T.loading]));
+    if (!dialog.open) dialog.showModal();
+    function commit(include, selection) {
+      setChoice(f, include, selection);
+      dialog.close();
+      if (activeDetail === f) renderTitle(f);
+      else $('pick-' + f.k)?.focus({ preventScroll: true });
+    }
+    function current() { return dialog.open && request === seasonPickerRequest; }
+    fetch('/api/detail?k=' + encodeURIComponent(f.k)).then(function (r) {
+      if (!r.ok) throw new Error('bad');
+      return r.json();
+    }).then(function (j) {
+      if (!current()) return;
+      var seasons = j.detail.seasons.filter(function (season) { return season.selectable; });
+      whole.hidden = false;
+      whole.onclick = function () { commit(true, null); };
+      body.replaceChildren();
+      if (seasons.length) {
+        var apply = el('button', { type: 'button', class: 'big season-apply' });
+        body.append(el('p', { class: 'subtle' }, [T.seasonPickerHint]),
+          seasonEditor(f, seasons, function (text, disabled) {
+            apply.textContent = text === T.remove && !disabled ? text : T.applySeasonPick;
+            apply.disabled = disabled;
+          }, apply, commit), apply);
+      }
+    }).catch(function () {
+      if (!current()) return;
+      var retry = el('button', { type: 'button', class: 'chip' }, [T.retry]);
+      retry.onclick = function () { openSeasonPicker(f); };
+      body.replaceChildren(el('p', { role: 'status' }, [T.detailError]), retry);
+    });
+  }
+
+  function seasonEditor(f, seasons, label, action, commit) {
     var block = el('div', {});
     var rows = [];
     var current = sel[f.k];
+    var dirty = false;
     var edit = el('button', { type: 'button', class: 'chip' }, [T.editSeasons]);
     block.append(edit);
     seasons.forEach(function (s) {
@@ -568,12 +626,12 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       var times = Object.entries(s.runtimeByEpisode);
       if (s.selectable) {
         var whole = el('input', { type: 'checkbox' });
-        whole.checked = !current || current.seasons.includes(s.season);
+        whole.checked = current ? current.seasons.includes(s.season) : !commit;
         var eps = s.episodes ? el('input', { type: 'text', inputmode: 'text', 'aria-label': T.episodesHint, placeholder: T.episodesHint, dir: 'auto' }) : null;
         if (eps) eps.value = (current?.episodes[s.season] || []).map(fa).join(' ');
         rows.push({ season: s.season, whole: whole, eps: eps, available: s.episodes, panel: panel, summary: summary });
-        whole.onchange = function () { if (whole.checked && eps) eps.value = ''; update(); };
-        if (eps) eps.oninput = function () { if (eps.value.trim()) whole.checked = false; update(); };
+        whole.onchange = function () { if (whole.checked && eps) eps.value = ''; dirty = true; update(); };
+        if (eps) eps.oninput = function () { if (eps.value.trim()) whole.checked = false; dirty = true; update(); };
         panel.append(el('label', {}, [whole, T.wholeSeason]), eps || '');
       }
       if (times.length) {
@@ -588,7 +646,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
         description.length ? el('span', { class: 'season-info' }, [description.join(' · ')]) : '',
       ]));
     });
-    edit.hidden = !chosen[f.k] || !rows.length;
+    edit.hidden = !!commit || !chosen[f.k] || !rows.length;
     edit.onclick = function () { rows[0].panel.open = true; rows[0].summary.focus(); };
     if (!rows.length) return block;
 
@@ -608,12 +666,21 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       var before = JSON.stringify(sel[f.k] || null);
       var picked = !!chosen[f.k];
       var same = picked === include && (!include || before === JSON.stringify(next));
-      label(picked ? (same && !invalid ? T.inList : include ? T.updatePick : T.remove) : T.addToList, !invalid && (same || (!picked && !include)));
-      $('detailAdd').onclick = function () {
+      if (!commit && !dirty) {
+        label(picked ? T.editSeasons : T.addToList, false);
+        action.onclick = function () { openSeasonPicker(f); };
+        return;
+      }
+      var emptySelection = !include && (!picked || (commit && !dirty));
+      var caption = !picked ? T.addToList : same && !invalid ? T.inList : include ? T.updatePick : T.remove;
+      label(caption, !invalid && (same || emptySelection));
+      action.onclick = function () {
         if (invalid) { invalid.panel.open = true; invalid.eps.reportValidity(); return; }
         if (same) return;
+        if (commit) { commit(include, next); return; }
         setChoice(f, include, next);
         edit.hidden = !include;
+        dirty = false;
         update();
       };
     }

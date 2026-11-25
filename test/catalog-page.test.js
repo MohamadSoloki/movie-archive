@@ -230,7 +230,30 @@ test('catalog disclosure preserves multiple genres and back restores the catalog
   assert.equal(get('title-t:3'), undefined);
 });
 
-test('series details add all seasons by default and submit only the edited episode and whole season', async () => {
+test('quick series selection opens a menu and adds only confirmed seasons and episodes', async () => {
+  const { get, nodes: e, submissions } = page();
+  await settle();
+  get('pick-t:2').click();
+  assert.ok(e.seasonPicker.open);
+  await settle();
+  assert.equal(get('pick-t:2').attrs['aria-pressed'], 'false');
+  const [first, second] = e.seasonPickerBody.all((node) => node.tag === 'input' && node.attrs.type === 'checkbox');
+  const episode = e.seasonPickerBody.all((node) => node.tag === 'input' && node.attrs.type === 'text')[0];
+  assert.equal(first.checked, false);
+  second.checked = true;
+  second.onchange();
+  episode.value = '۳';
+  episode.oninput();
+  e.seasonPickerBody.all((node) => node.attrs.class === 'big season-apply')[0].click();
+  assert.equal(e.seasonPicker.open, false);
+  e.open.click();
+  e.name.value = 'Test Customer';
+  e.form.onsubmit({ preventDefault() {} });
+  await settle();
+  assert.deepEqual(submissions[0].picks, { 't:2': { seasons: [2], episodes: { 1: [3] } } });
+});
+
+test('series details allow selecting the whole series, canceling a change and editing episodes', async () => {
   const { get, nodes: e, submissions } = page();
   await settle();
   get('title-t:2').click();
@@ -240,8 +263,14 @@ test('series details add all seasons by default and submit only the edited episo
   assert.doesNotMatch(e.detailBody.textContent, /قسمت موجود · ۱، ۳/);
   assert.match(e.detailBody.textContent, /۴۳ دقیقه/);
   e.detailAdd.click();
-  assert.equal(e.detailAdd.textContent, 'در لیست شما');
-  assert.equal(e.detailAdd.disabled, true);
+  await settle();
+  e.pickWholeSeries.click();
+  assert.equal(e.detailAdd.textContent, 'ویرایش فصل و قسمت');
+  assert.equal(get('pick-t:2').attrs['aria-pressed'], 'true');
+  e.detailAdd.click();
+  await settle();
+  e.closeSeasonPicker.click();
+  assert.equal(get('pick-t:2').attrs['aria-pressed'], 'true');
   const input = e.detailBody.all((node) => node.tag === 'input' && node.attrs.type === 'text')[0];
   input.value = '۲';
   input.oninput();
@@ -251,7 +280,7 @@ test('series details add all seasons by default and submit only the edited episo
   input.value = '۳';
   input.oninput();
   e.detailAdd.click();
-  assert.equal(e.detailAdd.disabled, true);
+  assert.equal(e.detailAdd.textContent, 'ویرایش فصل و قسمت');
   e.detailCart.click();
   e.name.value = 'Test Customer';
   e.form.onsubmit({ preventDefault() {} });
