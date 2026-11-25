@@ -1342,6 +1342,27 @@ test('phone catalog: prices, the seasons of a series and a list that names seaso
   } finally { await api.stopCatalog(); }
 });
 
+test('catalog details identify disconnected episode storage and restore selection on reconnection', async () => {
+  const { api, key, state } = await withShow({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  await api.confirmGuess(key);
+  await api.setSettings({ catalogPort: 0 });
+  const started = await api.startCatalog();
+  const url = `http://127.0.0.1:${new URL(started.url).port}/api/detail?k=${encodeURIComponent(key)}`;
+  const details = async () => {
+    const response = await fetch(url);
+    assert.equal(response.status, 200);
+    return (await response.json()).detail;
+  };
+  try {
+    state.online = false;
+    const offline = await details();
+    assert.deepEqual(offline.seasons.map((s) => [s.episodes, s.episodeAvailability]), Array(3).fill([null, 'offline']));
+    state.online = true;
+    const online = await details();
+    assert.deepEqual(online.seasons.map((s) => s.episodes), [[1, 2], [1, 2, 3, 4], [1]]);
+  } finally { await api.stopCatalog(); }
+});
+
 function fakeTunnel(result = { ok: true, url: 'https://quiet-river.trycloudflare.com' }) {
   let st = { state: 'off', url: null, error: null };
   const calls = { start: [], stop: 0 };

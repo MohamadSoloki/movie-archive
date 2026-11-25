@@ -492,7 +492,7 @@ function createApi({
   async function seasonsOf(key, includeBytes = true) {
     const e = search.find(key);
     if (!e || e.kind === 'collection') return { ok: false, error: 'unknown' };
-    const rootOf = new Map((await getDrives()).map((d) => [d.serial, d.root]));
+    const rootOf = new Map((await getDrives()).filter((d) => d.online).map((d) => [d.serial, d.root]));
     const seasons = new Map();
     for (const l of e.locations) {
       if (l.season == null || l.missing) continue;
@@ -500,8 +500,10 @@ function createApi({
       const src = rootOf.has(l.driveSerial) ? path.join(rootOf.get(l.driveSerial), l.relPath) : null;
       const have = seasons.get(n);
       if (have?.episodes && (!includeBytes || have.bytes !== null)) continue; // one readable copy of the season is enough
+      if (!src && have) continue; // keep a connected copy ahead of an offline one
       const row = { season: n, episodes: src ? episodesIn(src) : null };
       if (includeBytes) row.bytes = src && fs.existsSync(src) ? transfer.treeSize(src) : null;
+      else if (!row.episodes) row.episodeAvailability = src ? 'unrecognized' : 'offline';
       seasons.set(n, row);
     }
     return { ok: true, seasons: [...seasons.values()].sort((a, b) => a.season - b.season) };

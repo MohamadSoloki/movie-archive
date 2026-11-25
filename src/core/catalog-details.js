@@ -8,8 +8,8 @@ const present = (value) => value && value !== 'N/A' ? value : null;
 
 // Public metadata only. Archive episodes are selectable; provider episodes can describe a season without making it selectable.
 function catalogDetail(db, entry, archiveSeasons, entries) {
-  const seasons = new Map(archiveSeasons.map(({ season, episodes }) => [season, {
-    season, episodes, selectable: true, knownEpisodes: 0, runtimeByEpisode: {},
+  const seasons = new Map(archiveSeasons.map(({ season, episodes, episodeAvailability }) => [season, {
+    season, episodes, ...(episodeAvailability ? { episodeAvailability } : {}), selectable: true, knownEpisodes: 0, runtimeByEpisode: {},
   }]));
   const ratings = new Map();
   const rows = db.prepare('SELECT season, number, rating, runtime FROM episodes WHERE title_id = ? ORDER BY season, number').all(entry.titleId ?? null);
