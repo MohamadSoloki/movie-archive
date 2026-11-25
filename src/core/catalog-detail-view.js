@@ -1,7 +1,7 @@
 'use strict';
 
 // Embedded by catalog-page in the self-contained phone catalog.
-function renderDetailView({ body, title, data, text, element, fa, poster, link, controls, retry }) {
+function renderDetailView({ body, title, data, text, element, fa, poster, link, controls, retry, animateSections }) {
   const e = element;
   const name = title.t || title.f;
   const subtitle = title.f && title.f !== name ? title.f : '';
@@ -24,7 +24,8 @@ function renderDetailView({ body, title, data, text, element, fa, poster, link, 
     body.append(e('p', { role: 'status', class: 'subtle' }, [retry ? text.detailError : text.loading]), status);
     return;
   }
-  const section = (name, children) => body.append(e('section', { class: 'detail-section' }, [
+  const sectionClass = animateSections ? 'detail-section detail-enter-section' : 'detail-section';
+  const section = (name, children) => body.append(e('section', { class: sectionClass }, [
     e('h2', {}, [name]), ...children,
   ]));
   if (data.plot) {

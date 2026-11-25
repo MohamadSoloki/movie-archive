@@ -41,7 +41,7 @@ class Element {
   get textContent() { return this.content || ''; }
   all(filter) { return [this, ...this.children.flatMap((k) => k.all(() => true))].filter(filter); }
   querySelectorAll(name) { return this.all((e) => name === '[data-recommendation]' && e.dataset.recommendation); }
-  click() { if (!this.disabled) this.onclick?.({ preventDefault() {} }); }
+  click(detail = 1) { if (!this.disabled) this.onclick?.({ detail, preventDefault() {} }); }
 }
 
 const genre = ['درام', 'معمایی', 'اکشن'];
@@ -52,15 +52,22 @@ const seasons = [1, 2].map((season) => ({
 }));
 const settle = () => new Promise(setImmediate);
 
-function page() {
+function page({ reduceMotion = false } = {}) {
   const html = pageHtml('fa');
   const nodes = Object.fromEntries(Array.from(html.matchAll(/<([a-z]+)[^>]*? id="([^"]+)"([^>]*?)>/g), ([, tag, id, tail]) =>
     [id, new Element(tag, /\bhidden\b/.test(tail) ? { id, hidden: '' } : { id })]));
   const byId = (id) => nodes[id] || Object.values(nodes).flatMap((e) => e.all((child) => child.id === id))[0];
+  const entrances = [];
+  nodes.detailBody.animate = (frames, options) => {
+    const entrance = { frames, options, cancel() { this.canceled = true; } };
+    entrances.push(entrance);
+    return entrance;
+  };
   const entries = [{ hash: '', state: null }];
   let index = 0;
   const events = {};
   const win = {
+    matchMedia: () => ({ matches: reduceMotion }),
     scrollY: 0, crypto: webcrypto, addEventListener: (name, fn) => { events[name] = fn; },
     location: { get hash() { return entries[index].hash; } },
     scrollTo: (_, y) => { win.scrollY = y; },
@@ -90,8 +97,39 @@ function page() {
     fetch, window: win, localStorage: { getItem: (k) => local.get(k), setItem: (k, v) => local.set(k, v) },
     setTimeout: (fn) => fn(), clearTimeout() {},
   });
-  return { get: byId, nodes, win, submissions };
+  return { get: byId, nodes, win, submissions, entrances };
 }
+
+test('details animate on tap, including late sections, and cancel the entrance when leaving', async () => {
+  const { get, nodes: e, entrances } = page();
+  await settle();
+  get('title-t:2').click();
+  assert.equal(e.detailView.hidden, false);
+  assert.equal(entrances.length, 1);
+  await settle();
+  assert.equal(entrances.length, 1);
+  const sections = () => e.detailBody.all((node) => node.attrs.class?.includes('detail-enter-section'));
+  assert.ok(sections().length > 1);
+  e.dlg.events.close();
+  assert.equal(sections().length, 0);
+  e.detailBack.click();
+  assert.equal(entrances[0].canceled, true);
+  get('title-t:2').click();
+  assert.equal(entrances.length, 2);
+  assert.ok(sections().length > 1);
+});
+
+test('details open instantly with reduced motion or keyboard navigation', async () => {
+  for (const reduceMotion of [false, true]) {
+    const { get, nodes: e, entrances } = page({ reduceMotion });
+    await settle();
+    get('title-t:2').click(reduceMotion ? 1 : 0);
+    await settle();
+    assert.equal(e.detailView.hidden, false);
+    assert.equal(entrances.length, 0);
+    assert.equal(e.detailBody.all((node) => node.attrs.class?.includes('detail-enter-section')).length, 0);
+  }
+});
 
 test('catalog disclosure preserves multiple genres and back restores the catalog and its scroll', async () => {
   const { get, nodes: e, win } = page();

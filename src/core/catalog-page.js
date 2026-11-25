@@ -2,6 +2,7 @@
 
 const { wishSignature } = require('./wish-signature.js');
 const { renderDetailView } = require('./catalog-detail-view.js');
+const DETAIL_EASE = 'cubic-bezier(0.23, 1, 0.32, 1)';
 
 const TEXT = {
   fa: {
@@ -96,6 +97,18 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 .detail-genres { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .detail-genres span { padding: 0.12rem 0.45rem; background: var(--card); border: 1px solid var(--line); border-radius: 999px; font-size: 0.8rem; }
 .detail-section { border-top: 1px solid var(--line); margin-top: 1.15rem; padding-top: 0.85rem; }
+@media (prefers-reduced-motion: no-preference) {
+  .detail-enter-section { animation: detail-reveal 140ms ${DETAIL_EASE} 10ms backwards; }
+  .detail-enter-section:nth-of-type(2) { animation-delay: 40ms; }
+  .detail-enter-section:nth-of-type(3) { animation-delay: 70ms; }
+  .detail-enter-section:nth-of-type(4) { animation-delay: 100ms; }
+  .detail-enter-section:nth-of-type(5) { animation-delay: 130ms; }
+  .detail-enter-section:nth-of-type(n+6) { animation-delay: 160ms; }
+  @keyframes detail-reveal {
+    from { opacity: 0; transform: translateY(7px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
 .detail-section h2 { margin: 0 0 0.45rem; font-size: 1.05rem; }
 .detail-section p, .detail-section dl { margin: 0.25rem 0 0.5rem; overflow-wrap: anywhere; }
 .detail-section p, .detail-section dd { unicode-bidi: plaintext; }
@@ -355,6 +368,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     }).catch(function () { /* no prices: no money shown */ });
   }
   var catalogReady = false, activeDetail = null, detailData = new Map();
+  var detailEntrance, routeRevision = 0;
   function poster(f, style, lazy) {
     if (!f.p) return el('span', { class: style, 'aria-hidden': 'true', dir: 'auto' }, [f.t || f.f]);
     return el('img', { class: style, src: '/poster/' + encodeURIComponent(f.k), alt: '', loading: lazy ? 'lazy' : 'eager' });
@@ -367,7 +381,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       ev.preventDefault();
       window.history.replaceState({ ...window.history.state, scroll: window.scrollY, focusKey: f.k }, '');
       window.history.pushState({ fromCatalog: true }, '', detailHash(f.k));
-      showRoute();
+      showRoute(ev.detail > 0);
     };
     return link;
   }
@@ -377,7 +391,10 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       poster(f, 'rec-poster', true), el('span', { dir: 'auto' }, [f.f || f.t]),
     ]);
   }
-  function showRoute() {
+  function showRoute(animate = false) {
+    routeRevision += 1;
+    detailEntrance?.cancel();
+    detailEntrance = null;
     var hash = window.location?.hash || '';
     var detail = hash.startsWith('#title=');
     var key = '';
@@ -385,10 +402,11 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       try { key = decodeURIComponent(hash.slice(7)); } catch (e) { /* unknown title */ }
     }
     activeDetail = detail ? filmByKey.get(key) || null : null;
+    var animateEntry = animate && activeDetail && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     ['catalogHead', 'catalogFilters', 'grid', 'bar'].forEach(function (id) { $(id).hidden = detail; });
     $('detailView').hidden = !detail;
     $('detailBar').hidden = !activeDetail;
-    if (activeDetail) renderTitle(activeDetail);
+    if (activeDetail) renderTitle(activeDetail, { animateSections: animateEntry });
     else if (detail) $('detailBody').replaceChildren(el('p', { role: 'status' }, [T.unknownTitle]));
     var route = window.history?.state;
     if (detail) {
@@ -399,6 +417,12 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       $('title-' + route.focusKey)?.focus({ preventScroll: true });
     }
     window.scrollTo(0, route?.scroll || 0);
+    if (animateEntry) {
+      detailEntrance = $('detailBody').animate?.([
+        { opacity: 0.65, transform: 'translateY(9px)' },
+        { opacity: 1, transform: 'translateY(0)' },
+      ], { duration: 220, easing: '${DETAIL_EASE}' });
+    }
   }
   $('detailBack').onclick = function () {
     if (window.history.state?.fromCatalog) window.history.back();
@@ -407,7 +431,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   if (window.history) window.history.scrollRestoration = 'manual';
   window.addEventListener?.('popstate', function () { if (catalogReady) showRoute(); });
 
-  function renderTitle(f, retry, fetching) {
+  function renderTitle(f, { retry = false, settled = false, animateSections = false } = {}) {
     var data = detailData.get(f.k);
     var add = $('detailAdd');
     function label(text, disabled) {
@@ -425,19 +449,23 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       poster: function (film) { return poster(film, 'detail-poster', false); }, link: recommendation,
       controls: function (seasons) { return seasonEditor(f, seasons, label); },
       retry: retry ? function () { renderTitle(f); } : null,
+      animateSections: animateSections,
     });
-    if (data || retry || fetching) return;
+    if (data || settled) return;
+    var revision = routeRevision;
     fetch('/api/detail?k=' + encodeURIComponent(f.k)).then(function (r) {
       if (!r.ok) throw new Error('bad');
       return r.json();
     }).then(function (j) {
       detailData.set(f.k, j.detail);
-      if (activeDetail === f) {
+      if (activeDetail === f && revision === routeRevision) {
         var focusHeading = document.activeElement === $('detailTitle');
-        renderTitle(f, false, true);
+        renderTitle(f, { settled: true, animateSections: animateSections });
         if (focusHeading) $('detailTitle').focus({ preventScroll: true });
       }
-    }).catch(function () { if (activeDetail === f) renderTitle(f, true, true); });
+    }).catch(function () {
+      if (activeDetail === f && revision === routeRevision) renderTitle(f, { retry: true, settled: true });
+    });
   }
 
   function seasonEditor(f, seasons, label) {
