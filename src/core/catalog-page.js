@@ -23,6 +23,8 @@ const TEXT = {
     genres: 'ژانرها', genreCount: 'انتخاب', addToList: 'اضافه به لیست سینمایی', inList: 'در لیست شما', updatePick: 'ثبت انتخاب فصل و قسمت',
     editSeasons: 'ویرایش فصل و قسمت', loading: 'در حال بارگذاری جزئیات…', detailError: 'جزئیات در دسترس نیست.', unknownTitle: 'این عنوان در کاتالوگ پیدا نشد.',
     wholeSeries: 'انتخاب کل سریال', seasonPicker: 'انتخاب فصل و قسمت', applySeasonPick: 'ثبت انتخاب', seasonPickerHint: 'برای انتخاب بخشی از سریال، فصل را باز کن. می‌توانی کل فصل را تیک بزنی یا شمارهٔ قسمت‌ها را وارد کنی.',
+    episodeNumbersOnly: 'شمارهٔ قسمت را با عدد وارد کن. برای چند قسمت از فاصله، ویرگول یا خط تیره استفاده کن.',
+    lastAvailableEpisode: 'آخرین قسمت موجود', noEpisodeNumbers: 'شمارهٔ قسمت‌های موجود برای این فصل در دسترس نیست.',
     synopsis: 'خلاصهٔ داستان', morePlot: 'ادامهٔ توضیحات', people: 'بازیگران و عوامل', cast: 'بازیگران', director: 'کارگردان', awards: 'جوایز',
     availableSeasons: 'فصل موجود', availableEpisodes: 'قسمت موجود', totalSeasons: 'فصل در مجموع', knownEpisodes: 'قسمت ثبت‌شده',
     typicalRuntime: 'مدت معمول هر قسمت', average: 'میانگین IMDb', ratingsCount: 'قسمت امتیازدار', episodeTimes: 'مدت قسمت‌ها',
@@ -159,6 +161,13 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 .season label { display: flex; align-items: center; gap: 0.5rem; min-height: 44px; }
 .season input[type=checkbox] { width: 20px; height: 20px; min-height: 0; flex: none; }
 .season input[type=text] { margin-bottom: 0.5rem; }
+.season-selectable { position: relative; }
+.season-selectable > .season-content > summary { padding-inline-end: 48px; }
+.season-selectable > .season-checkbox { position: absolute; inset-inline-end: .2rem; inset-block-start: 0; width: 44px; display: grid; place-items: center; cursor: pointer; }
+.season-selectable .season-checkbox input { margin: 0; accent-color: var(--accent); }
+.season input[aria-invalid="true"] { border: 2px solid var(--error); }
+.season input[aria-invalid="true"]:focus-visible { outline-color: var(--error); }
+.season .episode-error { margin: 0 0 .65rem; color: var(--error); font-size: .875rem; }
 .season .episode-times { margin-bottom: 0.5rem; }
 .recommendations { display: grid; grid-auto-flow: column; grid-auto-columns: clamp(94px, 25vw, 130px); gap: 0.6rem; overflow-x: auto; padding: 0.2rem 0.15rem 0.6rem; }
 .rec { display: grid; align-content: start; gap: 0.25rem; color: inherit; text-decoration: none; font-size: 0.85rem; overflow-wrap: anywhere; }
@@ -253,16 +262,23 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   function money(n) { return fa(n) + ' ' + T.currency; }
   function hasPrice() { return P.movie > 0 || P.season > 0 || P.episode > 0; }
   // "1-5, 7 9" -> [1,2,3,4,5,7,9]
-  function parseEps(text) {
-    var out = {};
-    norm(text).split(/[,،\\s]+/).forEach(function (p) {
-      var m = /^(\\d{1,4})(?:[-–](\\d{1,4}))?$/.exec(p);
-      if (!m) return;
-      var a = +m[1], b = m[2] === undefined ? a : +m[2], t;
-      if (a > b) { t = a; a = b; b = t; }
-      for (var n = Math.max(a, 1); n <= Math.min(b, 999); n++) out[n] = 1;
-    });
-    return Object.keys(out).map(Number).sort(function (x, y) { return x - y; });
+  function parseEps(text, available) {
+    var numbers = new Set();
+    if (!text.trim()) return { numbers: [], error: '' };
+    var last = Math.max.apply(null, available);
+    var parts = norm(text).split(/[,،\\s]+/).filter(Boolean);
+    if (!parts.length) return { error: T.episodeNumbersOnly };
+    for (var part of parts) {
+      var range = /^(\\d+)(?:[-–](\\d+))?$/.exec(part);
+      if (!range) return { error: T.episodeNumbersOnly };
+      var firstNumber = Number(range[1]), secondNumber = Number(range[2] ?? range[1]);
+      if (Math.max(firstNumber, secondNumber) > last) return { error: T.lastAvailableEpisode + ' ' + fa(last) + ' است.' };
+      for (var n = Math.min(firstNumber, secondNumber); n <= Math.max(firstNumber, secondNumber); n++) {
+        if (!available.includes(n)) return { error: T.invalidEpisodes };
+        numbers.add(n);
+      }
+    }
+    return { numbers: [...numbers].sort(function (a, b) { return a - b; }), error: '' };
   }
   // what one chosen film costs by kind: a film, whole seasons, single episodes (a partial season costs a whole season when there is no episode price)
   function itemCounts(k) {
@@ -622,17 +638,35 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
         el('span', { class: 'season-name' }, [T.seasonN + ' ' + fa(s.season)]),
         description.length ? el('span', { class: 'season-info' }, [description.join(' · ')]) : '',
       ]);
-      var panel = el('details', { class: 'season' }, [summary]);
+      var panel = el('details', { class: s.selectable ? 'season-content' : 'season' }, [summary]);
       var times = Object.entries(s.runtimeByEpisode);
+      var checkbox;
       if (s.selectable) {
-        var whole = el('input', { type: 'checkbox' });
+        var whole = el('input', { type: 'checkbox', 'aria-label': T.wholeSeason + ' · ' + T.seasonN + ' ' + fa(s.season) });
         whole.checked = current ? current.seasons.includes(s.season) : !commit;
-        var eps = s.episodes ? el('input', { type: 'text', inputmode: 'text', 'aria-label': T.episodesHint, placeholder: T.episodesHint, dir: 'auto' }) : null;
+        var errorId = (commit ? 'picker' : 'details') + '-episode-error-' + s.season;
+        var eps = s.episodes?.length ? el('input', { type: 'text', inputmode: 'text', 'aria-label': T.episodesHint, 'aria-describedby': errorId, placeholder: T.episodesHint, dir: 'auto' }) : null;
+        var errorText = el('p', { id: errorId, class: 'episode-error', 'aria-live': 'polite', hidden: '' });
+        var row = { season: s.season, whole: whole, eps: eps, available: s.episodes, panel: panel, summary: summary, errorText: errorText, rejected: false };
         if (eps) eps.value = (current?.episodes[s.season] || []).map(fa).join(' ');
-        rows.push({ season: s.season, whole: whole, eps: eps, available: s.episodes, panel: panel, summary: summary });
-        whole.onchange = function () { if (whole.checked && eps) eps.value = ''; dirty = true; update(); };
-        if (eps) eps.oninput = function () { if (eps.value.trim()) whole.checked = false; dirty = true; update(); };
-        panel.append(el('label', {}, [whole, T.wholeSeason]), eps || '');
+        rows.push(row);
+        whole.onchange = function () {
+          if (whole.checked && eps) { eps.value = ''; row.rejected = false; }
+          dirty = true;
+          update();
+        };
+        if (eps) {
+          eps.oninput = function () {
+            var clean = eps.value.replace(/[^0-9۰-۹٠-٩،,\\s–-]/g, '');
+            row.rejected = clean !== eps.value;
+            if (row.rejected) eps.value = clean;
+            if (eps.value.trim() || row.rejected) whole.checked = false;
+            dirty = true;
+            update();
+          };
+          panel.append(eps, errorText);
+        } else panel.append(el('p', { class: 'subtle' }, [T.noEpisodeNumbers]));
+        checkbox = el('label', { class: 'season-checkbox' }, [whole]);
       }
       if (times.length) {
         panel.append(el('details', { class: 'episode-times' }, [
@@ -640,7 +674,8 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
           ...times.map(function (pair) { return el('p', {}, [T.epWord + ' ' + fa(pair[0]) + ' · ' + pair[1].replace(/^(\\d+) min$/, function (_, n) { return fa(n) + ' دقیقه'; })]); }),
         ]));
       }
-      if (s.selectable || times.length) block.append(panel);
+      if (checkbox) block.append(el('div', { class: 'season season-selectable' }, [checkbox, panel]));
+      else if (times.length) block.append(panel);
       else block.append(el('div', { class: 'season' }, [
         el('span', { class: 'season-name' }, [T.seasonN + ' ' + fa(s.season)]),
         description.length ? el('span', { class: 'season-info' }, [description.join(' · ')]) : '',
@@ -655,10 +690,13 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       rows.forEach(function (row) {
         if (row.whole.checked) selection.seasons.push(row.season);
         if (!row.eps) return;
-        var numbers = parseEps(row.eps.value);
-        var bad = !!row.eps.value.trim() && (!numbers.length || numbers.some(function (n) { return !row.available.includes(n); }));
-        row.eps.setCustomValidity(bad ? T.invalidEpisodes : '');
-        if (bad) invalid = invalid || row;
+        var parsed = row.rejected ? { error: T.episodeNumbersOnly } : parseEps(row.eps.value, row.available);
+        var numbers = parsed.numbers;
+        row.eps.setCustomValidity(parsed.error);
+        row.eps.setAttribute('aria-invalid', String(!!parsed.error));
+        row.errorText.textContent = parsed.error;
+        row.errorText.hidden = !parsed.error;
+        if (parsed.error) invalid = invalid || row;
         else if (numbers.length && !row.whole.checked) selection.episodes[row.season] = numbers;
       });
       var include = !!(selection.seasons.length || Object.keys(selection.episodes).length);
