@@ -1211,7 +1211,7 @@
     d.hidden = false;
     if (e.kind === 'collection') { d.replaceChildren(...collectionDetail(e)); return; }
     const facts = [[t('runtime'), e.runtime], [t('director'), e.director], [t('actors'), e.actors],
-      [t('country'), e.countryList.map(countryName).join(state.lang === 'fa' ? '، ' : ', ')], [t('rated'), e.rated], [t('awards'), e.awards]].filter(([, v]) => v);
+      [t('country'), e.countryList.map(countryName).join(state.lang === 'fa' ? '، ' : ', '), 'fact-country'], [t('rated'), e.rated], [t('awards'), e.awards]].filter(([, v]) => v);
     const flags = flagsOf(e);
     const folder = e.locations.find((l) => l.online && !l.missing);
     const folderBlocked = folder ? null : t(e.locations.some((l) => !l.missing) ? 'open_offline' : 'open_missing');
@@ -1240,7 +1240,7 @@
         e.genreList.length ? h('div', { class: 'detail-tags', 'aria-label': t('genres') }, e.genreList.map((g) => h('button', {
           type: 'button', class: 'tag', 'aria-pressed': String(hasGenre(g)), onclick: () => { toggleGenre(g); },
         }, genreName(g)))) : null,
-        facts.length ? h('dl', { class: 'facts' }, facts.flatMap(([k, v]) => [h('dt', {}, k), h('dd', { dir: 'auto' }, v)])) : null,
+        facts.length ? h('dl', { class: 'facts' }, facts.flatMap(([k, v, cls = '']) => [h('dt', {}, k), h('dd', { dir: 'auto', class: cls }, v)])) : null,
         h('section', {}, h('h3', {}, t('plot')), ...plotBlock(e)),
         e.titleId != null && e.kind !== 'collection' ? relatedSection(e) : null,
         e.titleId != null && e.kind !== 'collection' ? similarSection(e) : null,
