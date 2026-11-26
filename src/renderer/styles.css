@@ -435,6 +435,8 @@ dialog[open] { animation: pop 0.18s ease-out; }
 .tag .x:hover { background: var(--accent); color: var(--accent-ink); }
 .tag .x svg { width: 0.7rem; height: 0.7rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
 .mytags .tag-input { margin-block-start: 0.5rem; width: 100%; }
+.detail-editors { display: grid; gap: 0.75rem; }
+.detail-editors > :first-child > .msg:empty { min-height: 0; margin-block-start: 0; }
 .chip svg { width: 0.9rem; height: 0.9rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* copy list */

@@ -1226,8 +1226,7 @@
           e.imdbId ? h('button', { type: 'button', class: 'btn', onclick: () => api.openImdb(e.titleId) }, icon('link'), t('open_imdb')) : null,
           cartButton(e)),
         e.manual ? h('div', { class: 'hero-actions' }, h('button', { type: 'button', class: 'btn', onclick: () => openManual(e) }, icon('tag'), t('manual_edit'))) : null,
-        myTagsSection(e),
-        persianNameSection(e),
+        h('div', { class: 'detail-editors' }, myTagsSection(e), persianNameSection(e)),
         qualitySection(e),
         playlistSection(e),
         e.genreList.length ? h('div', { class: 'detail-tags', 'aria-label': t('genres') }, e.genreList.map((g) => h('button', {
