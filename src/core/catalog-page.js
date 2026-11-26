@@ -244,8 +244,8 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 </main>
 <div class="bar" id="bar"><button id="open" class="big" type="button"></button></div>
 <div class="bar show" id="detailBar" hidden><div id="detailActions">
-  <button id="detailAdd" type="button" class="big">${x.addToList}</button>
   <button id="detailCart" type="button" class="chip" hidden>${x.mine}</button>
+  <button id="detailAdd" type="button" class="big">${x.addToList}</button>
 </div></div>
 <dialog id="dlg" aria-labelledby="listHeading">
   <form id="form" method="dialog">
