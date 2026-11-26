@@ -346,25 +346,81 @@
     }
     setStatus(t('sel_copied', { n }));
   });
+  $('pl-picker-x').addEventListener('click', () => $('pl-picker-dlg').close());
+
+  async function openPlaylistPicker(entry) {
+    const dlg = $('pl-picker-dlg');
+    const form = $('pl-picker-form');
+    const submit = $('pl-picker-add');
+    const note = $('pl-picker-note');
+    const choices = h('ul', { class: 'plain' });
+    const active = () => dlg.open && choices.isConnected;
+
+    $('pl-picker-entry').textContent = shownTitle(entry);
+    $('pl-picker-choices').replaceChildren(choices);
+    note.textContent = t('pl_picker_loading');
+    submit.disabled = true;
+    form.onchange = () => { submit.disabled = false; note.textContent = ''; };
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      if (submit.disabled) return;
+      const id = new FormData(form).get('playlist');
+      if (id === null) return;
+      submit.disabled = true;
+      const radios = Array.from(choices.querySelectorAll('input'));
+      radios.forEach((radio) => { radio.disabled = true; });
+      try {
+        const result = await api.addToPlaylist(Number(id), [entry.key]);
+        if (result.ok && result.added) {
+          if (active()) dlg.close();
+          setStatus(t('pl_added'));
+        } else if (active()) {
+          note.textContent = t(result.ok ? 'pl_already' : `pl_err_${result.error}`);
+        }
+      } catch {
+        if (active()) note.textContent = t('pl_picker_save_failed');
+      } finally {
+        if (active()) {
+          radios.forEach((radio) => { radio.disabled = false; });
+          submit.disabled = false;
+        }
+      }
+    };
+    dlg.showModal();
+
+    try {
+      const lists = await api.getPlaylists();
+      if (!active()) return;
+      note.textContent = '';
+      for (const list of lists) {
+        choices.append(h('li', {}, h('label', { class: 'member playlist-choice' },
+          h('input', { type: 'radio', name: 'playlist', value: list.id }),
+          h('span', { dir: 'auto' }, list.name))));
+      }
+      if (!lists.length) {
+        note.textContent = t('pl_picker_empty');
+        choices.replaceChildren(h('li', {}, h('button', {
+          type: 'button', class: 'btn', onclick: () => { dlg.close(); openPlaylists(); },
+        }, t('pl_title'))));
+      }
+    } catch {
+      if (active()) note.textContent = t('pl_picker_load_failed');
+    }
+  }
+
   // in the film drawer: put this film in a collection, or start one from its series
   function playlistSection(e) {
     const box = h('section', { class: 'mytags' });
     const note = h('p', { class: 'msg', role: 'alert' });
-    const select = h('select', { 'aria-label': t('pl_title') });
-    const add = h('button', { type: 'button', class: 'btn', onclick: async () => {
-      const r = await api.addToPlaylist(Number(select.value), [e.key]);
-      note.textContent = r.ok ? t(r.added ? 'pl_added' : 'pl_already') : t(`pl_err_${r.error}`);
-    } }, icon('check'), t('pl_add'));
+    const add = h('button', {
+      type: 'button', class: 'btn', 'aria-haspopup': 'dialog', onclick: () => openPlaylistPicker(e),
+    }, icon('check'), t('pl_add'));
     const series = h('button', { type: 'button', class: 'btn', onclick: async () => {
       const r = await api.createPlaylistFromRelated(e.key);
       if (!r.ok) { note.textContent = t(`pl_err_${r.error}`); return; }
       await openPlaylists(r.id);
     } }, icon('layers'), t('pl_from_series'));
-    api.getPlaylists().then((lists) => {
-      select.replaceChildren(...lists.map((p) => h('option', { value: String(p.id) }, p.name)));
-      select.hidden = add.hidden = !lists.length;
-    });
-    box.append(h('h3', {}, t('pl_title')), h('div', { class: 'field-row' }, select, add, series), note);
+    box.append(h('h3', {}, t('pl_title')), h('div', { class: 'hero-actions' }, add, series), note);
     return box;
   }
 

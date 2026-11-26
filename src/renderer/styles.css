@@ -565,6 +565,11 @@ body.selecting main { padding-block-end: 6rem; }
 .ctx-menu hr { margin: 0.2rem 0.3rem; border: 0; border-top: 1px solid var(--line); }
 
 /* my collections dialog: title, then up / down / remove */
+.sheet-body .playlist-choice { display: flex; justify-content: flex-start; align-items: center; gap: 0.75rem; margin-block: 0 0.4rem; }
+.playlist-choice input { flex: none; accent-color: var(--accent); }
+.playlist-choice span { min-width: 0; overflow-wrap: anywhere; }
+.playlist-choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+#pl-picker-note:empty { position: absolute; margin: 0; }
 .pl-items { list-style: none; padding: 0; margin: 0; }
 .pl-items .loc { grid-template-columns: 1fr auto auto auto; }
 .pl-items .loc.help, .pl-items li.help { display: block; border: 0; background: none; padding: 0.4rem 0; }
