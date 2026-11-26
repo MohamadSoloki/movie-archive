@@ -63,9 +63,14 @@ header { background: var(--masthead); color: #fff9ea; border-bottom: 3px solid #
 .masthead { display: grid; gap: .8rem; padding: 1.1rem var(--gutter); }
 .top { display: flex; align-items: center; gap: .7rem; }
 .top h1 { flex: 1; }
-.theme-toggle { flex: none; width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--ink); font: 1.45rem/1 "Segoe UI Symbol", sans-serif; cursor: pointer; }
-.masthead .theme-toggle { color: #ffe2a5; }
-.masthead .theme-toggle:focus-visible { outline-color: #e6bc76; }
+.theme-toggle, .tariff-toggle { flex: none; width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--ink); cursor: pointer; }
+.theme-toggle { font: 1.45rem/1 "Segoe UI Symbol", sans-serif; }
+.masthead :is(.theme-toggle, .tariff-toggle) { color: #ffe2a5; }
+.masthead :is(.theme-toggle, .tariff-toggle):focus-visible { outline-color: #e6bc76; }
+.header-actions { display: flex; align-items: center; flex: none; }
+.tariff-icon { position: relative; width: 22px; height: 16px; background: currentColor; transform: rotate(-38deg); clip-path: polygon(0 0, 68% 0, 100% 50%, 68% 100%, 0 100%); }
+.tariff-icon::before { content: ''; position: absolute; inset: 2px; background: var(--masthead); clip-path: polygon(0 0, 65% 0, 96% 50%, 65% 100%, 0 100%); }
+.tariff-icon::after { content: ''; position: absolute; width: 3px; height: 3px; border-radius: 50%; background: currentColor; top: 6.5px; right: 6px; }
 .detail-toolbar { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .75rem; }
 .detail-nav { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; min-width: 0; }
 .detail-nav a { display: inline-flex; align-items: center; text-decoration: none; }
@@ -79,7 +84,7 @@ h1 { font-size: clamp(1.45rem,4vw,2.25rem); line-height: 1.4; margin: 0; }
 ::placeholder { color: var(--muted); opacity: 1; }
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 #q:focus-visible { outline-color: #e6bc76; }
-@media (min-width: 48rem) { .masthead { grid-template-columns: 1fr minmax(16rem, 42%); align-items: center; padding-block: 1.6rem; } .masthead .tariff { grid-column: 1 / -1; } }
+@media (min-width: 48rem) { .masthead { grid-template-columns: 1fr minmax(16rem, 42%); align-items: center; padding-block: 1.6rem; } }
 input, textarea, select, button { font-family: inherit; }
 input, textarea, select { width: 100%; font: inherit; padding: 0.65rem 0.8rem; min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
 .tools { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
@@ -123,7 +128,9 @@ form { display: grid; gap: 0.6rem; }
 ul { margin: 0; padding: 0; list-style: none; max-height: 30vh; overflow: auto; }
 li.row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.2rem 0; }
 li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--muted); font-size: 1.2rem; }
-.tariff { margin: 0; color: var(--masthead-muted); font-size: .85rem; }
+#tariffDialog h2 { margin: 0; font-size: 1.2rem; }
+#tariffRates { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .65rem .9rem; margin: 1rem 0; }
+#tariffRates dd { margin: 0; color: var(--accent); font-weight: 700; }
 #genres { flex-wrap: wrap; overflow: visible; }
 #genreToggle { min-height: 44px; max-width: 65%; }
 #detailView { width: min(100%, 740px); margin-inline: auto; padding: 1rem 1rem 3rem; }
@@ -224,9 +231,13 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 </head>
 <body>
 <header id="catalogHead">
-  <div class="masthead"><div class="top"><h1 id="catalogTitle" tabindex="-1">${x.title}</h1><button id="themeToggle" class="theme-toggle" type="button" hidden></button></div>
+  <div class="masthead"><div class="top"><h1 id="catalogTitle" tabindex="-1">${x.title}</h1>
+    <div class="header-actions">
+      <button id="tariffToggle" class="tariff-toggle" type="button" aria-label="${x.tariff}" title="${x.tariff}" aria-haspopup="dialog" aria-controls="tariffDialog" hidden><span class="tariff-icon" aria-hidden="true"></span></button>
+      <button id="themeToggle" class="theme-toggle" type="button" hidden></button>
+    </div>
+  </div>
   <div class="lookup"><input id="q" type="search" placeholder="${x.search}" autocomplete="off" aria-label="${x.search}"></div>
-  <p class="tariff" id="tariff" hidden></p>
   </div>
 </header>
 <section class="filters" id="catalogFilters">
@@ -247,6 +258,11 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   <button id="detailCart" type="button" class="chip" hidden>${x.mine}</button>
   <button id="detailAdd" type="button" class="big">${x.addToList}</button>
 </div></div>
+<dialog id="tariffDialog" aria-labelledby="tariffHeading">
+  <h2 id="tariffHeading">${x.tariff}</h2>
+  <dl id="tariffRates"></dl>
+  <button id="closeTariff" type="button" class="big quiet">${x.close}</button>
+</dialog>
 <dialog id="dlg" aria-labelledby="listHeading">
   <form id="form" method="dialog">
     <h2 id="listHeading">${x.mine}</h2>
@@ -503,17 +519,17 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     $('genreToggle').textContent = T.genres + (genres.size ? ' · ' + formatNumber(genres.size) + ' ' + T.genreCount : '') + (open ? ' ▴' : ' ▾');
   }
   $('genreToggle').onclick = function () { $('genres').hidden = !$('genres').hidden; updateGenreToggle(); };
+  $('tariffToggle').onclick = function () { $('tariffDialog').showModal(); };
+  $('closeTariff').onclick = function () { $('tariffDialog').close(); };
   // prices are read once; without them the page shows no money at all
   function loadPrices() {
     fetch('/api/info').then(function (r) { return r.json(); }).then(function (j) {
       P = { movie: +j.prices.movie || 0, season: +j.prices.season || 0, episode: +j.prices.episode || 0 };
-      var t = $('tariff');
-      var parts = [];
-      if (P.movie > 0) parts.push(T.perMovie + ' ' + money(P.movie));
-      if (P.season > 0) parts.push(T.perSeason + ' ' + money(P.season));
-      if (P.episode > 0) parts.push(T.perEpisode + ' ' + money(P.episode));
-      t.hidden = !parts.length;
-      t.textContent = T.tariff + ': ' + parts.join(' · ');
+      var rates = [[T.perMovie, P.movie], [T.perSeason, P.season], [T.perEpisode, P.episode]].filter(function (rate) { return rate[1] > 0; });
+      $('tariffToggle').hidden = !rates.length;
+      $('tariffRates').replaceChildren(...rates.flatMap(function ([label, price]) {
+        return [el('dt', {}, [label]), el('dd', {}, [money(price)])];
+      }));
       if (catalogReady) render();
     }).catch(function () { /* no prices: no money shown */ });
   }

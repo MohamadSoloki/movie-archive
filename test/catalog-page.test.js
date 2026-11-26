@@ -52,7 +52,7 @@ const seasons = [1, 2].map((season) => ({
 }));
 const settle = () => new Promise(setImmediate);
 
-function page({ reduceMotion = false, darkMode = false, catalog = cards, local = new Map(), episodeSeasons = seasons } = {}) {
+function page({ reduceMotion = false, darkMode = false, catalog = cards, local = new Map(), episodeSeasons = seasons, prices = {} } = {}) {
   const html = pageHtml('fa');
   const nodes = Object.fromEntries(Array.from(html.matchAll(/<([a-z]+)[^>]*? id="([^"]+)"([^>]*?)>/g), ([, tag, id, tail]) =>
     [id, new Element(tag, /\bhidden\b/.test(tail) ? { id, hidden: '' } : { id })]));
@@ -81,7 +81,7 @@ function page({ reduceMotion = false, darkMode = false, catalog = cards, local =
   const submissions = [];
   const fetch = async (url, options) => {
     if (url.startsWith('/api/films')) return Response.json(catalog);
-    if (url === '/api/info') return Response.json({ prices: {} });
+    if (url === '/api/info') return Response.json({ prices });
     if (url === '/api/wish') {
       submissions.push(JSON.parse(options.body));
       return Response.json({ ok: true, id: 52 });
@@ -125,6 +125,24 @@ test('catalog theme follows device changes until manually changed and keeps the 
   reopened.nodes.detailThemeToggle.click();
   assert.equal(reopened.root.attrs['data-theme'], 'light');
   assert.match(reopened.nodes.themeToggle.textContent, /☾/);
+});
+
+test('the price tag opens configured tariffs and the header has no tariff strip', async () => {
+  const { nodes: e } = page({ prices: { movie: 15000, season: 50000, episode: 0 } });
+  await settle();
+  assert.equal(e.tariff, undefined);
+  assert.equal(e.tariffToggle.hidden, false);
+  assert.equal(e.tariffDialog.open, undefined);
+  e.tariffToggle.click();
+  assert.equal(e.tariffDialog.open, true);
+  assert.match(e.tariffRates.textContent, /هر فیلم.*15,000 تومان/);
+  assert.match(e.tariffRates.textContent, /هر فصل سریال.*50,000 تومان/);
+  assert.doesNotMatch(e.tariffRates.textContent, /هر قسمت/);
+  e.closeTariff.click();
+  assert.equal(e.tariffDialog.open, false);
+  const empty = page();
+  await settle();
+  assert.equal(empty.nodes.tariffToggle.hidden, true);
 });
 
 test('newest is the default and sorts by release year, with undated titles last', async () => {
