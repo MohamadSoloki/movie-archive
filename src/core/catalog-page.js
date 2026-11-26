@@ -1,7 +1,7 @@
 'use strict';
 
 const { wishSignature } = require('./wish-signature.js');
-const { renderDetailView } = require('./catalog-detail-view.js');
+const { renderDetailView, awardRows } = require('./catalog-detail-view.js');
 const DETAIL_EASE = 'cubic-bezier(0.23, 1, 0.32, 1)';
 const DARK_PALETTE = 'color-scheme: dark; --bg: #101722; --card: #1b2636; --ink: #f0f3f8; --muted: #b5c2d4; --accent: #b2ccef; --accent-ink: #14273d; --line: #3c4e65; --wash: #28394f; --ok: #b2ccef; --error: #ffad98;';
 
@@ -29,6 +29,7 @@ const TEXT = {
     episodeNumbersOnly: 'شمارهٔ قسمت را با عدد وارد کن. برای چند قسمت از فاصله، ویرگول یا خط تیره استفاده کن.',
     lastAvailableEpisode: 'آخرین قسمت این فصل', noEpisodeNumbers: 'شمارهٔ قسمت‌های این فصل هنوز ثبت نشده. می‌توانی فصل کامل را انتخاب کنی.',
     synopsis: 'خلاصهٔ داستان', morePlot: 'ادامهٔ توضیحات', people: 'بازیگران و عوامل', cast: 'بازیگران', director: 'کارگردان', awards: 'جوایز',
+    awardNomination: 'نامزدی', totalWins: 'مجموع بردها', totalNominations: 'مجموع نامزدی‌ها', otherWins: 'سایر بردها', otherNominations: 'سایر نامزدی‌ها',
     availableSeasons: 'فصل موجود', availableEpisodes: 'قسمت موجود', totalSeasons: 'فصل در مجموع', knownEpisodes: 'قسمت ثبت‌شده',
     typicalRuntime: 'مدت معمول هر قسمت', average: 'میانگین IMDb', ratingsCount: 'قسمت امتیازدار', episodeTimes: 'مدت قسمت‌ها',
     clearAll: 'پاک کردن همهٔ انتخاب‌ها', doneNote: 'می‌تونی لیستت رو تغییر بدی و دوباره بفرستی؛ همین لیست به‌روز می‌شه.', whole: 'همهٔ فصل‌ها', onlyEps: 'قسمت',
@@ -167,6 +168,13 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 .detail-section p, .detail-section dd { unicode-bidi: plaintext; }
 .detail-section dt, .subtle { color: var(--muted); font-size: 0.88rem; }
 .detail-section dd { margin: 0 0 0.45rem; }
+.award-list { display: grid; gap: .4rem; max-height: none; overflow: visible; }
+.award-row { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto; gap: .65rem; align-items: center; min-height: 44px; padding: .35rem .5rem; border-block-end: 1px solid var(--line); }
+.award-name { overflow-wrap: anywhere; }
+.award-icon { display: grid; place-items: center; min-height: 30px; background: var(--wash); color: var(--accent); border-radius: .4rem; }
+.award-nomination .award-icon { background: transparent; border: 1px solid var(--line); }
+.award-total { color: var(--muted); }
+.award-count { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
 .detail-section summary { cursor: pointer; min-height: 44px; padding-block: 0.55rem; }
 .detail-section details > summary { color: var(--accent); }
 .season { background: var(--card); padding-inline: 0.65rem; border-radius: 10px; margin-block: 0.4rem; border: 1px solid var(--line); }
@@ -310,6 +318,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 <script>
 (function () {
   ${wishSignature.toString()}
+  ${awardRows.toString()}
   ${renderDetailView.toString()}
   var T = ${client};
   var PAGE = 60;

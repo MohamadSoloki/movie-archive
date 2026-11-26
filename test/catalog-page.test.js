@@ -89,7 +89,7 @@ function page({ reduceMotion = false, darkMode = false, catalog = cards, local =
     }
     if (!url.startsWith('/api/detail')) throw new Error('Unexpected mock request: ' + url);
     const series = url.endsWith('t%3A2');
-    return Response.json({ detail: { episodic: series, plot: 'داستان آزمایشی در سال ۲۰۲۵', actors: 'Test Actor', awards: 'Won 1 Emmy',
+    return Response.json({ detail: { episodic: series, plot: 'داستان آزمایشی در سال ۲۰۲۵', actors: 'Test Actor', awards: 'Won 3 Oscars. Won 1 Emmy. Nominated for 2 Primetime Emmys. 65 wins & 44 nominations total',
       seasons: series ? episodeSeasons : [], related: series ? ['t:3'] : [], similar: series ? ['t:1'] : [] } });
   };
   const root = new Element('html');
@@ -339,7 +339,10 @@ test('catalog disclosure preserves multiple genres and the site back button retu
   assert.equal(win.scrollY, 0);
   assert.equal(get('detailTitle').textContent, 'Film 1');
   assert.equal(e.detailBody.all((node) => node.attrs.class === 'subtitle subtle')[0].textContent, 'گاما');
-  assert.match(e.detailBody.textContent, /Won 1 Emmy/);
+  const awards = e.detailBody.all((node) => node.attrs.class === 'award-list')[0].children;
+  assert.deepEqual(awards.map((row) => row.children[1].textContent), ['اسکار', 'امی', 'نامزدی امی', 'مجموع بردها', 'مجموع نامزدی‌ها']);
+  assert.deepEqual(awards.map((row) => row.children[2].textContent), ['3x', '1x', '2x', '65x', '44x']);
+  assert.equal(new Set(awards.slice(0, 3).map((row) => row.children[0].textContent)).size, 3);
   assert.match(e.detailBody.textContent, /داستان آزمایشی در سال 2025/);
   win.scrollY = 180;
   e.detailBody.querySelectorAll('[data-recommendation]').find((link) => link.dataset.recommendation === 't:3').click();

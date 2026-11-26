@@ -37,7 +37,6 @@ function catalogDetail(db, entry, archiveSeasons, entries) {
     const choiceEpisodes = Array.from(episodeChoices.get(season.season) ?? []).sort((a, b) => a - b);
     return { ...season, choiceEpisodes, average: r ? Math.round(r.sum / r.count * 10) / 10 : null, ratedEpisodes: r?.count ?? 0 };
   });
-  const awards = entry.awards;
   const related = relatedTo(entry, entries).map((e) => e.key);
   const excluded = new Set(related);
   return {
@@ -45,7 +44,7 @@ function catalogDetail(db, entry, archiveSeasons, entries) {
     actors: present(entry.actors),
     director: present(entry.director),
     runtime: present(entry.runtime),
-    awards: /\bwon\s+(?!0\b)|\b[1-9]\d*\s+wins?\b/i.test(awards ?? '') ? awards : null,
+    awards: present(entry.awards),
     episodic: entry.kind === 'series' || result.length > 0,
     totalSeasons: entry.totalSeasons ?? null,
     availableSeasons: archiveSeasons.length,

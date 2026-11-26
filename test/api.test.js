@@ -1288,7 +1288,7 @@ test('phone catalog details show public metadata and season summaries only for a
     assert.doesNotMatch(JSON.stringify(detail), /relPath|driveSerial|locations|bytes|omdbKey/);
     db.prepare('UPDATE titles SET awards = ? WHERE id = ?').run('2 nominations', titleId);
     await api.scan();
-    assert.equal((await (await fetch(detailUrl)).json()).detail.awards, null);
+    assert.equal((await (await fetch(detailUrl)).json()).detail.awards, '2 nominations');
     assert.equal((await fetch(`${base}/api/detail?k=missing`)).status, 404);
     const [card] = await (await fetch(`${base}/api/films`)).json();
     assert.equal(card.plot, undefined);

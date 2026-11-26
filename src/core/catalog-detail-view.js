@@ -1,5 +1,42 @@
 'use strict';
 
+function awardRows(summary, text) {
+  const families = [
+    { pattern: /^(?:oscars?|academy awards?)$/i, name: 'اسکار', icon: '🏆' },
+    { pattern: /^(?:primetime\s+|daytime\s+)?emm(?:y|ys|ies)(?: awards?)?$/i, name: 'امی', icon: '📺' },
+    { pattern: /^golden globes?(?: awards?)?$/i, name: 'گلدن گلوب', icon: '◉' },
+    { pattern: /^baftas?(?: (?:film )?awards?)?$/i, name: 'بفتا', icon: '◇' },
+    { pattern: /^gramm(?:y|ys|ies)(?: awards?)?$/i, name: 'گرمی', icon: '♪' },
+  ];
+  const rows = [];
+  const named = /\b(won|nominated\s+for)\s+(\d+)\s+([^.;,&]+?)(?=\s+(?:and\s+)?(?:won|nominated\s+for)\b|[.;,&]|$)/gi;
+  for (const [, result, quantity, award] of summary.matchAll(named)) {
+    const count = Number(quantity);
+    if (!count) continue;
+    const name = award.trim();
+    const position = families.findIndex(({ pattern }) => pattern.test(name));
+    const family = families[position];
+    const nomination = !/^won$/i.test(result);
+    const label = family?.name || name;
+    rows.push({
+      name: nomination ? text.awardNomination + ' ' + label : label,
+      icon: nomination ? '☆' : family?.icon || '✦',
+      count, nomination, position: family ? position : families.length,
+    });
+  }
+  rows.sort((a, b) => a.position - b.position || Number(a.nomination) - Number(b.nomination));
+  for (const [, other, quantity, result] of summary.matchAll(/\b(?:(another)\s+)?(\d+)\s+(wins?|nominations?)\b/gi)) {
+    const count = Number(quantity);
+    if (!count) continue;
+    const nomination = /^nomination/i.test(result);
+    rows.push({
+      name: nomination ? (other ? text.otherNominations : text.totalNominations) : (other ? text.otherWins : text.totalWins),
+      icon: nomination ? '✧' : '✦', count, nomination, total: true,
+    });
+  }
+  return rows;
+}
+
 // Embedded by catalog-page in the self-contained phone catalog.
 function renderDetailView({ body, title, data, text, element, formatNumber, poster, link, retry, animateSections }) {
   const e = element;
@@ -48,7 +85,15 @@ function renderDetailView({ body, title, data, text, element, formatNumber, post
   if (credits.length) section(text.people, [e('dl', {}, credits.flatMap(([label, value]) => [
     e('dt', {}, [label]), e('dd', { dir: 'auto' }, [value]),
   ]))]);
-  if (data.awards) section(text.awards, [e('p', { dir: 'auto' }, [data.awards])]);
+  if (data.awards) {
+    const rows = awardRows(data.awards, text);
+    section(text.awards, rows.length ? [e('ul', { class: 'award-list' }, rows.map((row) =>
+      e('li', { class: 'award-row' + (row.nomination ? ' award-nomination' : '') + (row.total ? ' award-total' : '') }, [
+        e('span', { class: 'award-icon', 'aria-hidden': 'true' }, [row.icon]),
+        e('span', { class: 'award-name', dir: 'auto' }, [row.name]),
+        e('bdi', { class: 'award-count', dir: 'ltr' }, [formatNumber(row.count) + 'x']),
+      ])))] : [e('p', { dir: 'auto' }, [data.awards])]);
+  }
   if (data.episodic) {
     const counts = [];
     if (data.availableSeasons) counts.push(formatNumber(data.availableSeasons) + ' ' + text.availableSeasons);
@@ -86,4 +131,4 @@ function renderDetailView({ body, title, data, text, element, formatNumber, post
   }
 }
 
-module.exports = { renderDetailView };
+module.exports = { renderDetailView, awardRows };
