@@ -1,5 +1,5 @@
 'use strict';
-// Sandboxed preload cannot require local files, so this list is checked against src/api.js by test/api.test.js.
+// Sandboxed preload cannot require local files. Keep this list in sync with src/api.js.
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const METHODS = [

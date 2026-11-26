@@ -4,7 +4,6 @@
   "description": "Movie, series and anime archive across several hard drives",
   "main": "src/main.js",
   "scripts": {
-    "test": "node --test",
     "start": "electron .",
     "dist": "electron-builder --win"
   },
