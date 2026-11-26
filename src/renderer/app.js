@@ -1200,7 +1200,7 @@
   function episodeFacts(e) {
     const seasons = e.episodeCounts ?? [];
     if (e.kind !== 'series' && !(e.type === 'anime' && seasons.length)) return [];
-    const number = new Intl.NumberFormat(state.lang === 'fa' ? 'fa-IR' : 'en');
+    const number = new Intl.NumberFormat(state.lang === 'fa' ? 'fa-IR' : 'en', { numberingSystem: 'latn' });
     const knownCount = seasons.reduce((sum, { count }) => sum + count, 0);
     const complete = e.totalSeasons === seasons.length && seasons.every(({ season }, i) => season === i + 1);
     const seasonCount = e.totalSeasons ? number.format(e.totalSeasons)
