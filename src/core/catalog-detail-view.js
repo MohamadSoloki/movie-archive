@@ -6,14 +6,18 @@ function renderDetailView({ body, title, data, text, element, formatNumber, post
   const name = title.t || title.f;
   const subtitle = title.f && title.f !== name ? title.f : '';
   const heading = e('h1', { id: 'detailTitle', dir: 'auto', tabindex: '-1' }, [name]);
-  const facts = [title.y, title.r ? '★ ' + formatNumber(title.r) + ' / 10' : null];
-  if (data?.runtime && !data.episodic) facts.push(data.runtime.replace(/^(\d+) min$/, (_, n) => formatNumber(n) + ' دقیقه'));
+  const facts = [];
+  if (title.y) facts.push(e('bdi', { dir: 'ltr' }, [title.y]));
+  if (title.r) facts.push(e('bdi', { dir: 'ltr' }, ['★ ' + formatNumber(title.r) + ' / 10']));
+  if (data?.runtime && !data.episodic) {
+    facts.push(e('bdi', { dir: 'auto' }, [data.runtime.replace(/^(\d+) min$/, (_, n) => formatNumber(n) + ' دقیقه')]));
+  }
   const hero = e('div', { class: 'detail-hero' }, [
     poster(title, false),
     e('div', { class: 'detail-heading' }, [
       heading,
       subtitle ? e('div', { class: 'subtitle subtle', dir: 'auto' }, [subtitle]) : '',
-      e('div', { class: 'detail-meta', dir: 'auto' }, [facts.filter(Boolean).join(' · ')]),
+      e('div', { class: 'detail-meta' }, facts),
       e('div', { class: 'detail-genres' }, title.g.map((genre) => e('span', {}, [genre]))),
     ]),
   ]);

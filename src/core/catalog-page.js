@@ -12,6 +12,7 @@ const TEXT = {
     name: 'اسم شما', phone: 'شماره تماس (اختیاری)', note: 'توضیح (اختیاری)', submit: 'ارسال', close: 'بستن', remove: 'حذف از لیست',
     done: 'لیستت ثبت شد. شمارهٔ پیگیری:', updated: 'لیستت به‌روز شد. شمارهٔ پیگیری:', updateList: 'به‌روزرسانی لیست',
     saved: 'ثبت شده', receipt: 'شمارهٔ پیگیری',
+    sending: 'در حال ارسال…', undo: 'برگرداندن', clearedList: 'انتخاب‌ها پاک شدند.', skipToCatalog: 'رفتن به محتوای اصلی',
     fail: 'ارسال نشد. بعداً دوباره امتحان کن.', slow: 'چند بار پشت هم فرستادی. چند دقیقه بعد دوباره امتحان کن.',
     full: 'الان لیست جدید قبول نمی‌کنیم. به مغازه بگو.', none: 'چیزی پیدا نشد.', more: 'نمایش بیشتر', loadFail: 'کاتالوگ باز نشد. دوباره امتحان کن.', retry: 'تلاش دوباره',
     sortNew: 'جدیدترین', sortName: 'الفبا', sortRating: 'امتیاز', sort: 'مرتب‌سازی', seasons: 'فصل', stars: 'امتیاز',
@@ -98,6 +99,7 @@ input, textarea, select { width: 100%; font: inherit; padding: 0.65rem 0.8rem; m
 @media (min-width: 36rem) { #grid { grid-template-columns: repeat(auto-fill, minmax(10.6rem, 1fr)); gap: 1.2rem; } }
 @media (max-width: 18rem) { #grid { grid-template-columns: 1fr; } }
 .film { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+.film { content-visibility: auto; contain-intrinsic-block-size: auto 325px; }
 .film .img { position: relative; aspect-ratio: 2 / 3; overflow: hidden; background: var(--wash); display: grid; place-items: center; text-align: center; color: var(--accent); }
 .film .rating { position: absolute; bottom: .45rem; inset-inline-end: .45rem; background: #17283bf2; color: #ffe2a5; font: 700 .86rem/1.5 "Vazirmatn",sans-serif; padding: .12rem .46rem; border-radius: .3rem; }
 span.card-poster { display: grid; place-items: center; padding: 1rem; border-block: .45rem double var(--line); font-weight: 700; }
@@ -139,7 +141,8 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 .detail-heading h1 { font-size: clamp(1.3rem, 4.8vw, 2rem); line-height: 1.3; }
 .detail-poster, .rec-poster { aspect-ratio: 2 / 3; width: 100%; display: grid; place-items: center; object-fit: cover; background: var(--line); color: var(--muted); border-radius: 10px; overflow: hidden; text-align: center; }
 .card-poster { width: 100%; height: 100%; }
-.detail-meta { margin-block: 0.45rem; font-size: 0.9rem; }
+.detail-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .6rem; margin-block: 0.45rem; font-size: 0.9rem; }
+.detail-meta bdi { white-space: nowrap; }
 .detail-genres { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .detail-genres span { padding: 0.12rem 0.45rem; background: var(--card); border: 1px solid var(--line); border-radius: 999px; font-size: 0.8rem; }
 .detail-section { border-top: 1px solid var(--line); margin-top: 1.15rem; padding-top: 0.85rem; }
@@ -224,12 +227,18 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   .season-picker-footer { padding-bottom: calc(.8rem + env(safe-area-inset-bottom)); }
 }
 .wide { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 1.2rem 0; display: grid; gap: 0.6rem; justify-items: center; }
+.skip-link { position: fixed; z-index: 4; inset: .5rem .5rem auto auto; transform: translateY(-150%); background: var(--card); color: var(--accent); padding: .5rem 1rem; border-radius: .5rem; }
+.skip-link:focus { transform: none; }
+#askSlot { padding-inline: var(--gutter); }
+.undo-clear { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.undo-clear p { margin: 0; }
 .wide .ask { width: 100%; max-width: 420px; text-align: start; display: grid; gap: 0.5rem; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 0.9rem; color: var(--ink); }
 .wide .ask p { margin: 0; }
 .wide .ask button { min-height: 44px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 10px; font: inherit; }
 </style>
 </head>
 <body>
+<a id="skipToCatalog" class="skip-link" href="#grid">${x.skipToCatalog}</a>
 <header id="catalogHead">
   <div class="masthead"><div class="top"><h1 id="catalogTitle" tabindex="-1">${x.title}</h1>
     <div class="header-actions">
@@ -245,7 +254,9 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   <div class="tools"><label for="sort">${x.sort}</label><select id="sort" aria-label="${x.sort}"></select><button class="chip" type="button" id="genreToggle" aria-expanded="false" aria-controls="genres">${x.genres} ▾</button></div>
   <div class="chips" id="genres" role="group" aria-label="${x.genres}" hidden></div>
 </section>
-<main id="grid"></main>
+<main id="grid" tabindex="-1"></main>
+<div id="catalogMore" class="wide" hidden><button id="loadMore" type="button" class="chip">${x.more}</button></div>
+<div id="askSlot" class="wide" hidden></div>
 <main id="detailView" hidden>
   <div class="detail-toolbar">
     <div class="detail-nav"><button id="detailBack" type="button" class="chip">${x.back}</button><a id="detailHome" class="chip" href="/">${x.home}</a></div>
@@ -266,6 +277,10 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 <dialog id="dlg" aria-labelledby="listHeading">
   <form id="form" method="dialog">
     <h2 id="listHeading">${x.mine}</h2>
+    <div id="undoClearRow" class="undo-clear" hidden>
+      <p role="status">${x.clearedList}</p>
+      <button id="undoClear" type="button" class="chip">${x.undo}</button>
+    </div>
     <ul id="mine"></ul>
     <div class="sum" id="sum"></div>
     <label>${x.name}<input id="name" maxlength="80" autocomplete="name" required></label>
@@ -400,9 +415,10 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   }
   function syncSend() {
     var saved = Boolean(wishId && lastSent && signature(draft()) === lastSent);
-    $('submit').disabled = sending || saved;
-    $('submit').textContent = saved ? T.saved : wishId ? T.updateList : T.submit;
     var n = Object.keys(chosen).length;
+    $('submit').disabled = sending || saved || (!n && !wishId);
+    $('submit').textContent = sending ? T.sending : saved ? T.saved : wishId ? T.updateList : T.submit;
+    $('clearAll').disabled = sending || !n;
     var label = saved ? T.saved + ' · ' + T.receipt + ' ' + formatNumber(wishId) : 'مرور لیست (' + formatNumber(n) + ')';
     $('open').textContent = label + (hasPrice() ? ' · ' + money(priceOfCounts(totals())) : '');
   }
@@ -428,10 +444,11 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     });
     return list.sort(function (a, b) { return SORTS[$('sort').value](a, b) || (a.f || a.t).localeCompare(b.f || b.t, 'fa'); });
   }
-  function askBox(prefill) {
-    var input = el('input', { maxlength: '100', 'aria-label': T.askText, placeholder: T.askText });
-    input.value = prefill;
-    var who = el('input', { maxlength: '80', 'aria-label': T.askName, placeholder: T.askName });
+  var askTitleEdited = false, displayedFilms = [];
+  function askBox() {
+    var input = el('input', { id: 'askTitleInput', maxlength: '100', 'aria-label': T.askText, placeholder: T.askText });
+    input.addEventListener('input', function () { askTitleEdited = true; });
+    var who = el('input', { id: 'askCustomerInput', maxlength: '80', 'aria-label': T.askName, placeholder: T.askName });
     var tel = el('input', { maxlength: '30', type: 'tel', inputmode: 'tel', dir: 'ltr', 'aria-label': T.askPhone, placeholder: T.askPhone });
     var out = el('p', { 'class': 'msg', role: 'status' });
     var go = el('button', { type: 'button' }, [T.askGo]);
@@ -447,11 +464,12 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     };
     return el('div', { 'class': 'ask' }, [el('b', {}, [T.askTitle]), el('p', {}, [T.askText]), input, who, tel, go, out]);
   }
-  function render() {
-    var list = visible();
+  $('askSlot').append(askBox());
+  function render(start = 0, list = visible()) {
     var grid = $('grid');
-    grid.replaceChildren();
-    list.slice(0, shown).forEach(function (f) {
+    displayedFilms = list;
+    if (!start) grid.replaceChildren();
+    list.slice(start, shown).forEach(function (f) {
       var on = !!chosen[f.k];
       var title = f.t || f.f;
       var subtitle = f.f && f.f !== title ? f.f : '';
@@ -478,17 +496,22 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
         ]), subtitle ? el('small', { dir: 'auto', class: 'subtitle' }, [subtitle]) : '', el('small', { class: 'meta' }, meta), pick])]);
       grid.append(card);
     });
-    var tail = el('div', { 'class': 'wide' }, []);
-    if (!list.length) tail.append(el('span', {}, [films.length ? T.none : T.empty]));
-    if (list.length > shown) {
-      var more = el('button', { type: 'button', 'class': 'chip' }, [T.more]);
-      more.onclick = function () { shown += PAGE; render(); };
-      tail.append(more);
-    }
-    if (films.length) tail.append(askBox($('q').value.trim()));
-    grid.append(tail);
+    if (!list.length) grid.append(el('p', { class: 'wide', role: 'status' }, [films.length ? T.none : T.empty]));
+    $('catalogMore').hidden = !!activeDetail || list.length <= shown;
+    $('askSlot').hidden = !!activeDetail || !films.length;
+    if (!askTitleEdited) $('askTitleInput').value = $('q').value.trim();
     updateBar();
   }
+  $('loadMore').onclick = function () {
+    var list = displayedFilms, firstNew = shown;
+    shown += PAGE;
+    render(firstNew, list);
+    if (list[firstNew]) $('title-' + list[firstNew].k)?.focus();
+  };
+  $('skipToCatalog').onclick = function (ev) {
+    ev.preventDefault();
+    $('grid').focus();
+  };
   function updateBar() {
     var n = Object.keys(chosen).length;
     $('bar').className = 'bar' + (n || wishId ? ' show' : '');
@@ -572,7 +595,9 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     }
     activeDetail = detail ? filmByKey.get(key) || null : null;
     var animateEntry = animate && activeDetail && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    ['catalogHead', 'catalogFilters', 'grid', 'bar'].forEach(function (id) { $(id).hidden = detail; });
+    ['catalogHead', 'catalogFilters', 'grid', 'bar', 'skipToCatalog'].forEach(function (id) { $(id).hidden = detail; });
+    $('catalogMore').hidden = detail || displayedFilms.length <= shown;
+    $('askSlot').hidden = detail || !films.length;
     $('detailView').hidden = !detail;
     $('detailBar').hidden = !activeDetail;
     if (activeDetail) renderTitle(activeDetail, { animateSections: animateEntry });
@@ -902,21 +927,46 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     $('sum').replaceChildren.apply($('sum'), lines.map(function (l, i) { return el(i === lines.length - 1 ? 'b' : 'span', {}, [l]); }));
   }
   function showReference() {
-    $('msg').textContent = wishId ? T.receipt + ' ' + formatNumber(wishId) : '';
+    $('msg').textContent = sending ? T.sending : wishId ? T.receipt + ' ' + formatNumber(wishId) : '';
     $('msg').className = 'msg';
   }
   $('form').addEventListener('input', function () { syncSend(); showReference(); });
   $('open').onclick = $('detailCart').onclick = function () { listBox(); showReference(); $('dlg').showModal(); };
   $('close').onclick = function () { $('dlg').close(); };
-  $('dlg').addEventListener('close', function () { if (activeDetail) renderTitle(activeDetail); });
-  $('clearAll').onclick = function () { chosen = {}; sel = {}; save(); render(); if (wishId) listBox(); else $('dlg').close(); };
+  var clearedSelection = null;
+  function dismissUndo() {
+    clearedSelection = null;
+    $('undoClearRow').hidden = true;
+  }
+  $('dlg').addEventListener('close', function () {
+    dismissUndo();
+    if (activeDetail) renderTitle(activeDetail);
+  });
+  $('clearAll').onclick = function () {
+    clearedSelection = { chosen: chosen, sel: sel };
+    chosen = {}; sel = {};
+    save(); render(); listBox();
+    $('undoClearRow').hidden = false;
+    $('undoClear').focus();
+  };
+  $('undoClear').onclick = function () {
+    if (!clearedSelection) return;
+    chosen = clearedSelection.chosen;
+    sel = clearedSelection.sel;
+    dismissUndo();
+    save(); render(); listBox();
+    $('clearAll').focus();
+  };
   $('form').onsubmit = function (ev) {
     ev.preventDefault();
     var body = draft(), snapshot = signature(body);
-    if (sending || (wishId && snapshot === lastSent)) return;
+    if (sending || (!body.keys.length && !wishId) || (wishId && snapshot === lastSent)) return;
+    dismissUndo();
     body.editKey = browserEditKey();
     sending = true;
     syncSend();
+    $('msg').className = 'msg';
+    $('msg').textContent = T.sending;
     store('name', $('name').value); store('phone', $('phone').value); store('wishNote', $('note').value);
     fetch('/api/wish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) { return [r.status, j]; });

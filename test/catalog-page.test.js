@@ -25,7 +25,7 @@ class Element {
 
   get dataset() { return { recommendation: this.attrs['data-recommendation'] }; }
   addEventListener(event, fn) { this.events[event] = fn; }
-  focus() {}
+  focus() { this.focused = true; }
   setCustomValidity(message) { this.invalid = message; }
   reportValidity() { this.reported = true; }
   showModal() { this.open = true; }
@@ -52,7 +52,7 @@ const seasons = [1, 2].map((season) => ({
 }));
 const settle = () => new Promise(setImmediate);
 
-function page({ reduceMotion = false, darkMode = false, catalog = cards, local = new Map(), episodeSeasons = seasons, prices = {} } = {}) {
+function page({ reduceMotion = false, darkMode = false, catalog = cards, local = new Map(), episodeSeasons = seasons, prices = {}, waitForSend } = {}) {
   const html = pageHtml('fa');
   const nodes = Object.fromEntries(Array.from(html.matchAll(/<([a-z]+)[^>]*? id="([^"]+)"([^>]*?)>/g), ([, tag, id, tail]) =>
     [id, new Element(tag, /\bhidden\b/.test(tail) ? { id, hidden: '' } : { id })]));
@@ -84,6 +84,7 @@ function page({ reduceMotion = false, darkMode = false, catalog = cards, local =
     if (url === '/api/info') return Response.json({ prices });
     if (url === '/api/wish') {
       submissions.push(JSON.parse(options.body));
+      if (waitForSend) await waitForSend;
       return Response.json({ ok: true, id: 52 });
     }
     if (!url.startsWith('/api/detail')) throw new Error('Unexpected mock request: ' + url);
@@ -125,6 +126,72 @@ test('catalog theme follows device changes until manually changed and keeps the 
   reopened.nodes.detailThemeToggle.click();
   assert.equal(reopened.root.attrs['data-theme'], 'light');
   assert.match(reopened.nodes.themeToggle.textContent, /☾/);
+});
+
+test('a film request keeps the customer draft when catalog controls change', async () => {
+  const { get, nodes: e } = page();
+  await settle();
+  const request = get('askTitleInput');
+  const customer = get('askCustomerInput');
+  e.q.value = 'جست‌وجوی اول';
+  e.q.events.input();
+  assert.equal(request.value, 'جست‌وجوی اول');
+  request.value = 'عنوان دلخواه';
+  request.events.input();
+  customer.value = 'نام مشتری';
+  e.q.value = 'جست‌وجوی دوم';
+  e.q.events.input();
+  e.sort.onchange();
+  assert.equal(get('askTitleInput'), request);
+  assert.equal(request.value, 'عنوان دلخواه');
+  assert.equal(customer.value, 'نام مشتری');
+});
+
+test('load more appends results without replacing the first cards', async () => {
+  const catalog = Array.from({ length: 65 }, (_, i) => ({ ...cards[0], k: 'more:' + i, o: i }));
+  const { nodes: e } = page({ catalog });
+  await settle();
+  const first = e.grid.children[0];
+  assert.equal(e.grid.children.length, 60);
+  e.loadMore.click();
+  assert.equal(e.grid.children.length, 65);
+  assert.equal(e.grid.children[0], first);
+  assert.ok(e.grid.children[60].all((node) => node.attrs.class === 'title-link')[0].focused);
+  assert.equal(e.catalogMore.hidden, true);
+});
+
+test('the catalog skip link focuses results and is hidden while viewing details', async () => {
+  const { get, nodes: e } = page();
+  await settle();
+  e.skipToCatalog.click();
+  assert.equal(e.grid.focused, true);
+  get('title-t:2').click();
+  await settle();
+  assert.equal(e.skipToCatalog.hidden, true);
+  assert.equal(e.askSlot.hidden, true);
+});
+
+test('clearing a list offers undo and sending has a visible pending state', async () => {
+  let complete;
+  const waitForSend = new Promise((resolve) => { complete = resolve; });
+  const { get, nodes: e, submissions } = page({ waitForSend });
+  await settle();
+  get('pick-t:1').click();
+  e.open.click();
+  e.clearAll.click();
+  assert.equal(e.dlg.open, true);
+  assert.equal(e.undoClearRow.hidden, false);
+  assert.equal(e.mine.children.length, 0);
+  e.undoClear.click();
+  assert.equal(e.mine.children.length, 1);
+  e.name.value = 'Test Customer';
+  e.form.onsubmit({ preventDefault() {} });
+  assert.equal(e.submit.textContent, 'در حال ارسال…');
+  assert.equal(e.submit.disabled, true);
+  assert.deepEqual(submissions[0].keys, ['t:1']);
+  complete();
+  await settle();
+  assert.notEqual(e.submit.textContent, 'در حال ارسال…');
 });
 
 test('the price tag opens configured tariffs and the header has no tariff strip', async () => {
