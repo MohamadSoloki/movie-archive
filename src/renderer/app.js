@@ -1825,13 +1825,6 @@
           : h('p', {}, t('rep_gaps_none')),
         h('p', { class: 'help' }, t('gap_note', { checked: r.checked, offline: r.offline, unreadable: r.unreadable })));
     },
-    async single(body) {
-      const groups = await api.getSingleDrive();
-      body.replaceChildren(h('p', { class: 'help' }, t('rep_single_help')),
-        ...(groups.length ? groups.map((g) => h('section', {}, h('h3', {}, t('rep_single_drive', { drive: g.driveLabel || g.driveSerial, n: g.items.length })),
-          h('ul', { class: 'plain members' }, g.items.map((i) => h('li', {}, h('button', { type: 'button', class: 'member', onclick: () => { $('rep-dlg').close(); openMember(i.key); } },
-            h('span', { dir: 'auto' }, i.title), i.year ? h('span', { class: 'year' }, String(i.year)) : null)))))) : [h('p', {}, t('rep_single_none'))]));
-    },
     // the same film or season in several folders: which copy is where, how big, and how much space keeping only the biggest would free
     async duplicates(body) {
       const r = await api.getDuplicates();

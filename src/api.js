@@ -29,7 +29,7 @@ const { similarTo } = require('./core/similar.js');
 const playlists = require('./core/playlists.js');
 const { relatedTo, relatedMap, franchiseKey } = require('./core/related');
 const { seriesGaps } = require('./core/gaps.js');
-const { singleDrive, catalogByGenre, duplicates } = require('./core/reports.js');
+const { catalogByGenre, duplicates } = require('./core/reports.js');
 const { exportData, importData } = require('./core/backup.js');
 const orders = require('./core/orders.js');
 const { normalizeFa } = require('./core/persian.js');
@@ -834,9 +834,6 @@ function createApi({
         const p = path.join(root, l.relPath);
         try { return fs.existsSync(p) ? transfer.treeSize(p) : null; } catch { return null; }
       });
-    },
-    async getSingleDrive() {
-      return singleDrive(search.query({}).entries);
     },
     // what the owner made by hand (tags, other names, lists, calendar, copies), to a file and back; the archive itself is rescanned
     async exportBackup(file) {
