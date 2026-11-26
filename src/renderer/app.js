@@ -2164,8 +2164,6 @@
     paintPhone();
     $('set-key').value = s.omdbKey;
     $('set-patterns').value = s.patterns.join('\n');
-    $('set-ignore').value = s.ignore.join('\n');
-    $('set-collections').value = s.collections.join('\n');
     $('set-email').value = s.translateEmail || '';
     $('set-auto-translate').checked = s.autoTranslate !== false;
     $('set-shop').value = s.shopName || '';
@@ -2204,8 +2202,6 @@
     await api.setSettings({
       omdbKey: $('set-key').value.trim(),
       patterns: lines('set-patterns'),
-      ignore: lines('set-ignore'),
-      collections: lines('set-collections'),
       translateEmail: $('set-email').value.trim(),
       autoTranslate: $('set-auto-translate').checked,
       shopName: $('set-shop').value,
