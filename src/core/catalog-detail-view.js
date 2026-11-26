@@ -1,7 +1,7 @@
 'use strict';
 
 // Embedded by catalog-page in the self-contained phone catalog.
-function renderDetailView({ body, title, data, text, element, formatNumber, poster, link, controls, retry, animateSections }) {
+function renderDetailView({ body, title, data, text, element, formatNumber, poster, link, retry, animateSections }) {
   const e = element;
   const name = title.t || title.f;
   const subtitle = title.f && title.f !== name ? title.f : '';
@@ -59,7 +59,25 @@ function renderDetailView({ body, title, data, text, element, formatNumber, post
     if (data.runtime) counts.push(text.typicalRuntime + ' ' + data.runtime.replace(/^(\d+) min$/, (_, n) => formatNumber(n) + ' دقیقه'));
     section(text.seasonN + ' و ' + text.epWord, [
       counts.length ? e('p', { class: 'subtle' }, [counts.join(' · ')]) : '',
-      controls(data.seasons),
+      ...data.seasons.map((season) => {
+        const description = [];
+        if (season.episodes) description.push(formatNumber(season.episodes.length) + ' ' + text.availableEpisodes);
+        else if (season.knownEpisodes) description.push(formatNumber(season.knownEpisodes) + ' ' + text.knownEpisodes);
+        if (season.average != null) description.push('★ ' + formatNumber(season.average) + ' ' + text.average + ' · ' + formatNumber(season.ratedEpisodes) + ' ' + text.ratingsCount);
+        const heading = [
+          e('span', { class: 'season-name' }, [text.seasonN + ' ' + formatNumber(season.season)]),
+          description.length ? e('span', { class: 'season-info' }, [description.join(' · ')]) : '',
+        ];
+        const times = Object.entries(season.runtimeByEpisode);
+        if (!times.length) return e('div', { class: 'season season-stat' }, heading);
+        return e('details', { class: 'season' }, [
+          e('summary', {}, heading),
+          e('p', { class: 'subtle' }, [text.episodeTimes]),
+          ...times.map(([number, runtime]) => e('p', {}, [
+            text.epWord + ' ' + formatNumber(number) + ' · ' + runtime.replace(/^(\d+) min$/, (_, n) => formatNumber(n) + ' دقیقه'),
+          ])),
+        ]);
+      }),
     ]);
   }
   for (const [label, keys] of [[text.related, data.related], [text.similar, data.similar]]) {

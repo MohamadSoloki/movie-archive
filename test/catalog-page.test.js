@@ -160,6 +160,33 @@ test('load more appends results without replacing the first cards', async () => 
   assert.equal(e.catalogMore.hidden, true);
 });
 
+test('an empty catalog keeps film requests available and the shortcut focuses the prefilled form', async () => {
+  const { get, nodes: e } = page({ catalog: [] });
+  await settle();
+  assert.equal(e.askSlot.hidden, false);
+  e.q.value = 'جست‌وجوی فیلم';
+  e.q.events.input();
+  get('askFromEmpty').click();
+  assert.equal(get('askTitleInput').value, 'جست‌وجوی فیلم');
+  assert.equal(get('askTitleInput').focused, true);
+});
+
+test('a single removal can be undone even when it empties the list', async () => {
+  const { get, nodes: e } = page();
+  await settle();
+  const pick = get('pick-t:1');
+  assert.match(pick.attrs['aria-label'], /انتخاب.*Film 0/);
+  pick.click();
+  assert.match(pick.attrs['aria-label'], /انتخاب شد.*Film 0/);
+  e.open.click();
+  e.mine.children[0].all((node) => node.tag === 'button')[0].click();
+  assert.equal(e.dlg.open, true);
+  assert.equal(e.undoClear.focused, true);
+  e.undoClear.click();
+  assert.equal(e.mine.children.length, 1);
+  assert.equal(e.mine.children[0].all((node) => node.tag === 'button')[0].focused, true);
+});
+
 test('the catalog skip link focuses results and is hidden while viewing details', async () => {
   const { get, nodes: e } = page();
   await settle();
@@ -388,6 +415,7 @@ test('series details allow selecting the whole series, canceling a change and ed
   assert.match(e.detailBody.textContent, /2 قسمت موجود/);
   assert.doesNotMatch(e.detailBody.textContent, /قسمت موجود · 1، 3/);
   assert.match(e.detailBody.textContent, /43 دقیقه/);
+  assert.equal(e.detailBody.all((node) => node.tag === 'input').length, 0);
   e.detailAdd.click();
   await settle();
   e.pickWholeSeries.click();
@@ -406,15 +434,17 @@ test('series details allow selecting the whole series, canceling a change and ed
   await settle();
   e.closeSeasonPicker.click();
   assert.equal(get('pick-t:2').attrs['aria-pressed'], 'true');
-  const input = e.detailBody.all((node) => node.tag === 'input' && node.attrs.type === 'text')[0];
+  e.detailAdd.click();
+  await settle();
+  const input = e.seasonPickerBody.all((node) => node.tag === 'input' && node.attrs.type === 'text')[0];
   input.value = '۲';
   input.oninput();
-  e.detailAdd.click();
+  e.applySeasonPicker.click();
   assert.ok(input.invalid);
   assert.equal(input.reported, true);
   input.value = '۳';
   input.oninput();
-  e.detailAdd.click();
+  e.applySeasonPicker.click();
   assert.equal(e.detailAdd.textContent, 'ویرایش فصل و قسمت');
   e.detailCart.click();
   e.name.value = 'Test Customer';

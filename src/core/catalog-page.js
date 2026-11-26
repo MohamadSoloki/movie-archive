@@ -12,12 +12,13 @@ const TEXT = {
     name: 'اسم شما', phone: 'شماره تماس (اختیاری)', note: 'توضیح (اختیاری)', submit: 'ارسال', close: 'بستن', remove: 'حذف از لیست',
     done: 'لیستت ثبت شد. شمارهٔ پیگیری:', updated: 'لیستت به‌روز شد. شمارهٔ پیگیری:', updateList: 'به‌روزرسانی لیست',
     saved: 'ثبت شده', receipt: 'شمارهٔ پیگیری',
-    sending: 'در حال ارسال…', undo: 'برگرداندن', clearedList: 'انتخاب‌ها پاک شدند.', skipToCatalog: 'رفتن به محتوای اصلی',
+    sending: 'در حال ارسال…', undo: 'برگرداندن', clearedList: 'انتخاب‌ها پاک شدند.', removedTitle: 'عنوان از لیست برداشته شد.', skipToCatalog: 'رفتن به محتوای اصلی',
     fail: 'ارسال نشد. بعداً دوباره امتحان کن.', slow: 'چند بار پشت هم فرستادی. چند دقیقه بعد دوباره امتحان کن.',
     full: 'الان لیست جدید قبول نمی‌کنیم. به مغازه بگو.', none: 'چیزی پیدا نشد.', more: 'نمایش بیشتر', loadFail: 'کاتالوگ باز نشد. دوباره امتحان کن.', retry: 'تلاش دوباره',
     sortNew: 'جدیدترین', sortName: 'الفبا', sortRating: 'امتیاز', sort: 'مرتب‌سازی', seasons: 'فصل', stars: 'امتیاز',
     askTitle: 'پیدا نکردی؟', askText: 'اسم فیلم رو بنویس تا برات تهیه کنیم.', askGo: 'درخواست', askThanks: 'ثبت شد. اگه تهیه کردیم بهت خبر می‌دیم.',
     askHave: 'این فیلم توی آرشیو هست:', askName: 'اسم شما (برای خبر دادن، اختیاری)', askPhone: 'شماره تماس (اختیاری)', empty: 'کاتالوگ هنوز خالیه.',
+    askThisTitle: 'درخواست این عنوان', askFilm: 'درخواست فیلم',
     tariff: 'تعرفه', perMovie: 'هر فیلم', perSeason: 'هر فصل سریال', perEpisode: 'هر قسمت', currency: 'تومان', total: 'مبلغ کل',
     related: 'عنوان‌های مرتبط', similar: 'پیشنهادهای مشابه', back: 'برگشت', home: 'صفحهٔ اصلی', seasonN: 'فصل', epWord: 'قسمت',
     episodesHint: 'شمارهٔ قسمت‌ها، مثلاً 1-5 یا 2 5 7', wholeSeason: 'همهٔ قسمت‌های موجود', invalidEpisodes: 'شمارهٔ قسمت‌های موجود را وارد کن.',
@@ -176,12 +177,11 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 .season-selectable { position: relative; }
 .season-selectable > .season-content > summary { padding-inline-end: 48px; }
 .season-selectable > .season-checkbox { position: absolute; inset-inline-end: .2rem; inset-block-start: 0; width: 44px; display: grid; place-items: center; cursor: pointer; }
-#detailView .season-selectable:has(> .season-content:not([open])) > .season-checkbox { inset-block-start: 50%; transform: translateY(-50%); }
 .season-selectable .season-checkbox input { margin: 0; accent-color: var(--accent); }
 .season input[aria-invalid="true"] { border: 2px solid var(--error); }
 .season input[aria-invalid="true"]:focus-visible { outline-color: var(--error); }
 .season .episode-error { margin: 0 0 .65rem; color: var(--error); font-size: .875rem; }
-.season .episode-times { margin-bottom: 0.5rem; }
+.season-stat { padding-block: .55rem; }
 .recommendations { display: grid; grid-auto-flow: column; grid-auto-columns: clamp(94px, 25vw, 130px); gap: 0.6rem; overflow-x: auto; padding: 0.2rem 0.15rem 0.6rem; }
 .rec { display: grid; align-content: start; gap: 0.25rem; color: inherit; text-decoration: none; font-size: 0.85rem; overflow-wrap: anywhere; }
 #detailActions { display: flex; gap: 0.5rem; width: min(100%, 740px); margin-inline: auto; }
@@ -278,7 +278,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   <form id="form" method="dialog">
     <h2 id="listHeading">${x.mine}</h2>
     <div id="undoClearRow" class="undo-clear" hidden>
-      <p role="status">${x.clearedList}</p>
+      <p id="undoClearMessage" role="status"></p>
       <button id="undoClear" type="button" class="chip">${x.undo}</button>
     </div>
     <ul id="mine"></ul>
@@ -476,7 +476,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       var tags = f.b.map(function (b) { return T.badge[b] || b; });
       if (f.s) tags.unshift(formatNumber(f.s) + ' ' + T.seasons);
       var meta = [f.y].concat(tags).filter(Boolean).map(function (value) { return el('bdi', { dir: 'auto' }, [String(value)]); });
-      var pick = el('button', { type: 'button', 'aria-pressed': String(on) }, [on ? T.picked : T.pick]);
+      var pick = el('button', { type: 'button', 'aria-pressed': String(on), 'aria-label': (on ? T.picked : T.pick) + ' · ' + title }, [on ? T.picked : T.pick]);
       if (f.s > 0) pick.setAttribute('aria-haspopup', 'dialog');
       pick.onclick = function () {
         if (f.s > 0) { openSeasonPicker(f); return; }
@@ -484,6 +484,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
         setChoice(f, selected, null, false);
         card.className = selected ? 'film on' : 'film';
         pick.setAttribute('aria-pressed', String(selected));
+        pick.setAttribute('aria-label', (selected ? T.picked : T.pick) + ' · ' + latinDigits(title));
         pick.textContent = selected ? T.picked : T.pick;
         updateBar();
       };
@@ -496,9 +497,16 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
         ]), subtitle ? el('small', { dir: 'auto', class: 'subtitle' }, [subtitle]) : '', el('small', { class: 'meta' }, meta), pick])]);
       grid.append(card);
     });
-    if (!list.length) grid.append(el('p', { class: 'wide', role: 'status' }, [films.length ? T.none : T.empty]));
-    $('catalogMore').hidden = !!activeDetail || list.length <= shown;
-    $('askSlot').hidden = !!activeDetail || !films.length;
+    if (!list.length) {
+      var hasQuery = !!$('q').value.trim();
+      var requestTitle = el('button', { id: 'askFromEmpty', type: 'button', class: 'chip' }, [hasQuery ? T.askThisTitle : T.askFilm]);
+      requestTitle.onclick = function () { $('askTitleInput').focus(); };
+      grid.append(el('div', { class: 'wide' }, [
+        el('span', { role: 'status' }, [films.length ? T.none : T.empty]), requestTitle,
+      ]));
+    }
+    $('catalogMore').hidden = !$('detailView').hidden || list.length <= shown;
+    $('askSlot').hidden = !$('detailView').hidden || !catalogReady;
     if (!askTitleEdited) $('askTitleInput').value = $('q').value.trim();
     updateBar();
   }
@@ -597,7 +605,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     var animateEntry = animate && activeDetail && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     ['catalogHead', 'catalogFilters', 'grid', 'bar', 'skipToCatalog'].forEach(function (id) { $(id).hidden = detail; });
     $('catalogMore').hidden = detail || displayedFilms.length <= shown;
-    $('askSlot').hidden = detail || !films.length;
+    $('askSlot').hidden = detail || !catalogReady;
     $('detailView').hidden = !detail;
     $('detailBar').hidden = !activeDetail;
     if (activeDetail) renderTitle(activeDetail, { animateSections: animateEntry });
@@ -653,7 +661,6 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     renderDetailView({
       body: $('detailBody'), title: f, data: data, text: T, element: el, formatNumber: formatNumber,
       poster: function (film) { return poster(film, 'detail-poster', false); }, link: recommendation,
-      controls: function (seasons) { return seasonEditor(f, seasons, label, add); },
       retry: retry ? function () { renderTitle(f); } : null,
       animateSections: animateSections,
     });
@@ -745,76 +752,48 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     });
   }
 
-  function seasonEditor(f, seasons, label, action, { commit, whole: wholeSeries, preview } = {}) {
+  function seasonEditor(f, seasons, label, action, { commit, whole: wholeSeries, preview }) {
     var block = el('div', {});
     var rows = [];
     var current = sel[f.k];
     var dirty = false;
-    var edit = el('button', { type: 'button', class: 'chip' }, [T.editSeasons]);
-    block.append(edit);
     seasons.forEach(function (s) {
-      var description = [];
       var choices = s.choiceEpisodes ?? s.episodes;
-      if (commit) {
-        if (choices?.length) description.push(formatNumber(choices.length) + ' ' + T.epWord);
-      } else {
-        if (s.episodes) description.push(formatNumber(s.episodes.length) + ' ' + T.availableEpisodes);
-        else if (s.knownEpisodes) description.push(formatNumber(s.knownEpisodes) + ' ' + T.knownEpisodes);
-        if (s.average != null) description.push('★ ' + formatNumber(s.average) + ' ' + T.average + ' · ' + formatNumber(s.ratedEpisodes) + ' ' + T.ratingsCount);
-      }
       var summary = el('summary', {}, [
         el('span', { class: 'season-name' }, [T.seasonN + ' ' + formatNumber(s.season)]),
-        description.length ? el('span', { class: 'season-info' }, [description.join(' · ')]) : '',
-        commit ? el('span', { class: 'picker-episode-toggle' }, [T.episodeDisclosure]) : '',
+        choices?.length ? el('span', { class: 'season-info' }, [formatNumber(choices.length) + ' ' + T.epWord]) : '',
+        el('span', { class: 'picker-episode-toggle' }, [T.episodeDisclosure]),
       ]);
-      var panel = el('details', { class: s.selectable ? 'season-content' : 'season' }, [summary]);
-      var times = commit ? [] : Object.entries(s.runtimeByEpisode);
-      var checkbox;
-      if (s.selectable) {
-        var whole = el('input', { type: 'checkbox', 'aria-label': T.wholeSeason + ' · ' + T.seasonN + ' ' + formatNumber(s.season) });
-        whole.checked = current ? current.seasons.includes(s.season) : !commit || !!chosen[f.k];
-        var errorId = (commit ? 'picker' : 'details') + '-episode-error-' + s.season;
-        var eps = choices?.length ? el('input', { type: 'text', inputmode: 'text', 'aria-label': T.episodesHint, 'aria-describedby': errorId, placeholder: T.episodesHint, dir: 'auto' }) : null;
-        var errorText = el('p', { id: errorId, class: 'episode-error', 'aria-live': 'polite', hidden: '' });
-        var row = { season: s.season, whole: whole, eps: eps, available: choices, panel: panel, summary: summary, errorText: errorText, rejected: false };
-        if (eps) eps.value = (current?.episodes[s.season] || []).map(formatNumber).join(' ');
-        rows.push(row);
-        whole.onchange = function () {
-          if (whole.checked && eps) { eps.value = ''; row.rejected = false; }
+      var panel = el('details', { class: 'season-content' }, [summary]);
+      var whole = el('input', { type: 'checkbox', 'aria-label': T.wholeSeason + ' · ' + T.seasonN + ' ' + formatNumber(s.season) });
+      whole.checked = current ? current.seasons.includes(s.season) : !!chosen[f.k];
+      var errorId = 'picker-episode-error-' + s.season;
+      var eps = choices?.length ? el('input', { type: 'text', inputmode: 'text', 'aria-label': T.episodesHint, 'aria-describedby': errorId, placeholder: T.episodesHint, dir: 'auto' }) : null;
+      var errorText = el('p', { id: errorId, class: 'episode-error', 'aria-live': 'polite', hidden: '' });
+      var row = { season: s.season, whole: whole, eps: eps, available: choices, panel: panel, errorText: errorText, rejected: false };
+      if (eps) eps.value = (current?.episodes[s.season] || []).map(formatNumber).join(' ');
+      rows.push(row);
+      whole.onchange = function () {
+        if (whole.checked && eps) { eps.value = ''; row.rejected = false; }
+        dirty = true;
+        update();
+      };
+      if (eps) {
+        eps.oninput = function () {
+          var clean = eps.value.replace(/[^0-9۰-۹٠-٩،,\\s–-]/g, '');
+          row.rejected = clean !== eps.value;
+          var display = latinDigits(clean);
+          if (eps.value !== display) eps.value = display;
+          if (eps.value.trim() || row.rejected) whole.checked = false;
           dirty = true;
           update();
         };
-        if (eps) {
-          eps.oninput = function () {
-            var clean = eps.value.replace(/[^0-9۰-۹٠-٩،,\\s–-]/g, '');
-            row.rejected = clean !== eps.value;
-            var display = latinDigits(clean);
-            if (eps.value !== display) eps.value = display;
-            if (eps.value.trim() || row.rejected) whole.checked = false;
-            dirty = true;
-            update();
-          };
-          panel.append(commit ? el('label', { class: 'episode-field' }, [T.episodeField, eps]) : eps, errorText);
-        } else panel.append(el('p', { class: 'subtle' }, [T.noEpisodeNumbers]));
-        checkbox = el('label', { class: 'season-checkbox' }, [whole, commit ? T.fullSeason : '']);
-      }
-      if (times.length) {
-        panel.append(el('details', { class: 'episode-times' }, [
-          el('summary', {}, [T.episodeTimes]),
-          ...times.map(function (pair) { return el('p', {}, [T.epWord + ' ' + formatNumber(pair[0]) + ' · ' + pair[1].replace(/^(\\d+) min$/, function (_, n) { return formatNumber(n) + ' دقیقه'; })]); }),
-        ]));
-      }
-      if (checkbox) block.append(el('div', { class: 'season season-selectable' }, [checkbox, panel]));
-      else if (times.length) block.append(panel);
-      else block.append(el('div', { class: 'season' }, [
-        el('span', { class: 'season-name' }, [T.seasonN + ' ' + formatNumber(s.season)]),
-        description.length ? el('span', { class: 'season-info' }, [description.join(' · ')]) : '',
-      ]));
+        panel.append(el('label', { class: 'episode-field' }, [T.episodeField, eps]), errorText);
+      } else panel.append(el('p', { class: 'subtle' }, [T.noEpisodeNumbers]));
+      var checkbox = el('label', { class: 'season-checkbox' }, [whole, T.fullSeason]);
+      block.append(el('div', { class: 'season season-selectable' }, [checkbox, panel]));
     });
-    edit.hidden = !!commit || !chosen[f.k] || !rows.length;
-    edit.onclick = function () { rows[0].panel.open = true; rows[0].summary.focus(); };
-    if (!rows.length) return block;
-    if (wholeSeries) wholeSeries.onclick = function () {
+    wholeSeries.onclick = function () {
       rows.forEach(function (row) {
         row.whole.checked = true;
         if (row.eps) row.eps.value = '';
@@ -841,26 +820,17 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       });
       var include = !!(selection.seasons.length || Object.keys(selection.episodes).length);
       var next = selection.seasons.length === rows.length ? null : selection;
-      preview?.(include, next);
+      preview(include, next);
       var before = JSON.stringify(sel[f.k] || null);
       var picked = !!chosen[f.k];
       var same = picked === include && (!include || before === JSON.stringify(next));
-      if (!commit && !dirty) {
-        label(picked ? T.editSeasons : T.addToList, false);
-        action.onclick = function () { openSeasonPicker(f); };
-        return;
-      }
-      var emptySelection = !include && (!picked || (commit && !dirty));
+      var emptySelection = !include && (!picked || !dirty);
       var caption = !picked ? T.addToList : same && !invalid ? T.inList : include ? T.updatePick : T.remove;
       label(caption, !invalid && (same || emptySelection));
       action.onclick = function () {
         if (invalid) { invalid.panel.open = true; invalid.eps.reportValidity(); return; }
         if (same) return;
-        if (commit) { commit(include, next); return; }
-        setChoice(f, include, next);
-        edit.hidden = !include;
-        dirty = false;
-        update();
+        commit(include, next);
       };
     }
     update();
@@ -909,8 +879,8 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     ul.replaceChildren();
     syncSend();
     Object.keys(chosen).forEach(function (k) {
-      var x = el('button', { type: 'button', 'aria-label': T.remove + ' ' + (chosen[k].f || chosen[k].t) }, ['×']);
-      x.onclick = function () { delete chosen[k]; delete sel[k]; save(); render(); if (Object.keys(chosen).length || wishId) listBox(); else $('dlg').close(); };
+      var x = el('button', { id: 'remove-list-' + k, type: 'button', 'aria-label': T.remove + ' ' + (chosen[k].f || chosen[k].t) }, ['×']);
+      x.onclick = function () { removeFromList(k); };
       var what = selText(k);
       var cost = hasPrice() ? el('span', { 'class': 'price' }, [money(priceOfCounts(itemCounts(k)))]) : '';
       ul.append(el('li', { 'class': 'row' }, [el('span', { dir: 'auto' }, [chosen[k].f ? chosen[k].f + ' (' + chosen[k].t + ')' : chosen[k].t, what ? el('small', { style: 'display:block;color:var(--muted)' }, [what]) : '']), cost, x]));
@@ -942,20 +912,25 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     dismissUndo();
     if (activeDetail) renderTitle(activeDetail);
   });
-  $('clearAll').onclick = function () {
-    clearedSelection = { chosen: chosen, sel: sel };
-    chosen = {}; sel = {};
+  function removeFromList(key) {
+    clearedSelection = { chosen: chosen, sel: sel, key: key };
+    chosen = key ? { ...chosen } : {};
+    sel = key ? { ...sel } : {};
+    if (key) { delete chosen[key]; delete sel[key]; }
     save(); render(); listBox();
     $('undoClearRow').hidden = false;
+    $('undoClearMessage').textContent = key ? T.removedTitle : T.clearedList;
     $('undoClear').focus();
-  };
+  }
+  $('clearAll').onclick = function () { removeFromList(); };
   $('undoClear').onclick = function () {
     if (!clearedSelection) return;
     chosen = clearedSelection.chosen;
     sel = clearedSelection.sel;
+    var restoredKey = clearedSelection.key;
     dismissUndo();
     save(); render(); listBox();
-    $('clearAll').focus();
+    (restoredKey ? $('remove-list-' + restoredKey) : $('clearAll')).focus();
   };
   $('form').onsubmit = function (ev) {
     ev.preventDefault();
