@@ -1213,6 +1213,8 @@
     const facts = [[t('runtime'), e.runtime], [t('director'), e.director], [t('actors'), e.actors],
       [t('country'), e.countryList.map(countryName).join(state.lang === 'fa' ? '، ' : ', ')], [t('rated'), e.rated], [t('awards'), e.awards]].filter(([, v]) => v);
     const flags = flagsOf(e);
+    const folder = e.locations.find((l) => l.online && !l.missing);
+    const folderBlocked = folder ? null : t(e.locations.some((l) => !l.missing) ? 'open_offline' : 'open_missing');
     // dir="auto": English titles and plots from OMDb stay left-to-right inside the right-to-left Persian UI
     d.replaceChildren(
       hero(e,
@@ -1224,7 +1226,13 @@
         e.attention === 'guess' ? h('button', { type: 'button', class: 'btn confirm-btn', onclick: async () => { if ((await api.confirmGuess(e.key)).ok) await refresh(true); } }, icon('check'), t('confirm_guess')) : null,
         h('div', { class: 'hero-actions' },
           e.imdbId ? h('button', { type: 'button', class: 'btn', onclick: () => api.openImdb(e.titleId) }, icon('link'), t('open_imdb')) : null,
-          cartButton(e)),
+          h('div', { class: 'hero-actions' }, cartButton(e), h('button', {
+            type: 'button', class: 'btn', disabled: !folder, title: folderBlocked,
+            onclick: async () => {
+              const result = await api.openLocation(folder.id);
+              if (!result.ok) setStatus(errText(result.error));
+            },
+          }, icon('folder'), t('open_folder')))),
         e.manual ? h('div', { class: 'hero-actions' }, h('button', { type: 'button', class: 'btn', onclick: () => openManual(e) }, icon('tag'), t('manual_edit'))) : null,
         h('div', { class: 'detail-editors' }, myTagsSection(e), persianNameSection(e)),
         qualitySection(e),
