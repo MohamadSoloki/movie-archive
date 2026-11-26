@@ -759,7 +759,11 @@ function createApi({
       return opts.light ? { ...r, entries: r.entries.map(lightOf) } : r;
     },
     async getEntry(key) {
-      return search.find(key);
+      const entry = search.find(key);
+      if (entry?.titleId == null || (entry.kind !== 'series' && entry.type !== 'anime')) return entry;
+      const episodeCounts = db.prepare(`SELECT season, COUNT(*) count FROM episodes
+        WHERE title_id = ? AND season > 0 AND number > 0 GROUP BY season ORDER BY season`).all(entry.titleId);
+      return { ...entry, episodeCounts };
     },
     // films of the archive that resemble this one, with why (genre, director, actors, country, tags)
     // the same series or franchise (by name, or the same owner folder), oldest first; shown before the similar list

@@ -267,7 +267,11 @@ button.tag[aria-pressed="true"] { background: var(--accent); border-color: var(-
 .facts { display: grid; grid-template-columns: auto 1fr; gap: 0.45rem 1.1rem; margin: 0; }
 .facts dt { color: var(--muted); font-size: 0.88rem; }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
-.facts .fact-country { text-align: left; }
+.facts .fact-country, .facts .fact-count { text-align: left; }
+.fact-disclosure { padding: 0; border: 0; border-radius: 0.15rem; background: none; color: inherit; cursor: pointer; text-align: start; }
+.fact-disclosure:hover, .fact-disclosure:focus-visible, .fact-disclosure[aria-expanded="true"] { color: var(--accent); text-decoration: underline; text-underline-offset: 0.18em; }
+.fact-episode-breakdown { margin-block-start: 0.5rem; color: var(--muted); font-size: 0.85rem; }
+.fact-episode-breakdown li + li { margin-block-start: 0.25rem; }
 .plot { max-width: 62ch; line-height: 1.85; }
 .help { color: var(--muted); font-size: 0.85rem; margin-block-start: 0.4rem; }
 .msg { color: var(--red); min-height: 1.2em; margin-block-start: 0.4rem; font-size: 0.88rem; }

@@ -1197,6 +1197,34 @@
     return box;
   }
 
+  function episodeFacts(e) {
+    const seasons = e.episodeCounts ?? [];
+    if (e.kind !== 'series' && !(e.type === 'anime' && seasons.length)) return [];
+    const number = new Intl.NumberFormat(state.lang === 'fa' ? 'fa-IR' : 'en');
+    const knownCount = seasons.reduce((sum, { count }) => sum + count, 0);
+    const complete = e.totalSeasons === seasons.length && seasons.every(({ season }, i) => season === i + 1);
+    const seasonCount = e.totalSeasons ? number.format(e.totalSeasons)
+      : seasons.length ? t('detail_recorded_count', { n: number.format(seasons.length) }) : '—';
+    const episodeCount = !knownCount ? '—' : complete ? number.format(knownCount)
+      : t('detail_recorded_count', { n: number.format(knownCount) });
+
+    const panel = h('div', { id: 'detail-episode-counts', class: 'fact-episode-breakdown', hidden: true },
+      seasons.length ? h('ul', { class: 'plain' }, seasons.map(({ season, count }) =>
+        h('li', {}, t('detail_season_episodes', { season: number.format(season), count: number.format(count) }))))
+        : h('p', {}, t('detail_episode_counts_missing')));
+    const toggle = h('button', {
+      type: 'button', class: 'fact-disclosure', 'aria-expanded': 'false', 'aria-controls': panel.id,
+      onclick: () => {
+        panel.hidden = !panel.hidden;
+        toggle.setAttribute('aria-expanded', String(!panel.hidden));
+      },
+    }, t('detail_episode_count'));
+    return [
+      [t('detail_season_count'), seasonCount, 'fact-count'],
+      [toggle, [episodeCount, panel], 'fact-count'],
+    ];
+  }
+
   // The whole entry is fetched only for the open card. Without `force` an already open detail is left alone,
   // so typing in the search box does not rebuild it.
   async function renderDetail(force = true) {
@@ -1210,7 +1238,7 @@
     d.dataset.key = key;
     d.hidden = false;
     if (e.kind === 'collection') { d.replaceChildren(...collectionDetail(e)); return; }
-    const facts = [[t('runtime'), e.runtime], [t('director'), e.director], [t('actors'), e.actors],
+    const facts = [[t('runtime'), e.runtime], ...episodeFacts(e), [t('director'), e.director], [t('actors'), e.actors],
       [t('country'), e.countryList.map(countryName).join(state.lang === 'fa' ? '، ' : ', '), 'fact-country'], [t('rated'), e.rated], [t('awards'), e.awards]].filter(([, v]) => v);
     const flags = flagsOf(e);
     const folder = e.locations.find((l) => l.online && !l.missing);
