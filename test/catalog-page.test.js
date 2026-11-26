@@ -239,6 +239,17 @@ test('the price tag opens configured tariffs and the header has no tariff strip'
   assert.equal(empty.nodes.tariffToggle.hidden, true);
 });
 
+test('catalog cards show at most two primary genres under their metadata', async () => {
+  const catalog = cards.map((film, i) => i === 1 ? { ...film, g: ['انیمیشن', 'اکشن', 'ماجراجویی'] } : { ...film, g: [] });
+  const { nodes: e } = page({ catalog });
+  await settle();
+  const primary = e.grid.all((node) => node.attrs.class === 'primary-genres');
+  assert.equal(primary.length, 1);
+  assert.equal(primary[0].textContent, 'انیمیشن · اکشن');
+  const body = e.grid.all((node) => node.children.includes(primary[0]))[0];
+  assert.equal(body.children[body.children.indexOf(primary[0]) - 1].attrs.class, 'meta');
+});
+
 test('newest is the default and sorts by release year, with undated titles last', async () => {
   const catalog = cards.map((f, i) => ({ ...f, y: ['۲۰۲۵', '2020–2026', null][i], o: i + 1 }));
   const { nodes } = page({ catalog });

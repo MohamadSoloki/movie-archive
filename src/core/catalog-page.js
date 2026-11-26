@@ -117,6 +117,7 @@ span.card-poster { display: grid; place-items: center; padding: 1rem; border-blo
 .film.on button::before { content: '✓ '; }
 .film .meta { display: flex; flex-wrap: wrap; gap: .2rem .45rem; padding-bottom: .35rem; }
 .film .meta bdi { white-space: nowrap; }
+.film .primary-genres { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; }
 .film.on { border-color: var(--accent); }
 @media (hover: hover) and (pointer: fine) { .film:hover { border-color: var(--muted); } .film button:hover { border-color: var(--accent); } }
 .film.on button { background: var(--accent); color: var(--accent-ink); }
@@ -476,6 +477,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       var tags = f.b.map(function (b) { return T.badge[b] || b; });
       if (f.s) tags.unshift(formatNumber(f.s) + ' ' + T.seasons);
       var meta = [f.y].concat(tags).filter(Boolean).map(function (value) { return el('bdi', { dir: 'auto' }, [String(value)]); });
+      var primaryGenres = f.g.slice(0, 2).join(' · ');
       var pick = el('button', { type: 'button', 'aria-pressed': String(on), 'aria-label': (on ? T.picked : T.pick) + ' · ' + title }, [on ? T.picked : T.pick]);
       if (f.s > 0) pick.setAttribute('aria-haspopup', 'dialog');
       pick.onclick = function () {
@@ -494,7 +496,8 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
           f.r ? el('span', { class: 'rating', dir: 'ltr' }, ['★ ' + f.r]) : '']),
         el('div', { class: 'body' }, [detailLink(f, { class: 'title-link', id: 'title-' + f.k }, [
           el('b', { dir: 'auto' }, [title]),
-        ]), subtitle ? el('small', { dir: 'auto', class: 'subtitle' }, [subtitle]) : '', el('small', { class: 'meta' }, meta), pick])]);
+        ]), subtitle ? el('small', { dir: 'auto', class: 'subtitle' }, [subtitle]) : '', el('small', { class: 'meta' }, meta),
+          primaryGenres ? el('small', { class: 'primary-genres', dir: 'auto' }, [primaryGenres]) : '', pick])]);
       grid.append(card);
     });
     if (!list.length) {
