@@ -17,9 +17,16 @@ function saveCopy(db, { name, target, files }, now) {
   return row.id;
 }
 
-function listCopies(db) {
-  return db.prepare(`SELECT c.id, c.name, c.target, c.created, c.checked, c.state, COUNT(f.rel) files, COALESCE(SUM(f.size), 0) bytes
-    FROM copies c LEFT JOIN copy_files f ON f.copy_id = c.id GROUP BY c.id ORDER BY c.created DESC, c.id DESC`).all();
+function listCopies(db, { after = null, until = null } = {}) {
+  return db.prepare(`SELECT c.id, c.name, c.target, c.created, c.checked, c.state, c.last_success lastSuccess,
+    COUNT(f.rel) files, COALESCE(SUM(f.size), 0) bytes
+    FROM copies c LEFT JOIN copy_files f ON f.copy_id = c.id
+    WHERE (? IS NULL OR (c.last_success > ? AND c.last_success <= ?))
+    GROUP BY c.id ORDER BY COALESCE(c.last_success, c.created) DESC, c.id DESC`).all(after, after, until);
+}
+
+function markSuccessful(db, id, now) {
+  db.prepare('UPDATE copies SET last_success = ? WHERE id = ?').run(now, id);
 }
 
 function copyFiles(db, id) {
@@ -48,4 +55,4 @@ function problemsByTitle(files, target, problems) {
   return [...groups.values()];
 }
 
-module.exports = { saveCopy, listCopies, copyFiles, markChecked, removeCopy, problemsByTitle, destOf };
+module.exports = { saveCopy, listCopies, copyFiles, markChecked, markSuccessful, removeCopy, problemsByTitle, destOf };

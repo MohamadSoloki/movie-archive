@@ -76,6 +76,7 @@ const nameKey = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,
 
 const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate', 'priceMovie', 'priceSeason', 'priceEpisode', 'shopName', 'phoneCatalog', 'phoneInternet', 'catalogPort'];
 const PRICE_KEYS = ['priceMovie', 'priceSeason', 'priceEpisode'];
+const RECENT_COPY_MS = 30 * 60 * 60 * 1000;
 
 function createApi({
   db, userDataDir, fetch = globalThis.fetch, listDrives = defaultListDrives, listRemovable = defaultListRemovable, eject = defaultEject,
@@ -273,6 +274,7 @@ function createApi({
     const result = { ok: true, done: 0, failed: [], skipped: plan.skipped, cancelled: false, bytes: 0 };
     const manifest = [];
     const okJobs = [];
+    let copiedAny = false;
     let doneBytes = 0;
     let last = 0;
     const rate = createRate();
@@ -346,6 +348,7 @@ function createApi({
             driveSerial: j.driveSerial, srcRel: path.relative(j.srcRoot, f.src).split(path.sep).join('/') });
         }
         if (r.cancelled) break;
+        copiedAny ||= r.copied > 0;
         result.done += 1;
         finished += 1;
         doneKeys.add(j.key);
@@ -375,7 +378,13 @@ function createApi({
     }
     if (manifest.length) {
       const id = copies.saveCopy(db, { name: path.basename(plan.target), target: plan.target, files: manifest }, now());
-      if (!result.cancelled) result.verify = await checkAndFix(id, ac, onProgress);
+      result.copyId = id;
+      if (!result.cancelled) {
+        result.verify = await checkAndFix(id, ac, onProgress);
+        if (!result.verify.cancelled && result.verify.state === 'ok' && (copiedAny || result.verify.repaired > 0)) {
+          copies.markSuccessful(db, id, now());
+        }
+      }
     }
     return result;
   }
@@ -1144,7 +1153,9 @@ function createApi({
       return { ok: true };
     },
     async getCopies() {
-      return copies.listCopies(db);
+      const until = now();
+      return copies.listCopies(db, { after: until - RECENT_COPY_MS, until })
+        .map((copy) => ({ ...copy, expiresAt: copy.lastSuccess + RECENT_COPY_MS }));
     },
     // read-only check of a finished copy; `deep` re-reads every file and compares its SHA-256
     verifyCopy(id, { deep = true } = {}, onProgress = () => {}) {

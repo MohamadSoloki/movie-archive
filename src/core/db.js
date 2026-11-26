@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS reminders(
   episode INTEGER, due INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1);
 -- copies the app made (name = destination folder name); the hash is of the source bytes read at copy time, null when unknown
 CREATE TABLE IF NOT EXISTS copies(
-  id INTEGER PRIMARY KEY, name TEXT NOT NULL, target TEXT NOT NULL UNIQUE, created INTEGER NOT NULL, checked INTEGER, state TEXT);
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, target TEXT NOT NULL UNIQUE, created INTEGER NOT NULL, checked INTEGER, state TEXT, last_success INTEGER);
 CREATE TABLE IF NOT EXISTS copy_files(
   copy_id INTEGER NOT NULL, rel TEXT NOT NULL, size INTEGER NOT NULL, sha TEXT, title TEXT, drive_serial TEXT, src_rel TEXT,
   PRIMARY KEY(copy_id, rel));
@@ -106,6 +106,10 @@ function openDb(file = ':memory:') {
   }
   if (!db.prepare('PRAGMA table_info(roots)').all().some((c) => c.name === 'single')) {
     db.exec('ALTER TABLE roots ADD COLUMN single INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!db.prepare('PRAGMA table_info(copies)').all().some((c) => c.name === 'last_success')) {
+    // Old records only know when the destination was first copied and its latest verification verdict.
+    db.exec("BEGIN; ALTER TABLE copies ADD COLUMN last_success INTEGER; UPDATE copies SET last_success = created WHERE state = 'ok'; COMMIT;");
   }
   const wishColumns = db.prepare('PRAGMA table_info(wishes)').all().map((c) => c.name);
   if (!db.prepare('PRAGMA table_info(episodes)').all().some((c) => c.name === 'runtime')) {

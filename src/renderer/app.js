@@ -981,7 +981,7 @@
     else if (r.cancelled || v?.cancelled) copyMsg(t('copy_cancelled'), true);
     else if (r.failed.length) copyMsg(t('copy_failed', { titles: joinList(r.failed.map((f) => f.title)) }), true);
     else if (v?.problems.length) {
-      state.reports[state.copies.find((c) => c.state === 'problem')?.id] = reportOf(v.problems, v.failed);
+      if (state.copies.some((c) => c.id === r.copyId)) state.reports[r.copyId] = reportOf(v.problems, v.failed);
       copyMsg(t('copy_verify_bad', { titles: joinList(v.problems.map((p) => p.title)) }), true);
       renderDone();
     } else {
@@ -1138,10 +1138,20 @@
     renderDone();
   }
 
+  let copyExpiryTimer;
+  $('copy-dlg').addEventListener('close', () => clearTimeout(copyExpiryTimer));
+
   function renderDone() {
-    $('copy-done-empty').hidden = state.copies.length > 0;
+    clearTimeout(copyExpiryTimer);
+    const now = Date.now();
+    const recent = state.copies.filter((c) => c.expiresAt > now);
+    if (recent.length && $('copy-dlg').open) {
+      const expiresAt = recent.reduce((earliest, c) => Math.min(earliest, c.expiresAt), Infinity);
+      copyExpiryTimer = setTimeout(renderDone, expiresAt - now);
+    }
+    $('copy-done-empty').hidden = recent.length > 0;
     const stateKey = (c) => (c.state === 'ok' ? 'ok' : c.state === 'problem' ? 'problem' : 'new');
-    $('copy-done').replaceChildren(...state.copies.map((c) => {
+    $('copy-done').replaceChildren(...recent.map((c) => {
       const report = state.reports[c.id];
       const off = state.copying;
       return h('li', { class: `done-item ${stateKey(c)}` },
