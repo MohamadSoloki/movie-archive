@@ -76,7 +76,7 @@ const nameKey = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,
 
 const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate', 'priceMovie', 'priceSeason', 'priceEpisode', 'shopName', 'phoneCatalog', 'phoneInternet', 'catalogPort'];
 const PRICE_KEYS = ['priceMovie', 'priceSeason', 'priceEpisode'];
-const RECENT_COPY_MS = 30 * 60 * 60 * 1000;
+const RECENT_COPY_MS = 30 * 60 * 1000;
 
 function createApi({
   db, userDataDir, fetch = globalThis.fetch, listDrives = defaultListDrives, listRemovable = defaultListRemovable, eject = defaultEject,
