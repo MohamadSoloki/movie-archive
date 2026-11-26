@@ -1803,7 +1803,9 @@
       if (!r.ok || !r.items.length) { box.append(h('p', { class: 'help' }, t('sim_none'))); return; }
       const sep = state.lang === 'fa' ? '، ' : ', ';
       const shown = { genre: genreName, country: countryName };
-      const why = (x) => x.reasons.slice().sort((a, b) => SIM_ORDER.indexOf(a.type) - SIM_ORDER.indexOf(b.type)).slice(0, 2)
+      const why = (x) => x.reasons
+        .filter((reason) => x.kind !== 'series' || reason.type !== 'country')
+        .sort((a, b) => SIM_ORDER.indexOf(a.type) - SIM_ORDER.indexOf(b.type)).slice(0, 2)
         .map((q) => t(`sim_${q.type}`, { v: q.values.slice(0, 2).map(shown[q.type] || ((v) => v)).join(sep) })).join(' · ');
       box.append(h('div', { class: 'sim-list' }, r.items.map((x) => h('button', { type: 'button', class: 'card sim', 'data-key': x.key, onclick: () => select(x.key) },
         frame(x, x.rating ? rateChip(x.rating) : null),
