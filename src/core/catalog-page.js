@@ -518,6 +518,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   }
   var catalogReady = false, activeDetail = null, detailData = new Map();
   var detailEntrance, routeRevision = 0;
+  var backToTop = false;
   function poster(f, style, lazy) {
     if (!f.p) return el('span', { class: style, 'aria-hidden': 'true', dir: 'auto' }, [f.t || f.f]);
     return el('img', { class: style, src: '/poster/' + encodeURIComponent(f.k), alt: '', loading: lazy ? 'lazy' : 'eager' });
@@ -541,6 +542,8 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     ]);
   }
   function showRoute(animate = false) {
+    var startAtTop = backToTop;
+    backToTop = false;
     routeRevision += 1;
     detailEntrance?.cancel();
     detailEntrance = null;
@@ -561,11 +564,13 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     if (detail) {
       var previous = Array.from($('detailBody').querySelectorAll?.('[data-recommendation]') || [])
         .find(function (link) { return link.dataset.recommendation === route?.focusKey; });
-      (previous || $('detailTitle') || $('detailBack')).focus({ preventScroll: true });
+      ((!startAtTop && previous) || $('detailTitle') || $('detailBack')).focus({ preventScroll: true });
+    } else if (startAtTop) {
+      $('catalogTitle').focus({ preventScroll: true });
     } else if (route?.focusKey) {
       $('title-' + route.focusKey)?.focus({ preventScroll: true });
     }
-    window.scrollTo(0, route?.scroll || 0);
+    window.scrollTo(0, startAtTop ? 0 : route?.scroll || 0);
     if (animateEntry) {
       detailEntrance = $('detailBody').animate?.([
         { opacity: 0.65, transform: 'translateY(9px)' },
@@ -574,6 +579,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     }
   }
   $('detailBack').onclick = function () {
+    backToTop = true;
     if (window.history.state?.fromCatalog) window.history.back();
     else { window.history.replaceState(null, '', window.location.pathname + window.location.search); showRoute(); }
   };

@@ -190,7 +190,7 @@ test('details open instantly with reduced motion or keyboard navigation', async 
   }
 });
 
-test('catalog disclosure preserves multiple genres and back restores the catalog and its scroll', async () => {
+test('catalog disclosure preserves multiple genres and the site back button returns to the top', async () => {
   const { get, nodes: e, win } = page();
   await settle();
   assert.equal(e.genres.hidden, true);
@@ -218,16 +218,18 @@ test('catalog disclosure preserves multiple genres and back restores the catalog
   assert.equal(e.detailBody.all((node) => node.attrs.class === 'subtitle subtle')[0].textContent, 'گاما');
   assert.match(e.detailBody.textContent, /Won 1 Emmy/);
   assert.match(e.detailBody.textContent, /داستان آزمایشی در سال 2025/);
+  win.scrollY = 180;
   e.detailBody.querySelectorAll('[data-recommendation]').find((link) => link.dataset.recommendation === 't:3').click();
   await settle();
   assert.equal(get('detailTitle').textContent, 'Film 2');
   e.detailBack.click();
   assert.equal(get('detailTitle').textContent, 'Film 1');
+  assert.equal(win.scrollY, 0);
   e.detailBack.click();
   assert.equal(e.grid.hidden, false);
   assert.equal(e.q.value, 'گاما');
   assert.equal(e.genres.hidden, true);
-  assert.equal(win.scrollY, 240);
+  assert.equal(win.scrollY, 0);
   assert.equal(get('title-t:3'), undefined);
 });
 
