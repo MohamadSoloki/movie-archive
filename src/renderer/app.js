@@ -30,6 +30,7 @@
     x: '<path d="M6 6l12 12M18 6 6 18"/>',
     check: '<path d="m5 12 5 5 9-10"/>',
     calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     tag: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
     link: '<path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
   };
@@ -85,6 +86,17 @@
       el.setAttribute('aria-label', t(el.dataset.i18nLabel));
       el.title = t(el.dataset.i18nLabel);
     }
+    for (const el of document.querySelectorAll('.nav-btn')) el.title = el.querySelector('.nav-label').textContent; // the name stays readable when the menu is collapsed
+    setSide(document.body.classList.contains('side-mini'));
+  }
+
+  // The side menu: labels beside the icons, or icons only. The choice is remembered.
+  function setSide(mini, save = false) {
+    document.body.classList.toggle('side-mini', mini);
+    $('side-toggle').setAttribute('aria-expanded', String(!mini));
+    $('side-toggle-label').textContent = t(mini ? 'nav_expand' : 'nav_collapse');
+    $('side-toggle').title = $('side-toggle-label').textContent;
+    if (save) { try { localStorage.setItem('sideMini', mini ? '1' : '0'); } catch { /* the choice lasts until restart */ } }
   }
 
   // ---- tabs, filter sheet ------------------------------------------------
@@ -1459,6 +1471,8 @@
   $('folders-x').addEventListener('click', () => $('folders-dlg').close());
   $('settings-x').addEventListener('click', () => $('settings-dlg').close());
   $('theme').addEventListener('click', () => window.theme.toggle());
+  $('side-toggle').addEventListener('click', () => setSide(!document.body.classList.contains('side-mini'), true));
+  try { if (localStorage.getItem('sideMini') === '1') document.body.classList.add('side-mini'); } catch { /* private mode: the menu starts open */ }
 
   document.addEventListener('keydown', (ev) => {
     const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName);
@@ -1498,11 +1512,140 @@
     return t('cal_state_soon', { date, time: r.time });
   }
 
+  // ---- air-time clock: a 24-hour dial (hour ring, then minute ring), quick times, arrow keys -------------------------
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  function s(tag, attrs = {}, ...kids) {
+    const el = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    el.append(...kids);
+    return el;
+  }
+  const QUICK_TIMES = ['18:00', '19:00', '20:00', '21:00', '22:00', '23:00'];
+  const RING_OUT = 82, RING_IN = 52;
+
+  // Opens the clock; answers "HH:MM", or null when it was cancelled.
+  function pickTime(initial) {
+    const tm = window.timeMath;
+    return new Promise((resolve) => {
+      let { h: hh, m: mm } = tm.split(window.timePicker.parseTime(initial) || window.timePicker.DEFAULT);
+      let part = 'h';
+      let handAngle = null; // keeps counting past 360, so the hand always turns the short way
+      let result = null;
+      const two = (n) => String(n).padStart(2, '0');
+
+      const hBtn = h('button', { type: 'button', class: 'tp-seg', 'aria-label': t('tp_hour'), onclick: () => setPart('h') });
+      const mBtn = h('button', { type: 'button', class: 'tp-seg', 'aria-label': t('tp_minute'), onclick: () => setPart('m') });
+      const readout = h('div', { class: 'tp-readout', dir: 'ltr' }, hBtn, h('span', { class: 'tp-colon', 'aria-hidden': 'true' }, ':'), mBtn);
+      const line = s('line', { x1: 0, y1: 0, x2: 0, y2: -RING_OUT });
+      const knob = s('circle', { class: 'tp-knob', cx: 0, cy: -RING_OUT, r: 17 });
+      const tip = s('circle', { class: 'tp-tip', cx: 0, cy: -RING_OUT, r: 3 });
+      const hand = s('g', { class: 'tp-hand' }, line, knob, tip);
+      const labels = s('g', { class: 'tp-labels' });
+      const dial = s('svg', { class: 'tp-dial', viewBox: '-110 -110 220 220', role: 'img', 'aria-label': t('tp_hint') },
+        s('circle', { class: 'tp-face', r: 104 }), hand, labels, s('circle', { class: 'tp-pin', r: 3 }));
+
+      const mark = (text, angle, radius, cls) => {
+        const a = (angle * Math.PI) / 180;
+        return s('text', { class: cls, x: (radius * Math.sin(a)).toFixed(2), y: (-radius * Math.cos(a)).toFixed(2) }, text);
+      };
+
+      function refresh() {
+        hBtn.textContent = two(hh);
+        mBtn.textContent = two(mm);
+        hBtn.setAttribute('aria-pressed', String(part === 'h'));
+        mBtn.setAttribute('aria-pressed', String(part === 'm'));
+        const marks = [];
+        let target, ring = RING_OUT;
+        if (part === 'h') {
+          const d = tm.dialFromHour(hh);
+          target = d.angle;
+          if (d.inner) ring = RING_IN;
+          for (let n = 0; n < 24; n++) {
+            const pos = tm.dialFromHour(n);
+            marks.push(mark(two(n === 12 ? 12 : n), pos.angle, pos.inner ? RING_IN : RING_OUT, `tp-n${pos.inner ? ' in' : ''}${n === hh ? ' on' : ''}`));
+          }
+        } else {
+          target = tm.dialFromMinute(mm);
+          for (let n = 0; n < 60; n += 5) marks.push(mark(two(n), tm.dialFromMinute(n), RING_OUT, `tp-n${n === mm ? ' on' : ''}`));
+        }
+        labels.replaceChildren(...marks);
+        if (handAngle == null) handAngle = target;
+        else handAngle += ((((target - handAngle) % 360) + 540) % 360) - 180;
+        hand.style.setProperty('--a', `${handAngle}deg`);
+        line.setAttribute('y2', -ring); knob.setAttribute('cy', -ring); tip.setAttribute('cy', -ring);
+        hand.classList.toggle('odd', part === 'm' && mm % 5 !== 0); // a minute between two marks has no number inside the knob
+      }
+      function setPart(next) { part = next; refresh(); }
+
+      let dragging = false;
+      const pick = (ev) => {
+        const box = dial.getBoundingClientRect();
+        const { angle, dist } = tm.pointToDial(ev.clientX - (box.left + box.width / 2), ev.clientY - (box.top + box.height / 2));
+        if (part === 'h') hh = tm.hourFromDial(angle, tm.isInner(dist * (220 / box.width), 100));
+        else mm = tm.minuteFromDial(angle);
+        refresh();
+      };
+      dial.addEventListener('pointerdown', (ev) => { dragging = true; dial.setPointerCapture(ev.pointerId); dial.classList.add('drag'); pick(ev); });
+      dial.addEventListener('pointermove', (ev) => { if (dragging) pick(ev); });
+      dial.addEventListener('pointerup', () => { if (!dragging) return; dragging = false; dial.classList.remove('drag'); if (part === 'h') setPart('m'); });
+      dial.addEventListener('pointercancel', () => { dragging = false; dial.classList.remove('drag'); });
+
+      const quick = h('div', { class: 'tp-quick', role: 'group', 'aria-label': t('tp_presets'), dir: 'ltr' }, QUICK_TIMES.map((q) => h('button', {
+        type: 'button', class: 'chip', onclick: () => { ({ h: hh, m: mm } = tm.split(q)); part = 'h'; refresh(); },
+      }, q)));
+
+      const okBtn = h('button', { type: 'button', class: 'btn primary', autofocus: true, onclick: () => { result = tm.formatTime(hh, mm); dlg.close(); } }, icon('check'), t('tp_ok'));
+      const dlg = h('dialog', { class: 'tp-dlg', 'aria-label': t('tp_title') },
+        h('p', { class: 'tp-title' }, t('tp_title')), readout, dial, quick,
+        h('p', { class: 'help tp-hint' }, t('tp_hint')),
+        h('div', { class: 'tp-foot' }, h('button', { type: 'button', class: 'btn', onclick: () => dlg.close() }, t('tp_cancel')), okBtn));
+      dlg.addEventListener('keydown', (ev) => {
+        const step = ev.key === 'ArrowUp' ? 1 : ev.key === 'ArrowDown' ? -1 : 0;
+        if (!step) return;
+        ev.preventDefault();
+        ({ h: hh, m: mm } = tm.nudge({ h: hh, m: mm }, part, part === 'm' && ev.shiftKey ? step * 5 : step));
+        refresh();
+      });
+      dlg.addEventListener('close', () => { dlg.remove(); resolve(result); });
+      document.body.append(dlg);
+      refresh();
+      dlg.showModal();
+    });
+  }
+
+  // The air-time field: type the time (2030, 8:5, ۲۰:۳۰ all work), step it with the arrow keys, or open the clock.
+  // `.value` is always a valid "HH:MM", like the old time input.
+  function timeField(initial, label) {
+    const tp = window.timePicker;
+    let value = tp.parseTime(initial) || tp.DEFAULT;
+    const input = h('input', { type: 'text', class: 'tp-input', inputmode: 'numeric', maxlength: '5', dir: 'ltr', autocomplete: 'off', 'aria-label': label, value });
+    const set = (v) => { value = v; input.value = v; input.removeAttribute('aria-invalid'); };
+    input.addEventListener('change', () => {
+      const v = tp.parseTime(input.value);
+      if (v) set(v);
+      else { input.value = value; input.setAttribute('aria-invalid', 'true'); } // not a time: the last good one stays
+    });
+    input.addEventListener('input', () => input.removeAttribute('aria-invalid'));
+    input.addEventListener('keydown', (ev) => {
+      const dir = ev.key === 'ArrowUp' ? 1 : ev.key === 'ArrowDown' ? -1 : 0;
+      if (!dir) return;
+      ev.preventDefault();
+      set(tp.stepTime(tp.parseTime(input.value) || value, dir * (ev.shiftKey ? 60 : 5)));
+    });
+    const open = h('button', {
+      type: 'button', class: 'tp-open', title: t('tp_title'), 'aria-label': t('tp_title'),
+      onclick: async () => { const next = await pickTime(tp.parseTime(input.value) || value); if (next) set(next); },
+    }, icon('clock'));
+    const box = h('div', { class: 'tp-field' }, input, open);
+    Object.defineProperty(box, 'value', { get: () => tp.parseTime(input.value) || value });
+    return box;
+  }
+
   // One form for adding, editing and the series detail; `onSubmit` gets the fields and returns the api answer.
   function reminderForm(init, label, onSubmit, { withTitle = true } = {}) {
     const name = h('input', { type: 'text', maxlength: '100', dir: 'auto', value: init.title ?? '', 'aria-label': t('cal_name'), placeholder: t('cal_name') });
     const day = h('select', { 'aria-label': t('cal_day') }, DAY_ORDER[state.lang].map((d) => h('option', { value: String(d), selected: d === (init.weekday ?? 1) }, dayName(d))));
-    const time = h('input', { type: 'time', value: init.time ?? '20:00', 'aria-label': t('cal_time') });
+    const time = timeField(init.time ?? '20:00', t('cal_time'));
     const ep = h('input', { type: 'number', min: '1', step: '1', class: 'cal-ep', value: init.episode ?? '', 'aria-label': t('cal_episode'), placeholder: t('cal_episode') });
     const msg = h('p', { class: 'msg', role: 'alert' });
     const form = h('form', { class: 'cal-form' }, withTitle ? name : null, day, time, ep, h('button', { type: 'submit', class: 'btn primary' }, label), msg);
