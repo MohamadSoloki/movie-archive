@@ -213,7 +213,7 @@ main { grid-column: 2; grid-row: 3; overflow-y: auto; padding: 0 1.5rem 3rem; sc
   display: inline-flex; align-items: center; gap: 0.25rem; height: 1.6rem; padding: 0 0.55rem 0 0.45rem; border-radius: 999px;
   background: rgba(10, 12, 20, 0.78); color: #fff; font-size: 0.82rem; font-weight: 600; font-variant-numeric: tabular-nums;
 }
-.rate svg, .ep-rate svg { width: 0.85rem; height: 0.85rem; fill: var(--star); stroke: none; }
+.rate svg { width: 0.85rem; height: 0.85rem; fill: var(--star); stroke: none; }
 .stack {
   position: absolute; inset-inline: 0.55rem; inset-block-end: 0.55rem; display: inline-flex; align-items: center; gap: 0.4rem; width: fit-content; height: 1.7rem; padding-inline: 0.6rem;
   border-radius: 999px; background: rgba(10, 12, 20, 0.82); color: #fff; font-size: 0.8rem; font-weight: 600;
@@ -282,18 +282,11 @@ button.tag[aria-pressed="true"] { background: var(--accent); border-color: var(-
 .loc .open { grid-column: 3; grid-row: 1; }
 .open { height: 2rem; padding: 0 0.75rem; font-size: 0.85rem; }
 
-.episodes details, details.fix { border: 1px solid var(--line); border-radius: 0.8rem; background: var(--raised); }
-.episodes details + details { margin-block-start: 0.5rem; }
-.episodes summary, details.fix summary { cursor: pointer; padding: 0.7rem 0.9rem; font-weight: 600; list-style: none; display: flex; align-items: center; justify-content: space-between; }
-.episodes summary::-webkit-details-marker, details.fix summary::-webkit-details-marker { display: none; }
-.episodes summary::after, details.fix summary::after { content: ""; width: 0.55rem; height: 0.55rem; border-inline-end: 2px solid var(--muted); border-block-end: 2px solid var(--muted); transform: rotate(45deg); transition: transform 0.15s; }
+details.fix { border: 1px solid var(--line); border-radius: 0.8rem; background: var(--raised); }
+details.fix summary { cursor: pointer; padding: 0.7rem 0.9rem; font-weight: 600; list-style: none; display: flex; align-items: center; justify-content: space-between; }
+details.fix summary::-webkit-details-marker { display: none; }
+details.fix summary::after { content: ""; width: 0.55rem; height: 0.55rem; border-inline-end: 2px solid var(--muted); border-block-end: 2px solid var(--muted); transform: rotate(45deg); transition: transform 0.15s; }
 details[open] > summary::after { transform: rotate(-135deg); }
-.eps { list-style: none; margin: 0; padding: 0 0.9rem 0.6rem; }
-.ep { display: grid; grid-template-columns: 1.8rem 1fr auto; gap: 0 0.6rem; padding: 0.55rem 0; border-block-start: 1px solid var(--line); }
-.ep-no { color: var(--muted); font-variant-numeric: tabular-nums; }
-.ep-meta { display: inline-flex; align-items: center; gap: 0.6rem; }
-.ep-date, .ep-rate { font-size: 0.82rem; color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 0.25rem; font-variant-numeric: tabular-nums; }
-.ep-plot { grid-column: 2 / -1; margin-block-start: 0.2rem; font-size: 0.9rem; }
 details.fix > :not(summary) { margin-inline: 0.9rem; }
 details.fix > :last-child { margin-block-end: 0.9rem; }
 .fix form, .cands form { display: flex; gap: 0.5rem; }

@@ -661,47 +661,6 @@
     return [el, note];
   }
 
-  function episodeRow(ep) {
-    const plot = h('p', { class: `ep-plot${ep.plot ? '' : ' muted'}`, dir: 'auto' }, ep.plot || t('episode_no_plot'));
-    return {
-      plot, text: ep.plot,
-      el: h('li', { class: 'ep' },
-        h('span', { class: 'ep-no' }, String(ep.number)),
-        h('span', { class: 'ep-name', dir: 'auto' }, ep.name || ''),
-        h('span', { class: 'ep-meta' },
-          ep.released ? h('span', { class: 'ep-date', dir: 'ltr' }, ep.released) : null,
-          ep.rating ? h('span', { class: 'ep-rate', dir: 'ltr' }, icon('star'), String(ep.rating)) : null),
-        plot),
-    };
-  }
-
-  function episodesSection(e) {
-    const box = h('section', { class: 'episodes' });
-    api.getEpisodes(e.titleId).then((seasons) => {
-      if (state.selected !== e.key || !box.isConnected || !seasons.length) return;
-      let quotaHit = false;
-      const lacking = seasons.reduce((n, s) => n + s.episodes.filter((x) => !x.plot).length, 0);
-      for (const s of seasons) {
-        const rows = s.episodes.map(episodeRow);
-        const det = h('details', {}, h('summary', {}, t('season_title', { n: s.season, m: s.episodes.length })), h('ul', { class: 'eps' }, rows.map((r) => r.el)));
-        let started = false;
-        det.addEventListener('toggle', async () => {
-          if (!det.open || started || state.lang !== 'fa') return;
-          started = true;
-          for (const r of rows) {
-            if (!r.text || quotaHit) continue;
-            const res = await translateInto(r.plot, r.text, () => det.isConnected);
-            if (res === 'quota') { quotaHit = true; box.append(h('p', { class: 'help' }, t('translate_quota'))); }
-            if (res !== 'done') break;
-          }
-        });
-        box.append(det);
-      }
-      if (lacking) box.append(h('p', { class: 'help' }, t('episodes_missing', { n: lacking })));
-    });
-    return box;
-  }
-
   function hero(e, ...text) {
     const el = h('div', { class: 'hero' },
       h('button', { class: 'icon-btn close', type: 'button', 'aria-label': t('close'), title: t('close'), onclick: () => select(null) }, icon('x')),
@@ -1239,7 +1198,7 @@
   }
 
   // The whole entry is fetched only for the open card. Without `force` an already open detail is left alone,
-  // so typing in the search box does not rebuild it (and collapse its seasons).
+  // so typing in the search box does not rebuild it.
   async function renderDetail(force = true) {
     const d = $('detail');
     const key = state.selected;
@@ -1280,8 +1239,8 @@
         e.titleId != null && e.kind !== 'collection' ? similarSection(e) : null,
         e.titleId != null && e.kind !== 'collection' ? recommendSection(e) : null,
         e.titleId != null && e.kind !== 'movie' ? airingSection(e) : null,
-        e.titleId != null && e.kind !== 'movie' ? episodesSection(e) : null,
-        h('section', {}, h('h3', {}, t('locations')), h('ul', { class: 'plain' }, e.locations.map(locationRow))),
+        e.kind !== 'series' && e.section !== 'anime'
+          ? h('section', {}, h('h3', {}, t('locations')), h('ul', { class: 'plain' }, e.locations.map(locationRow))) : null,
         e.titleId == null && e.status === 'review' ? candidatesSection(e) : null,
         fixSection(e),
       ].filter(Boolean)));
