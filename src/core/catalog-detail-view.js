@@ -1,13 +1,13 @@
 'use strict';
 
 // Embedded by catalog-page in the self-contained phone catalog.
-function renderDetailView({ body, title, data, text, element, fa, poster, link, controls, retry, animateSections }) {
+function renderDetailView({ body, title, data, text, element, formatNumber, poster, link, controls, retry, animateSections }) {
   const e = element;
   const name = title.t || title.f;
   const subtitle = title.f && title.f !== name ? title.f : '';
   const heading = e('h1', { id: 'detailTitle', dir: 'auto', tabindex: '-1' }, [name]);
-  const facts = [title.y, title.r ? '★ ' + fa(title.r) + ' / ۱۰' : null];
-  if (data?.runtime && !data.episodic) facts.push(data.runtime.replace(/^(\d+) min$/, (_, n) => fa(n) + ' دقیقه'));
+  const facts = [title.y, title.r ? '★ ' + formatNumber(title.r) + ' / 10' : null];
+  if (data?.runtime && !data.episodic) facts.push(data.runtime.replace(/^(\d+) min$/, (_, n) => formatNumber(n) + ' دقیقه'));
   const hero = e('div', { class: 'detail-hero' }, [
     poster(title, false),
     e('div', { class: 'detail-heading' }, [
@@ -47,12 +47,12 @@ function renderDetailView({ body, title, data, text, element, fa, poster, link, 
   if (data.awards) section(text.awards, [e('p', { dir: 'auto' }, [data.awards])]);
   if (data.episodic) {
     const counts = [];
-    if (data.availableSeasons) counts.push(fa(data.availableSeasons) + ' ' + text.availableSeasons);
-    if (data.availableEpisodes != null) counts.push(fa(data.availableEpisodes) + ' ' + text.availableEpisodes);
-    if (data.totalSeasons) counts.push(fa(data.totalSeasons) + ' ' + text.totalSeasons);
+    if (data.availableSeasons) counts.push(formatNumber(data.availableSeasons) + ' ' + text.availableSeasons);
+    if (data.availableEpisodes != null) counts.push(formatNumber(data.availableEpisodes) + ' ' + text.availableEpisodes);
+    if (data.totalSeasons) counts.push(formatNumber(data.totalSeasons) + ' ' + text.totalSeasons);
     const known = data.seasons.reduce((n, s) => n + s.knownEpisodes, 0);
-    if (data.availableEpisodes == null && known) counts.push(fa(known) + ' ' + text.knownEpisodes);
-    if (data.runtime) counts.push(text.typicalRuntime + ' ' + data.runtime.replace(/^(\d+) min$/, (_, n) => fa(n) + ' دقیقه'));
+    if (data.availableEpisodes == null && known) counts.push(formatNumber(known) + ' ' + text.knownEpisodes);
+    if (data.runtime) counts.push(text.typicalRuntime + ' ' + data.runtime.replace(/^(\d+) min$/, (_, n) => formatNumber(n) + ' دقیقه'));
     section(text.seasonN + ' و ' + text.epWord, [
       counts.length ? e('p', { class: 'subtle' }, [counts.join(' · ')]) : '',
       controls(data.seasons),

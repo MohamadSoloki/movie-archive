@@ -69,12 +69,12 @@ function page({ reduceMotion = false, darkMode = false, catalog = cards, local =
   const win = {
     matchMedia: () => ({ matches: reduceMotion }),
     scrollY: 0, crypto: webcrypto, addEventListener: (name, fn) => { events[name] = fn; },
-    location: { get hash() { return entries[index].hash; } },
+    location: { pathname: '/', search: '', get hash() { return entries[index].hash; } },
     scrollTo: (_, y) => { win.scrollY = y; },
     history: {
       get state() { return entries[index].state; },
       replaceState(state) { entries[index].state = state; },
-      pushState(state, _, hash) { entries.splice(++index, Infinity, { hash, state }); },
+      pushState(state, _, url) { entries.splice(++index, Infinity, { hash: url.startsWith('#') ? url : '', state }); },
       back() { index -= 1; events.popstate(); },
     },
   };
@@ -88,7 +88,7 @@ function page({ reduceMotion = false, darkMode = false, catalog = cards, local =
     }
     if (!url.startsWith('/api/detail')) throw new Error('Unexpected mock request: ' + url);
     const series = url.endsWith('t%3A2');
-    return Response.json({ detail: { episodic: series, plot: 'داستان آزمایشی', actors: 'Test Actor', awards: 'Won 1 Emmy',
+    return Response.json({ detail: { episodic: series, plot: 'داستان آزمایشی در سال ۲۰۲۵', actors: 'Test Actor', awards: 'Won 1 Emmy',
       seasons: series ? episodeSeasons : [], related: series ? ['t:3'] : [], similar: series ? ['t:1'] : [] } });
   };
   const root = new Element('html');
@@ -143,7 +143,7 @@ test('quick selection keeps the grid and search intact and updates the review bu
   before.click();
   assert.equal(get('pick-t:1'), before);
   assert.equal(before.attrs['aria-pressed'], 'true');
-  assert.match(nodes.open.textContent, /مرور لیست.*۱/);
+  assert.match(nodes.open.textContent, /مرور لیست.*1/);
   before.click();
   assert.equal(before.attrs['aria-pressed'], 'false');
   assert.equal(nodes.bar.className, 'bar');
@@ -201,7 +201,7 @@ test('catalog disclosure preserves multiple genres and back restores the catalog
   assert.ok(get('title-t:2'));
   assert.equal(get('title-t:3'), undefined);
   e.genreToggle.click();
-  assert.match(e.genreToggle.textContent, /۲ انتخاب/);
+  assert.match(e.genreToggle.textContent, /2 انتخاب/);
   assert.equal(e.genres.hidden, true);
   e.q.value = 'گاما';
   e.q.events.input();
@@ -217,6 +217,7 @@ test('catalog disclosure preserves multiple genres and back restores the catalog
   assert.equal(get('detailTitle').textContent, 'Film 1');
   assert.equal(e.detailBody.all((node) => node.attrs.class === 'subtitle subtle')[0].textContent, 'گاما');
   assert.match(e.detailBody.textContent, /Won 1 Emmy/);
+  assert.match(e.detailBody.textContent, /داستان آزمایشی در سال 2025/);
   e.detailBody.querySelectorAll('[data-recommendation]').find((link) => link.dataset.recommendation === 't:3').click();
   await settle();
   assert.equal(get('detailTitle').textContent, 'Film 2');
@@ -228,6 +229,23 @@ test('catalog disclosure preserves multiple genres and back restores the catalog
   assert.equal(e.genres.hidden, true);
   assert.equal(win.scrollY, 240);
   assert.equal(get('title-t:3'), undefined);
+});
+
+test('home goes straight to the catalog from a related title', async () => {
+  const { get, nodes: e, win } = page();
+  await settle();
+  e.q.value = 'گاما';
+  e.q.events.input();
+  get('title-t:2').click();
+  await settle();
+  e.detailBody.querySelectorAll('[data-recommendation]').find((link) => link.dataset.recommendation === 't:3').click();
+  await settle();
+  assert.equal(get('detailTitle').textContent, 'Film 2');
+  e.detailHome.click();
+  assert.equal(win.location.hash, '');
+  assert.equal(e.grid.hidden, false);
+  assert.equal(e.q.value, 'گاما');
+  assert.equal(win.scrollY, 0);
 });
 
 test('quick series selection uses saved numbers when the drive is disconnected', async () => {
@@ -247,16 +265,16 @@ test('quick series selection uses saved numbers when the drive is disconnected',
   assert.equal(first.checked, false);
   second.checked = true;
   second.onchange();
-  assert.match(e.seasonPickerSelection.textContent, /فصل ۲ کامل/);
+  assert.match(e.seasonPickerSelection.textContent, /فصل 2 کامل/);
   const episodeError = e.seasonPickerBody.all((node) => node.attrs.class === 'episode-error')[0];
   episode.value = '۳a';
   episode.oninput();
-  assert.equal(episode.value, '۳');
+  assert.equal(episode.value, '3');
   assert.equal(episode.attrs['aria-invalid'], 'true');
   assert.match(episodeError.textContent, /عدد/);
   episode.value = '۱۱';
   episode.oninput();
-  assert.match(episodeError.textContent, /آخرین قسمت این فصل ۸/);
+  assert.match(episodeError.textContent, /آخرین قسمت این فصل 8/);
   assert.equal(episode.attrs['aria-invalid'], 'true');
   e.applySeasonPicker.click();
   assert.ok(e.seasonPicker.open);
@@ -264,7 +282,7 @@ test('quick series selection uses saved numbers when the drive is disconnected',
   episode.oninput();
   assert.equal(episode.attrs['aria-invalid'], 'false');
   assert.equal(episodeError.hidden, true);
-  assert.match(e.seasonPickerSelection.textContent, /فصل ۲ کامل.*۱ قسمت از فصل ۱/);
+  assert.match(e.seasonPickerSelection.textContent, /فصل 2 کامل.*1 قسمت از فصل 1/);
   e.applySeasonPicker.click();
   assert.equal(e.seasonPicker.open, false);
   e.open.click();
@@ -279,10 +297,10 @@ test('series details allow selecting the whole series, canceling a change and ed
   await settle();
   get('title-t:2').click();
   await settle();
-  assert.match(e.detailBody.textContent, /۹ میانگین IMDb/);
-  assert.match(e.detailBody.textContent, /۲ قسمت موجود/);
-  assert.doesNotMatch(e.detailBody.textContent, /قسمت موجود · ۱، ۳/);
-  assert.match(e.detailBody.textContent, /۴۳ دقیقه/);
+  assert.match(e.detailBody.textContent, /9 میانگین IMDb/);
+  assert.match(e.detailBody.textContent, /2 قسمت موجود/);
+  assert.doesNotMatch(e.detailBody.textContent, /قسمت موجود · 1، 3/);
+  assert.match(e.detailBody.textContent, /43 دقیقه/);
   e.detailAdd.click();
   await settle();
   e.pickWholeSeries.click();

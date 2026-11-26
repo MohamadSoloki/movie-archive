@@ -18,8 +18,8 @@ const TEXT = {
     askTitle: 'پیدا نکردی؟', askText: 'اسم فیلم رو بنویس تا برات تهیه کنیم.', askGo: 'درخواست', askThanks: 'ثبت شد. اگه تهیه کردیم بهت خبر می‌دیم.',
     askHave: 'این فیلم توی آرشیو هست:', askName: 'اسم شما (برای خبر دادن، اختیاری)', askPhone: 'شماره تماس (اختیاری)', empty: 'کاتالوگ هنوز خالیه.',
     tariff: 'تعرفه', perMovie: 'هر فیلم', perSeason: 'هر فصل سریال', perEpisode: 'هر قسمت', currency: 'تومان', total: 'مبلغ کل',
-    related: 'عنوان‌های مرتبط', similar: 'پیشنهادهای مشابه', back: 'برگشت', seasonN: 'فصل', epWord: 'قسمت',
-    episodesHint: 'شمارهٔ قسمت‌ها، مثلاً ۱-۵ یا ۲ ۵ ۷', wholeSeason: 'همهٔ قسمت‌های موجود', invalidEpisodes: 'شمارهٔ قسمت‌های موجود را وارد کن.',
+    related: 'عنوان‌های مرتبط', similar: 'پیشنهادهای مشابه', back: 'برگشت', home: 'صفحهٔ اصلی', seasonN: 'فصل', epWord: 'قسمت',
+    episodesHint: 'شمارهٔ قسمت‌ها، مثلاً 1-5 یا 2 5 7', wholeSeason: 'همهٔ قسمت‌های موجود', invalidEpisodes: 'شمارهٔ قسمت‌های موجود را وارد کن.',
     genres: 'ژانرها', genreCount: 'انتخاب', addToList: 'اضافه به لیست سینمایی', inList: 'در لیست شما', updatePick: 'ثبت انتخاب فصل و قسمت',
     editSeasons: 'ویرایش فصل و قسمت', loading: 'در حال بارگذاری جزئیات…', detailError: 'جزئیات در دسترس نیست.', unknownTitle: 'این عنوان در کاتالوگ پیدا نشد.',
     wholeSeries: 'انتخاب کل سریال', seasonPicker: 'انتخاب فصل و قسمت', applySeasonPick: 'ثبت انتخاب',
@@ -63,10 +63,12 @@ header { background: var(--masthead); color: #fff9ea; border-bottom: 3px solid #
 .masthead { display: grid; gap: .8rem; padding: 1.1rem var(--gutter); }
 .top { display: flex; align-items: center; gap: .7rem; }
 .top h1 { flex: 1; }
-.theme-toggle { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: var(--card); color: var(--ink); font-size: 1.45rem; line-height: 1; cursor: pointer; }
-.masthead .theme-toggle { background: transparent; border-color: var(--masthead-muted); color: #ffe2a5; }
+.theme-toggle { flex: none; width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--ink); font: 1.45rem/1 "Segoe UI Symbol", sans-serif; cursor: pointer; }
+.masthead .theme-toggle { color: #ffe2a5; }
 .masthead .theme-toggle:focus-visible { outline-color: #e6bc76; }
-.detail-toolbar { display: flex; justify-content: space-between; align-items: start; gap: .7rem; }
+.detail-toolbar { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .75rem; }
+.detail-nav { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; min-width: 0; }
+.detail-nav a { display: inline-flex; align-items: center; text-decoration: none; }
 .top::before { content: ''; flex: none; width: 1.65rem; height: 1.65rem; border-radius: .25rem; background: repeating-linear-gradient(120deg,#e6bc76 0 5px,var(--masthead) 5px 9px) top / 100% 32% no-repeat; border: 2px solid #e6bc76; }
 h1 { font-size: clamp(1.45rem,4vw,2.25rem); line-height: 1.4; margin: 0; }
 .filters { padding: .55rem var(--gutter) 0; }
@@ -125,7 +127,6 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 #genres { flex-wrap: wrap; overflow: visible; }
 #genreToggle { min-height: 44px; max-width: 65%; }
 #detailView { width: min(100%, 740px); margin-inline: auto; padding: 1rem 1rem 3rem; }
-#detailBack { min-height: 44px; margin-bottom: 0.75rem; }
 .detail-hero { display: grid; grid-template-columns: minmax(96px, 30%) minmax(0, 1fr); gap: clamp(0.75rem, 4vw, 1.75rem); align-items: center; }
 .detail-heading { min-width: 0; overflow-wrap: anywhere; }
 .detail-heading h1 { font-size: clamp(1.3rem, 4.8vw, 2rem); line-height: 1.3; }
@@ -222,7 +223,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 </head>
 <body>
 <header id="catalogHead">
-  <div class="masthead"><div class="top"><h1>${x.title}</h1><button id="themeToggle" class="theme-toggle" type="button" hidden></button></div>
+  <div class="masthead"><div class="top"><h1 id="catalogTitle" tabindex="-1">${x.title}</h1><button id="themeToggle" class="theme-toggle" type="button" hidden></button></div>
   <div class="lookup"><input id="q" type="search" placeholder="${x.search}" autocomplete="off" aria-label="${x.search}"></div>
   <p class="tariff" id="tariff" hidden></p>
   </div>
@@ -234,7 +235,10 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 </section>
 <main id="grid"></main>
 <main id="detailView" hidden>
-  <div class="detail-toolbar"><button id="detailBack" type="button" class="chip">${x.back}</button><button id="detailThemeToggle" class="theme-toggle" type="button" hidden></button></div>
+  <div class="detail-toolbar">
+    <div class="detail-nav"><button id="detailBack" type="button" class="chip">${x.back}</button><a id="detailHome" class="chip" href="/">${x.home}</a></div>
+    <button id="detailThemeToggle" class="theme-toggle" type="button" hidden></button>
+  </div>
   <div id="detailBody"></div>
 </main>
 <div class="bar" id="bar"><button id="open" class="big" type="button"></button></div>
@@ -278,19 +282,22 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   var PAGE = 60;
   var films = [], filmByKey = new Map(), kind = '', genres = new Set(), shown = PAGE, chosen = {}, sel = {}, P = { movie: 0, season: 0, episode: 0 };
   var $ = function (id) { return document.getElementById(id); };
+  function latinDigits(text) {
+    return text.replace(/[۰-۹]/g, function (d) { return d.charCodeAt(0) - 1776; }).replace(/[٠-٩]/g, function (d) { return d.charCodeAt(0) - 1632; });
+  }
   function norm(s) {
-    return String(s || '').toLowerCase().replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[آأإ]/g, 'ا').replace(/[ةۀ]/g, 'ه')
-      .replace(/[۰-۹]/g, function (d) { return d.charCodeAt(0) - 1776; }).replace(/[٠-٩]/g, function (d) { return d.charCodeAt(0) - 1632; })
+    return latinDigits(String(s || '')).toLowerCase().replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[آأإ]/g, 'ا').replace(/[ةۀ]/g, 'ه')
       .replace(/[\\u200c\\u0640\\u064b-\\u065f]/g, '').replace(/\\s+/g, ' ').trim();
   }
   function el(tag, attrs, kids) {
     var e = document.createElement(tag);
-    for (var k in attrs || {}) e.setAttribute(k, attrs[k]);
-    (kids || []).forEach(function (c) { e.append(c); });
+    for (var k in attrs || {}) e.setAttribute(k, k === 'aria-label' || k === 'placeholder' ? latinDigits(attrs[k]) : attrs[k]);
+    (kids || []).forEach(function (c) { e.append(typeof c === 'string' ? latinDigits(c) : c); });
     return e;
   }
-  function fa(n) { return Number(n).toLocaleString('fa-IR'); }
-  function money(n) { return fa(n) + ' ' + T.currency; }
+  var numberFormat = new Intl.NumberFormat('en-US');
+  function formatNumber(n) { return numberFormat.format(Number(n)); }
+  function money(n) { return formatNumber(n) + ' ' + T.currency; }
   function hasPrice() { return P.movie > 0 || P.season > 0 || P.episode > 0; }
   // "1-5, 7 9" -> [1,2,3,4,5,7,9]
   function parseEps(text, available) {
@@ -303,7 +310,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       var range = /^(\\d+)(?:[-–](\\d+))?$/.exec(part);
       if (!range) return { error: T.episodeNumbersOnly };
       var firstNumber = Number(range[1]), secondNumber = Number(range[2] ?? range[1]);
-      if (Math.max(firstNumber, secondNumber) > last) return { error: T.lastAvailableEpisode + ' ' + fa(last) + ' است.' };
+      if (Math.max(firstNumber, secondNumber) > last) return { error: T.lastAvailableEpisode + ' ' + formatNumber(last) + ' است.' };
       for (var n = Math.min(firstNumber, secondNumber); n <= Math.max(firstNumber, secondNumber); n++) {
         if (!available.includes(n)) return { error: T.invalidEpisodes };
         numbers.add(n);
@@ -333,8 +340,8 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     var s = sel[k];
     if (!s) return '';
     var parts = [];
-    if (s.seasons.length) parts.push(T.seasonN + ' ' + s.seasons.map(fa).join('، '));
-    Object.keys(s.episodes).forEach(function (n) { if (s.seasons.indexOf(Number(n)) < 0) parts.push(T.seasonN + ' ' + fa(n) + ': ' + T.onlyEps + ' ' + s.episodes[n].map(fa).join('، ')); });
+    if (s.seasons.length) parts.push(T.seasonN + ' ' + s.seasons.map(formatNumber).join('، '));
+    Object.keys(s.episodes).forEach(function (n) { if (s.seasons.indexOf(Number(n)) < 0) parts.push(T.seasonN + ' ' + formatNumber(n) + ': ' + T.onlyEps + ' ' + s.episodes[n].map(formatNumber).join('، ')); });
     return parts.join(' · ');
   }
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { /* private mode */ } return null; }
@@ -379,7 +386,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     $('submit').disabled = sending || saved;
     $('submit').textContent = saved ? T.saved : wishId ? T.updateList : T.submit;
     var n = Object.keys(chosen).length;
-    var label = saved ? T.saved + ' · ' + T.receipt + ' ' + fa(wishId) : 'مرور لیست (' + fa(n) + ')';
+    var label = saved ? T.saved + ' · ' + T.receipt + ' ' + formatNumber(wishId) : 'مرور لیست (' + formatNumber(n) + ')';
     $('open').textContent = label + (hasPrice() ? ' · ' + money(priceOfCounts(totals())) : '');
   }
   function browserEditKey() {
@@ -416,7 +423,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       go.disabled = true;
       fetch('/api/ask', { method: 'POST', body: JSON.stringify({ name: input.value, customer: who.value, phone: tel.value }) }).then(function (r) { return r.json().then(function (j) { return [r.status, j]; }); }).then(function (a) {
         out.className = 'msg' + (a[0] === 200 ? '' : ' bad');
-        if (a[0] === 200) out.textContent = a[1].inArchive.length ? T.askHave + ' ' + a[1].inArchive.join('، ') : T.askThanks;
+        if (a[0] === 200) out.textContent = a[1].inArchive.length ? T.askHave + ' ' + latinDigits(a[1].inArchive.join('، ')) : T.askThanks;
         else out.textContent = a[0] === 429 ? T.slow : T.fail;
         go.disabled = false;
       }, function () { out.className = 'msg bad'; out.textContent = T.fail; go.disabled = false; });
@@ -432,7 +439,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       var title = f.t || f.f;
       var subtitle = f.f && f.f !== title ? f.f : '';
       var tags = f.b.map(function (b) { return T.badge[b] || b; });
-      if (f.s) tags.unshift(fa(f.s) + ' ' + T.seasons);
+      if (f.s) tags.unshift(formatNumber(f.s) + ' ' + T.seasons);
       var meta = [f.y].concat(tags).filter(Boolean).map(function (value) { return el('bdi', { dir: 'auto' }, [String(value)]); });
       var pick = el('button', { type: 'button', 'aria-pressed': String(on) }, [on ? T.picked : T.pick]);
       if (f.s > 0) pick.setAttribute('aria-haspopup', 'dialog');
@@ -492,7 +499,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   function updateGenreToggle() {
     var open = !$('genres').hidden;
     $('genreToggle').setAttribute('aria-expanded', String(open));
-    $('genreToggle').textContent = T.genres + (genres.size ? ' · ' + fa(genres.size) + ' ' + T.genreCount : '') + (open ? ' ▴' : ' ▾');
+    $('genreToggle').textContent = T.genres + (genres.size ? ' · ' + formatNumber(genres.size) + ' ' + T.genreCount : '') + (open ? ' ▴' : ' ▾');
   }
   $('genreToggle').onclick = function () { $('genres').hidden = !$('genres').hidden; updateGenreToggle(); };
   // prices are read once; without them the page shows no money at all
@@ -570,6 +577,13 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     if (window.history.state?.fromCatalog) window.history.back();
     else { window.history.replaceState(null, '', window.location.pathname + window.location.search); showRoute(); }
   };
+  $('detailHome').onclick = function (ev) {
+    if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return;
+    ev.preventDefault();
+    window.history.pushState(null, '', window.location.pathname + window.location.search);
+    showRoute();
+    $('catalogTitle').focus({ preventScroll: true });
+  };
   if (window.history) window.history.scrollRestoration = 'manual';
   window.addEventListener?.('popstate', function () { if (catalogReady) showRoute(); });
 
@@ -589,7 +603,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       label(T.inList, true);
     };
     renderDetailView({
-      body: $('detailBody'), title: f, data: data, text: T, element: el, fa: fa,
+      body: $('detailBody'), title: f, data: data, text: T, element: el, formatNumber: formatNumber,
       poster: function (film) { return poster(film, 'detail-poster', false); }, link: recommendation,
       controls: function (seasons) { return seasonEditor(f, seasons, label, add); },
       retry: retry ? function () { renderTitle(f); } : null,
@@ -618,7 +632,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     var dialog = $('seasonPicker'), body = $('seasonPickerBody'), whole = $('pickWholeSeries');
     var apply = $('applySeasonPicker'), status = $('seasonPickerSelection');
     var request = ++seasonPickerRequest;
-    $('seasonPickerName').textContent = f.t || f.f;
+    $('seasonPickerName').textContent = latinDigits(f.t || f.f);
     $('seasonPickerScroll').scrollTop = 0;
     whole.hidden = true;
     whole.setAttribute('aria-pressed', 'false');
@@ -647,16 +661,16 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
         var parts = [];
         if (include && !selection) parts.push(T.wholeSeries);
         if (selection) {
-          selection.seasons.forEach(function (n) { parts.push(T.seasonN + ' ' + fa(n) + ' کامل'); });
+          selection.seasons.forEach(function (n) { parts.push(T.seasonN + ' ' + formatNumber(n) + ' کامل'); });
           Object.entries(selection.episodes).forEach(function ([n, episodes]) {
-            parts.push(fa(episodes.length) + ' ' + T.epWord + ' از ' + T.seasonN + ' ' + fa(n));
+            parts.push(formatNumber(episodes.length) + ' ' + T.epWord + ' از ' + T.seasonN + ' ' + formatNumber(n));
           });
         }
         if (parts.length > 3) {
           var count = Object.values(selection.episodes).reduce(function (total, episodes) { return total + episodes.length; }, 0);
           parts = [
-            selection.seasons.length ? fa(selection.seasons.length) + ' فصل کامل' : '',
-            count ? fa(count) + ' قسمت' : '',
+            selection.seasons.length ? formatNumber(selection.seasons.length) + ' فصل کامل' : '',
+            count ? formatNumber(count) + ' قسمت' : '',
           ].filter(Boolean);
         }
         var text = parts.join(' · ') || T.emptySeasonPick;
@@ -694,14 +708,14 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       var description = [];
       var choices = s.choiceEpisodes ?? s.episodes;
       if (commit) {
-        if (choices?.length) description.push(fa(choices.length) + ' ' + T.epWord);
+        if (choices?.length) description.push(formatNumber(choices.length) + ' ' + T.epWord);
       } else {
-        if (s.episodes) description.push(fa(s.episodes.length) + ' ' + T.availableEpisodes);
-        else if (s.knownEpisodes) description.push(fa(s.knownEpisodes) + ' ' + T.knownEpisodes);
-        if (s.average != null) description.push('★ ' + fa(s.average) + ' ' + T.average + ' · ' + fa(s.ratedEpisodes) + ' ' + T.ratingsCount);
+        if (s.episodes) description.push(formatNumber(s.episodes.length) + ' ' + T.availableEpisodes);
+        else if (s.knownEpisodes) description.push(formatNumber(s.knownEpisodes) + ' ' + T.knownEpisodes);
+        if (s.average != null) description.push('★ ' + formatNumber(s.average) + ' ' + T.average + ' · ' + formatNumber(s.ratedEpisodes) + ' ' + T.ratingsCount);
       }
       var summary = el('summary', {}, [
-        el('span', { class: 'season-name' }, [T.seasonN + ' ' + fa(s.season)]),
+        el('span', { class: 'season-name' }, [T.seasonN + ' ' + formatNumber(s.season)]),
         description.length ? el('span', { class: 'season-info' }, [description.join(' · ')]) : '',
         commit ? el('span', { class: 'picker-episode-toggle' }, [T.episodeDisclosure]) : '',
       ]);
@@ -709,13 +723,13 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       var times = commit ? [] : Object.entries(s.runtimeByEpisode);
       var checkbox;
       if (s.selectable) {
-        var whole = el('input', { type: 'checkbox', 'aria-label': T.wholeSeason + ' · ' + T.seasonN + ' ' + fa(s.season) });
+        var whole = el('input', { type: 'checkbox', 'aria-label': T.wholeSeason + ' · ' + T.seasonN + ' ' + formatNumber(s.season) });
         whole.checked = current ? current.seasons.includes(s.season) : !commit || !!chosen[f.k];
         var errorId = (commit ? 'picker' : 'details') + '-episode-error-' + s.season;
         var eps = choices?.length ? el('input', { type: 'text', inputmode: 'text', 'aria-label': T.episodesHint, 'aria-describedby': errorId, placeholder: T.episodesHint, dir: 'auto' }) : null;
         var errorText = el('p', { id: errorId, class: 'episode-error', 'aria-live': 'polite', hidden: '' });
         var row = { season: s.season, whole: whole, eps: eps, available: choices, panel: panel, summary: summary, errorText: errorText, rejected: false };
-        if (eps) eps.value = (current?.episodes[s.season] || []).map(fa).join(' ');
+        if (eps) eps.value = (current?.episodes[s.season] || []).map(formatNumber).join(' ');
         rows.push(row);
         whole.onchange = function () {
           if (whole.checked && eps) { eps.value = ''; row.rejected = false; }
@@ -726,7 +740,8 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
           eps.oninput = function () {
             var clean = eps.value.replace(/[^0-9۰-۹٠-٩،,\\s–-]/g, '');
             row.rejected = clean !== eps.value;
-            if (row.rejected) eps.value = clean;
+            var display = latinDigits(clean);
+            if (eps.value !== display) eps.value = display;
             if (eps.value.trim() || row.rejected) whole.checked = false;
             dirty = true;
             update();
@@ -738,13 +753,13 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
       if (times.length) {
         panel.append(el('details', { class: 'episode-times' }, [
           el('summary', {}, [T.episodeTimes]),
-          ...times.map(function (pair) { return el('p', {}, [T.epWord + ' ' + fa(pair[0]) + ' · ' + pair[1].replace(/^(\\d+) min$/, function (_, n) { return fa(n) + ' دقیقه'; })]); }),
+          ...times.map(function (pair) { return el('p', {}, [T.epWord + ' ' + formatNumber(pair[0]) + ' · ' + pair[1].replace(/^(\\d+) min$/, function (_, n) { return formatNumber(n) + ' دقیقه'; })]); }),
         ]));
       }
       if (checkbox) block.append(el('div', { class: 'season season-selectable' }, [checkbox, panel]));
       else if (times.length) block.append(panel);
       else block.append(el('div', { class: 'season' }, [
-        el('span', { class: 'season-name' }, [T.seasonN + ' ' + fa(s.season)]),
+        el('span', { class: 'season-name' }, [T.seasonN + ' ' + formatNumber(s.season)]),
         description.length ? el('span', { class: 'season-info' }, [description.join(' · ')]) : '',
       ]));
     });
@@ -856,15 +871,15 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     var c = totals();
     var lines = [];
     if (hasPrice()) {
-      if (c.movies) lines.push(fa(c.movies) + ' ' + T.movie + ' × ' + money(P.movie) + ' = ' + money(c.movies * P.movie));
-      if (c.seasons) lines.push(fa(c.seasons) + ' ' + T.seasonN + ' ' + T.series + ' × ' + money(P.season) + ' = ' + money(c.seasons * P.season));
-      if (c.episodes) lines.push(fa(c.episodes) + ' ' + T.epWord + ' × ' + money(P.episode) + ' = ' + money(c.episodes * P.episode));
+      if (c.movies) lines.push(formatNumber(c.movies) + ' ' + T.movie + ' × ' + money(P.movie) + ' = ' + money(c.movies * P.movie));
+      if (c.seasons) lines.push(formatNumber(c.seasons) + ' ' + T.seasonN + ' ' + T.series + ' × ' + money(P.season) + ' = ' + money(c.seasons * P.season));
+      if (c.episodes) lines.push(formatNumber(c.episodes) + ' ' + T.epWord + ' × ' + money(P.episode) + ' = ' + money(c.episodes * P.episode));
       lines.push(T.total + ': ' + money(priceOfCounts(c)));
     }
     $('sum').replaceChildren.apply($('sum'), lines.map(function (l, i) { return el(i === lines.length - 1 ? 'b' : 'span', {}, [l]); }));
   }
   function showReference() {
-    $('msg').textContent = wishId ? T.receipt + ' ' + fa(wishId) : '';
+    $('msg').textContent = wishId ? T.receipt + ' ' + formatNumber(wishId) : '';
     $('msg').className = 'msg';
   }
   $('form').addEventListener('input', function () { syncSend(); showReference(); });
