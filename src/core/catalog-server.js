@@ -11,7 +11,7 @@ const clean = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, m
  * The phone catalog: a small read-only web server for the shop's local network. Customers browse the film list on their
  * phone and send back the list they want. No file path, drive or folder name ever leaves it; sent lists only reach `submit`.
  */
-function createCatalogServer({ films, posterFile, known, submit, ask, info = () => ({ prices: {}, shop: '' }), seasons = () => null, font = () => null, viaTunnel = () => false, clock = Date.now }) {
+function createCatalogServer({ films, posterFile, known, submit, unchangedReceipt = () => null, ask, info = () => ({ prices: {}, shop: '' }), seasons = () => null, detail = () => null, font = () => null, viaTunnel = () => false, clock = Date.now }) {
   let server = null;
   const sent = new Map(); // address -> times of its recent lists
 
@@ -70,17 +70,30 @@ function createCatalogServer({ films, posterFile, known, submit, ask, info = () 
       let b;
       try { b = JSON.parse(text); } catch { json(res, 400, { ok: false, error: 'bad_json' }); return; }
       const name = clean(b?.name, 80);
+      const editKey = b?.editKey;
       const keys = Array.isArray(b?.keys) ? b.keys.filter((k) => typeof k === 'string') : [];
-      if (!name || !keys.length || keys.length > MAX_ITEMS) { json(res, 400, { ok: false, error: 'bad_list' }); return; }
+      const clear = editKey !== undefined && Array.isArray(b?.keys) && b.keys.length === 0;
+      if (!name || (!keys.length && !clear) || keys.length > MAX_ITEMS
+        || (editKey !== undefined && (typeof editKey !== 'string' || !/^[a-f0-9]{64}$/.test(editKey)))) {
+        json(res, 400, { ok: false, error: 'bad_list' }); return;
+      }
       const picks = b.picks && typeof b.picks === 'object' ? b.picks : {};
-      const items = await Promise.all([...new Set(keys)].map((k) => known(k)).filter(Boolean).map(async (e) => {
-        const sel = (await seasons(e.key))?.length ? cleanSel(picks[e.key]) : null; // a choice only makes sense for a film that has seasons
-        return { key: e.key, title: e.title, year: e.year ?? null, ...(sel ? { sel } : {}) };
+      const choices = await Promise.all([...new Set(keys)].filter((k) => known(k)).map(async (key) => {
+        const sel = picks[key] && (await seasons(key))?.length ? cleanSel(picks[key]) : null;
+        return { key, sel };
       }));
-      if (!items.length) { json(res, 400, { ok: false, error: 'bad_list' }); return; }
+      const items = choices.flatMap(({ key, sel }) => {
+        const e = known(key);
+        return e ? [{ key: e.key, title: e.title, year: e.year ?? null, ...(sel ? { sel } : {}) }] : [];
+      });
+      if (!items.length && !clear) { json(res, 400, { ok: false, error: 'bad_list' }); return; }
+      const wish = { name, phone: clean(b.phone, 30), note: clean(b.note, 200), items, editKey };
+      const receipt = unchangedReceipt(wish);
+      if (receipt) { json(res, 200, { ok: true, id: receipt }); return; }
       if (limited(addressOf(req), 'wish')) { json(res, 429, { ok: false, error: 'slow_down' }); return; }
-      const id = submit({ name, phone: clean(b.phone, 30), note: clean(b.note, 200), items });
-      if (!id) json(res, 503, { ok: false, error: 'full' });
+      const id = submit(wish);
+      if (id === null) json(res, 400, { ok: false, error: 'bad_list' });
+      else if (!id) json(res, 503, { ok: false, error: 'full' });
       else json(res, 200, { ok: true, id });
     });
   }
@@ -102,7 +115,7 @@ function createCatalogServer({ films, posterFile, known, submit, ask, info = () 
   function handle(req, res) {
     const url = new URL(req.url, 'http://x');
     const path = url.pathname;
-    const routes = ['/', '/api/films', '/api/info', '/api/seasons', '/api/wish', '/api/ask', '/font.woff2'];
+    const routes = ['/', '/api/films', '/api/info', '/api/seasons', '/api/detail', '/api/wish', '/api/ask', '/font.woff2'];
     const poster = path.startsWith('/poster/');
     if (!routes.includes(path) && !poster) { json(res, 404, { ok: false }); return; }
     if (path === '/api/wish' || path === '/api/ask') {
@@ -118,6 +131,12 @@ function createCatalogServer({ films, posterFile, known, submit, ask, info = () 
       else { res.writeHead(200, { 'content-type': 'font/woff2', 'cache-control': 'max-age=86400' }); res.end(f); }
     } else if (path === '/api/films') json(res, 200, films(langOf(url)));
     else if (path === '/api/info') json(res, 200, info());
+    else if (path === '/api/detail') {
+      Promise.resolve().then(() => detail(url.searchParams.get('k') ?? '')).then((data) => {
+        if (!data) json(res, 404, { ok: false });
+        else json(res, 200, { ok: true, detail: data });
+      }, () => json(res, 500, { ok: false }));
+    }
     else if (path === '/api/seasons') {
       Promise.resolve(seasons(url.searchParams.get('k') ?? '')).then((list) => {
         if (!list) json(res, 404, { ok: false });
@@ -129,7 +148,7 @@ function createCatalogServer({ films, posterFile, known, submit, ask, info = () 
       try { key = decodeURIComponent(path.slice('/poster/'.length)); } catch { /* bad escape */ }
       const img = posterFile(key);
       if (!img) json(res, 404, { ok: false });
-      else { res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'max-age=3600' }); res.end(img); }
+      else reply(res, 200, 'image/jpeg', img);
     }
   }
 

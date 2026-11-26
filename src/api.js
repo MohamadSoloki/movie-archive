@@ -17,6 +17,7 @@ const { forgetSeasons, getCache, putCache, cached } = require('./core/cache.js')
 const { createSearch } = require('./core/search.js');
 const { lightOf, badgesOf } = require('./core/library.js');
 const { createCatalogServer } = require('./core/catalog-server.js');
+const { catalogDetail } = require('./core/catalog-details.js');
 const { createTunnel } = require('./core/tunnel.js');
 const tags = require('./core/tags.js');
 const transfer = require('./core/transfer.js');
@@ -32,7 +33,7 @@ const { singleDrive, catalogByGenre, duplicates } = require('./core/reports.js')
 const { exportData, importData } = require('./core/backup.js');
 const orders = require('./core/orders.js');
 const { normalizeFa } = require('./core/persian.js');
-const { diffWish } = require('./core/lists.js');
+const { diffWish, saveWish, unchangedReceipt } = require('./core/lists.js');
 const { episodesIn, episodeFilter } = require('./core/seasons.js');
 const { ProviderError } = require('./core/errors.js');
 // the first private-network address of this computer: what a phone on the same Wi-Fi can reach
@@ -488,18 +489,21 @@ function createApi({
   const manyTags = (keys, text, apply) => (keys.length ? changeTags(keys, text, apply) : { ok: false, error: 'nothing' });
 
   // the seasons of an entry that the archive holds, with the episode numbers read from file names (null: only the whole season can be chosen)
-  async function seasonsOf(key) {
+  async function seasonsOf(key, includeBytes = true) {
     const e = search.find(key);
     if (!e || e.kind === 'collection') return { ok: false, error: 'unknown' };
-    const rootOf = new Map((await getDrives()).map((d) => [d.serial, d.root]));
+    const rootOf = new Map((await getDrives()).filter((d) => d.online).map((d) => [d.serial, d.root]));
     const seasons = new Map();
     for (const l of e.locations) {
       if (l.season == null || l.missing) continue;
       const n = Number(l.season);
       const src = rootOf.has(l.driveSerial) ? path.join(rootOf.get(l.driveSerial), l.relPath) : null;
       const have = seasons.get(n);
-      if (have?.episodes && have.bytes !== null) continue; // one readable copy of the season is enough
-      seasons.set(n, { season: n, episodes: src ? episodesIn(src) : null, bytes: src && fs.existsSync(src) ? transfer.treeSize(src) : null });
+      if (have?.episodes && (!includeBytes || have.bytes !== null)) continue; // one readable copy of the season is enough
+      if (!src && have) continue; // keep a connected copy ahead of an offline one
+      const row = { season: n, episodes: src ? episodesIn(src) : null };
+      if (includeBytes) row.bytes = src && fs.existsSync(src) ? transfer.treeSize(src) : null;
+      seasons.set(n, row);
     }
     return { ok: true, seasons: [...seasons.values()].sort((a, b) => a.season - b.season) };
   }
@@ -561,10 +565,16 @@ function createApi({
   });
 
   // ---- phone catalog: a read-only page on the shop network, customers send back the films they want ----
+  const isPublicTitle = (entry) => entry?.attention === 'ok' && entry.kind !== 'collection';
+  const publicTitles = () => search.query({}).entries.filter(isPublicTitle);
+  const findPublicTitle = (key) => {
+    const entry = search.find(key);
+    return isPublicTitle(entry) ? entry : null;
+  };
   const catalogServer = createCatalogServer({
     viaTunnel: () => tunnel.status().state === 'on',
     films: (lang) => {
-      const list = search.query({}).entries.filter((e) => e.kind !== 'collection');
+      const list = publicTitles();
       const rel = relatedMap(list);
       return list.map((e) => {
         const row = catalogRow(e, lang);
@@ -573,24 +583,31 @@ function createApi({
       });
     },
     posterFile: (k) => {
-      const f = search.find(k)?.posterFile;
+      const f = findPublicTitle(k)?.posterFile;
       if (!f) return null;
       try { return fs.readFileSync(path.join(postersDir, path.basename(f))); } catch { return null; }
     },
     font: () => { try { return fs.readFileSync(path.join(__dirname, 'renderer', 'fonts', 'Vazirmatn-Variable.woff2')); } catch { return null; } },
-    known: (k) => { const e = search.find(k); return e && e.kind !== 'collection' ? { key: e.key, title: e.title, year: e.year } : null; },
-    // 0 when the inbox is full, so a prank cannot fill the database
-    submit: (w) => {
-      if (db.prepare('SELECT COUNT(*) c FROM wishes').get().c >= WISH_LIMIT) return 0;
-      return Number(db.prepare('INSERT INTO wishes(name, phone, note, created, items) VALUES(?,?,?,?,?)')
-        .run(w.name, w.phone || null, w.note || null, now(), JSON.stringify(w.items)).lastInsertRowid);
+    detail: async (k) => {
+      const entry = findPublicTitle(k);
+      if (!entry) return null;
+      const archive = entry.locations.some((l) => l.season != null && !l.missing) ? (await seasonsOf(k, false)).seasons : [];
+      const current = findPublicTitle(k);
+      return current ? catalogDetail(db, current, archive, publicTitles()) : null;
     },
+    known: (k) => { const e = findPublicTitle(k); return e ? { key: e.key, title: e.title, year: e.year } : null; },
+    submit: (w) => saveWish(db, w, now(), WISH_LIMIT),
+    unchangedReceipt: (w) => unchangedReceipt(db, w),
     info: () => ({ prices: { movie: getSetting(db, 'priceMovie'), season: getSetting(db, 'priceSeason'), episode: getSetting(db, 'priceEpisode') }, shop: getSetting(db, 'shopName') }),
     // only a film that has season folders answers; the page then offers the seasons and episodes to pick from
-    seasons: async (k) => { const r = await seasonsOf(k); return r.ok && r.seasons.length ? r.seasons : null; },
+    seasons: async (k) => {
+      if (!findPublicTitle(k)) return null;
+      const r = await seasonsOf(k, false);
+      return r.ok && r.seasons.length && findPublicTitle(k) ? r.seasons : null;
+    },
     // a film that is already in the archive is not demand: only a missing one is counted in the request list
     ask: (name, who) => {
-      const found = inArchiveNamed(name);
+      const found = inArchiveNamed(name, publicTitles());
       if (found.length) return { ok: true, inArchive: found.map((f) => f.title) };
       return orders.addRequest(db, name, now(), who) ? { ok: true, inArchive: [] } : { ok: false };
     },
@@ -600,10 +617,10 @@ function createApi({
   let catalogPortNow = 0;
 
   // already here: the same name as a title or other name, or inside a folder name
-  function inArchiveNamed(name) {
+  function inArchiveNamed(name, entries = search.query({}).entries) {
     const key = orders.nameKey(name);
-    return search.query({}).entries.filter((e) => e.kind !== 'collection' && [e.title, ...e.aliases].some((n) => orders.nameKey(n) === key)
-      || (key.length >= 4 && e.locations.some((l) => orders.nameKey(l.folderName).includes(key)))).map((e) => ({ key: e.key, title: e.title }));
+    return entries.filter((e) => e.kind !== 'collection' && ([e.title, ...e.aliases].some((n) => orders.nameKey(n) === key)
+      || (key.length >= 4 && e.locations.some((l) => orders.nameKey(l.folderName).includes(key))))).map((e) => ({ key: e.key, title: e.title }));
   }
 
   // the internet part of the catalog info: the tunnel's state and, when it is on, its address with a QR
@@ -1327,8 +1344,8 @@ function createApi({
       return catalogInfo();
     },
     async getWishes() {
-      return db.prepare('SELECT * FROM wishes ORDER BY created DESC, id DESC').all()
-        .map((w) => ({ id: w.id, name: w.name, phone: w.phone, note: w.note, created: w.created, items: JSON.parse(w.items) }));
+      return db.prepare('SELECT id, name, phone, note, created, updated, items FROM wishes ORDER BY COALESCE(updated, created) DESC, id DESC').all()
+        .map((w) => ({ ...w, items: JSON.parse(w.items) }));
     },
     async removeWish(id) {
       db.prepare('DELETE FROM wishes WHERE id = ?').run(id);

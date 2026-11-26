@@ -68,6 +68,19 @@ test('a folder without a season fetches every season', async () => {
   assert.deepEqual(calls.season, [1, 2, 3]);
 });
 
+test('existing OMDb episodes learn their runtimes once without replacing stored plots', async () => {
+  const db = openDb();
+  const { d, calls } = fakes();
+  const t = upsertTitle(db, SERIES, null);
+  addLoc(db, t, '01');
+  db.prepare("INSERT INTO episodes(title_id, season, number, ext_id, plot) VALUES (?, 1, 1, 'tt11', 'saved plot')").run(t);
+  d.omdb.byId = async (id) => { calls.byId.push(id); return { plot: 'changed plot', runtime: '42 min' }; };
+  await runEpisodes(db, d);
+  await runEpisodes(db, d);
+  const row = db.prepare('SELECT plot, runtime FROM episodes WHERE title_id = ?').get(t);
+  assert.deepEqual([row.plot, row.runtime, calls.byId], ['saved plot', '42 min', ['tt11']]);
+});
+
 test('quota stops the run; the next run asks only for plots still missing, no season lists', async () => {
   const db = openDb(); const { d, calls } = fakes();
   const t = upsertTitle(db, SERIES, null);

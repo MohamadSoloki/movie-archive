@@ -1862,24 +1862,28 @@
       h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: () => { $('print-area').replaceChildren(sheet()); window.print(); } }, t('cat_print'))),
       ...groups.map((g) => h('section', {}, h('h3', {}, `${g.genre ? genreName(g.genre) : t('cat_other')} (${g.items.length})`))));
   };
-  // a list that arrives while the app is open: a number on the reports button and one line in the status bar
+  // a new or edited list: a number on the reports button and one line in the status bar
   let seenWishes = null;
+  let toldWishes = new Map();
+  const wishVersion = (w) => w.updated ?? w.created;
+  const wishVersions = (rows) => new Map(rows.map((w) => [w.id, wishVersion(w)]));
   function paintWishBadge(n) {
     $('rep-badge').hidden = !n;
     $('rep-badge').textContent = String(n);
   }
   async function pollWishes() {
     const rows = await api.getWishes();
-    const top = rows.reduce((m, w) => Math.max(m, w.id), 0);
-    if (seenWishes === null) { seenWishes = top; return; }
-    const fresh = rows.filter((w) => w.id > seenWishes);
+    if (seenWishes === null) { seenWishes = wishVersions(rows); return; }
+    const fresh = rows.filter((w) => seenWishes.get(w.id) !== wishVersion(w));
     paintWishBadge(fresh.length);
-    if (fresh.length && top > (pollWishes.told ?? 0)) {
-      pollWishes.told = top;
-      // a customer who already has a list is told apart: the new selection is a change of that list
-      const mine = await listOfCustomer(fresh[0].name);
+    const latest = fresh.find((w) => toldWishes.get(w.id) !== wishVersion(w));
+    toldWishes = wishVersions(fresh);
+    if (latest) {
+      const mine = await listOfCustomer(latest.name);
       if (mine) { mine.changed = mine.id !== state.listId; renderListSelect(); }
-      setStatus(t(mine ? 'wish_changed' : 'wish_new', { name: fresh[0].name, n: fresh.length, list: mine?.name }));
+      const message = mine ? 'wish_changed' : (latest.updated != null ? 'wish_edited_inbox' : 'wish_new');
+      setStatus(t(message, { name: latest.name, n: fresh.length, list: mine?.name }));
+      if ($('rep-dlg').open && repTab === 'wishes') await renderReports();
     }
   }
 
@@ -1896,6 +1900,7 @@
     const wanted = w.items.map((i) => i.key);
     const titleOf = new Map(w.items.map((i) => [i.key, i.title]));
     let l = await listOfCustomer(w.name);
+    if (!l && !wanted.length) { setStatus(t('wish_cleared')); return; }
     if (!l) { l = makeList(w.name); l.customer = w.name; }
     const known = await Promise.all(wanted.map(async (k) => [k, !!(await api.getEntry(k))]));
     const here = new Set(known.filter(([, ok]) => ok).map(([k]) => k));
@@ -1928,16 +1933,21 @@
       const rows = await api.getWishes();
       // a film this customer already got (by name) is marked, the same warning the copy dialog gives
       for (const w of rows) w.delivered = await api.getDelivered({ customer: w.name, keys: w.items.map((i) => i.key) });
-      seenWishes = rows.reduce((m, w) => Math.max(m, w.id), seenWishes);
+      seenWishes = wishVersions(rows);
+      toldWishes.clear();
       paintWishBadge(0);
       list.replaceChildren(...(rows.length ? rows.map((w) => h('li', { class: 'order' },
-        h('div', { class: 'order-head' }, h('strong', { dir: 'auto' }, `#${w.id} ${w.name}`), h('span', { class: 'help' }, dateOf(w.created, true))),
+        h('div', { class: 'order-head' }, h('strong', { dir: 'auto' }, `#${w.id} ${w.name}`),
+          h('span', { class: 'help' }, w.updated == null ? dateOf(w.created, true) : t('wish_edited_time', { time: dateOf(w.updated, true) }))),
         h('p', { class: 'help', dir: 'auto' }, [w.phone, w.note].filter(Boolean).join(' · ')),
-        h('ul', { class: 'plain' }, w.items.map((i) => h('li', { dir: 'auto' }, i.year ? `${i.title} (${i.year})` : i.title,
-          w.delivered[i.key] ? h('span', { class: 'help' }, ` · ${t('wish_had', { date: dateOf(w.delivered[i.key].created) })}`) : null))),
+        w.items.length ? h('ul', { class: 'plain' }, w.items.map((i) => h('li', { dir: 'auto' }, i.year ? `${i.title} (${i.year})` : i.title,
+          w.delivered[i.key] ? h('span', { class: 'help' }, ` · ${t('wish_had', { date: dateOf(w.delivered[i.key].created) })}`) : null)))
+          : h('p', { class: 'help' }, t('wish_cleared')),
         h('div', { class: 'row' },
           h('button', { type: 'button', class: 'btn primary', onclick: async () => {
-            await applyWish(w);
+            const latest = (await api.getWishes()).find((row) => row.id === w.id && row.created === w.created);
+            if (latest) await applyWish(latest);
+            if (!latest || wishVersion(latest) !== wishVersion(w)) await paint();
           } }, t('wish_add')),
           h('button', { type: 'button', class: 'btn', onclick: async () => { await api.removeWish(w.id); paint(); } }, t('wish_delete')))))
         : [h('li', { class: 'help' }, t('wish_empty'))]));

@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS locations(
   UNIQUE(drive_serial, rel_path));
 CREATE TABLE IF NOT EXISTS episodes(
   title_id INTEGER NOT NULL, season INTEGER NOT NULL, number INTEGER NOT NULL, ext_id TEXT, name TEXT,
-  released TEXT, rating TEXT, plot TEXT, PRIMARY KEY(title_id, season, number));
+  released TEXT, rating TEXT, plot TEXT, runtime TEXT, PRIMARY KEY(title_id, season, number));
 CREATE TABLE IF NOT EXISTS translations(hash TEXT PRIMARY KEY, text TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 -- tags the owner adds by hand; they belong to the folder, so they survive a rescan and an online fix
@@ -107,6 +107,13 @@ function openDb(file = ':memory:') {
   if (!db.prepare('PRAGMA table_info(roots)').all().some((c) => c.name === 'single')) {
     db.exec('ALTER TABLE roots ADD COLUMN single INTEGER NOT NULL DEFAULT 0');
   }
+  const wishColumns = db.prepare('PRAGMA table_info(wishes)').all().map((c) => c.name);
+  if (!db.prepare('PRAGMA table_info(episodes)').all().some((c) => c.name === 'runtime')) {
+    db.exec('ALTER TABLE episodes ADD COLUMN runtime TEXT');
+  }
+  if (!wishColumns.includes('edit_key_hash')) db.exec('ALTER TABLE wishes ADD COLUMN edit_key_hash TEXT');
+  if (!wishColumns.includes('updated')) db.exec('ALTER TABLE wishes ADD COLUMN updated INTEGER');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS wishes_edit_key ON wishes(edit_key_hash)');
   for (const [name, type] of TITLE_COLUMNS) {
     if (!have.includes(name)) db.exec(`ALTER TABLE titles ADD COLUMN ${name} ${type}`);
   }

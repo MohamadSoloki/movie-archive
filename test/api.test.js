@@ -1164,8 +1164,17 @@ test('estimateSize gives the size and price of a list before any destination is 
   assert.equal(await api.getFreeSpace(path.join(dest, 'nope')), null);
 });
 
+async function verifiedCatalogFilms(options) {
+  const ctx = await withFilms(options);
+  await ctx.api.setSettings({ omdbKey: 'K' });
+  await ctx.api.startQueue(() => {});
+  const entries = (await ctx.api.getEntries()).entries;
+  for (const entry of entries) await ctx.api.confirmGuess(entry.key);
+  return { ...ctx, keys: entries.map((entry) => entry.key) };
+}
+
 test('phone catalog: off by default, serves films without paths, takes customer lists, stops again', async () => {
-  const { api } = await withFilms({ qr: async (text) => `qr:${text}`, lanAddress: () => '192.168.1.20' });
+  const { api } = await verifiedCatalogFilms({ qr: async (text) => `qr:${text}`, lanAddress: () => '192.168.1.20' });
   await api.setSettings({ catalogPort: 0 });
   assert.deepEqual(await api.getCatalogInfo(), { running: false });
   const r = await api.startCatalog();
@@ -1209,8 +1218,116 @@ test('phone catalog: a film of a series lists the keys of its related films (rl)
   } finally { await api.stopCatalog(); }
 });
 
+test('phone catalog: repeat sends replace one incoming list and keep its public reference', async () => {
+  const { api, keys } = await verifiedCatalogFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  await api.setSettings({ catalogPort: 0 });
+  const started = await api.startCatalog();
+  const url = `http://127.0.0.1:${new URL(started.url).port}/api/wish`;
+  const editKey = 'af'.repeat(32);
+  const send = async (keys) => {
+    const r = await fetch(url, { method: 'POST', body: JSON.stringify({ name: 'Ali', keys, editKey }) });
+    assert.equal(r.status, 200);
+    return r.json();
+  };
+  try {
+    const [first, retry] = await Promise.all([send([keys[0]]), send([keys[0]])]);
+    assert.deepEqual(retry, first);
+    for (let i = 0; i < 7; i++) assert.deepEqual(await send([keys[0]]), first);
+    assert.equal((await api.getWishes())[0].updated, null);
+    assert.deepEqual(await send([keys[1]]), first);
+    const [wish, ...others] = await api.getWishes();
+    assert.equal(others.length, 0);
+    assert.equal(wish.id, first.id);
+    assert.ok(wish.updated > wish.created);
+    assert.equal(wish.items[0].key, keys[1]);
+    assert.equal(wish.items.length, 1);
+    assert.ok(!Object.keys(wish).some((key) => /hash|editKey/.test(key)));
+    assert.deepEqual(await send([]), first);
+    assert.deepEqual((await api.getWishes())[0].items, []);
+    assert.deepEqual(await send(keys), first);
+    const changed = (await api.getWishes())[0].updated;
+    assert.deepEqual(await send([...keys].reverse()), first);
+    assert.equal((await api.getWishes())[0].updated, changed);
+    assert.deepEqual(await send([keys[0]]), first);
+    assert.deepEqual(await send([keys[0]]), first); // still returns the receipt at the quota
+    const blocked = await fetch(url, { method: 'POST', body: JSON.stringify({ name: 'Ali', keys: [], editKey }) });
+    assert.equal(blocked.status, 429);
+  } finally { await api.stopCatalog(); }
+});
+
+test('phone catalog details show public metadata and season summaries only for archive titles', async () => {
+  const { api, db, key } = await withShow({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  await api.confirmGuess(key);
+  const titleId = Number(key.split(':')[1]);
+  db.prepare('UPDATE titles SET plot = ?, actors = ?, awards = ?, runtime = ?, total_seasons = ? WHERE id = ?')
+    .run('داستان سریال', 'First Actor, Second Actor', 'Won 1 Emmy. 2 nominations total', '45 min', 4, titleId);
+  db.prepare('DELETE FROM episodes WHERE title_id = ?').run(titleId);
+  const insert = db.prepare('INSERT INTO episodes (title_id, season, number, rating) VALUES (?, ?, ?, ?)');
+  for (const [season, number, rating] of [[1, 1, '8.5'], [1, 2, '9.5'], [1, 3, 'N/A'], [2, 1, null]]) {
+    insert.run(titleId, season, number, rating);
+  }
+  db.prepare('UPDATE episodes SET runtime = ? WHERE title_id = ? AND season = 1 AND number = 2').run('41 min', titleId);
+  await api.setSettings({ catalogPort: 0 });
+  const started = await api.startCatalog();
+  const base = `http://127.0.0.1:${new URL(started.url).port}`;
+  const detailUrl = `${base}/api/detail?k=${encodeURIComponent(key)}`;
+  try {
+    const response = await fetch(detailUrl);
+    assert.equal(response.status, 200);
+    const { detail } = await response.json();
+    assert.equal(detail.plot, 'داستان سریال');
+    assert.equal(detail.actors, 'First Actor, Second Actor');
+    assert.equal(detail.awards, 'Won 1 Emmy. 2 nominations total');
+    assert.equal(detail.runtime, '45 min');
+    assert.equal(detail.totalSeasons, 4);
+    assert.equal(detail.availableEpisodes, 7);
+    assert.deepEqual(detail.seasons.map(({ season, average, episodes }) => [season, average, episodes]), [
+      [1, 9, [1, 2]], [2, null, [1, 2, 3, 4]], [3, null, [1]],
+    ]);
+    assert.deepEqual(detail.seasons[0].runtimeByEpisode, { 2: '41 min' });
+    assert.doesNotMatch(JSON.stringify(detail), /relPath|driveSerial|locations|bytes|omdbKey/);
+    db.prepare('UPDATE titles SET awards = ? WHERE id = ?').run('2 nominations', titleId);
+    await api.scan();
+    assert.equal((await (await fetch(detailUrl)).json()).detail.awards, '2 nominations');
+    assert.equal((await fetch(`${base}/api/detail?k=missing`)).status, 404);
+    const [card] = await (await fetch(`${base}/api/films`)).json();
+    assert.equal(card.plot, undefined);
+  } finally { await api.stopCatalog(); }
+});
+
+test('phone catalog hides guessed and unresolved titles until the operator confirms them', async () => {
+  const { api, db, media, userData, key } = await withShow({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  db.exec("UPDATE locations SET guessed = 1; UPDATE titles SET poster_file = 'preview.jpg'");
+  fs.mkdirSync(path.join(userData, 'posters'), { recursive: true });
+  fs.writeFileSync(path.join(userData, 'posters', 'preview.jpg'), 'poster');
+  fs.mkdirSync(path.join(media, 'Series', 'Pending title'));
+  fs.writeFileSync(path.join(media, 'Series', 'Pending title', 'video.mkv'), 'x');
+  await api.scan();
+  const guessed = (await api.getEntries()).entries.find((item) => item.key === key);
+  assert.equal(guessed.attention, 'guess');
+  await api.setSettings({ catalogPort: 0 });
+  const started = await api.startCatalog();
+  const base = `http://127.0.0.1:${new URL(started.url).port}`;
+  const id = encodeURIComponent(key);
+  const post = (route, body) => fetch(base + route, { method: 'POST', body: JSON.stringify(body) });
+  try {
+    assert.deepEqual(await (await fetch(base + '/api/films')).json(), []);
+    for (const route of ['/api/detail?k=', '/api/seasons?k=', '/poster/']) {
+      assert.equal((await fetch(base + route + id)).status, 404);
+    }
+    assert.equal((await post('/api/wish', { name: 'Ali', keys: [key] })).status, 400);
+    assert.deepEqual(await (await post('/api/ask', { name: guessed.title })).json(), { ok: true, inArchive: [] });
+    assert.ok((await api.confirmGuess(key)).ok);
+    assert.deepEqual((await (await fetch(base + '/api/films')).json()).map((item) => item.k), [key]);
+    for (const route of ['/api/detail?k=', '/api/seasons?k=', '/poster/']) {
+      assert.equal((await fetch(base + route + id)).status, 200);
+    }
+  } finally { await api.stopCatalog(); }
+});
+
 test('phone catalog: prices, the seasons of a series and a list that names seasons and episodes', async () => {
   const { api, key } = await withShow({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  await api.confirmGuess(key);
   await api.setSettings({ catalogPort: 0, priceMovie: 5000, priceSeason: 20000, priceEpisode: 2000, shopName: 'Net' });
   const r = await api.startCatalog();
   try {
@@ -1222,6 +1339,38 @@ test('phone catalog: prices, the seasons of a series and a list that names seaso
     assert.equal(sent.status, 200);
     const [w] = await api.getWishes();
     assert.deepEqual(w.items[0].sel, { seasons: [1], episodes: { 2: [3, 4] } });
+  } finally { await api.stopCatalog(); }
+});
+
+test('catalog customers can order episodes from saved metadata with an offline drive', async () => {
+  const { api, db, key, state } = await withShow({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  const titleId = Number(key.split(':')[1]);
+  const insert = db.prepare('INSERT OR IGNORE INTO episodes (title_id, season, number) VALUES (?, 1, ?)');
+  for (let n = 1; n <= 8; n++) insert.run(titleId, n);
+  await api.confirmGuess(key);
+  await api.setSettings({ catalogPort: 0 });
+  const started = await api.startCatalog();
+  const url = `http://127.0.0.1:${new URL(started.url).port}/api/detail?k=${encodeURIComponent(key)}`;
+  const details = async () => {
+    const response = await fetch(url);
+    assert.equal(response.status, 200);
+    return (await response.json()).detail;
+  };
+  try {
+    state.online = false;
+    const offline = await details();
+    assert.equal(offline.seasons[0].episodes, null);
+    assert.deepEqual(offline.seasons[0].choiceEpisodes, [1, 2, 3, 4, 5, 6, 7, 8]);
+    const selection = { seasons: [], episodes: { 1: [3, 8] } };
+    const order = await fetch(new URL('/api/wish', url), {
+      method: 'POST', body: JSON.stringify({ name: 'Ali', keys: [key], picks: { [key]: selection } }),
+    });
+    assert.equal(order.status, 200);
+    assert.deepEqual((await api.getWishes())[0].items[0].sel, selection);
+    state.online = true;
+    const online = await details();
+    assert.deepEqual(online.seasons.map((s) => s.episodes), [[1, 2], [1, 2, 3, 4], [1]]);
+    assert.deepEqual(online.seasons[0].choiceEpisodes, offline.seasons[0].choiceEpisodes);
   } finally { await api.stopCatalog(); }
 });
 
@@ -1297,12 +1446,16 @@ test('phone catalog starts at launch only when it was left on', async () => {
 });
 
 test('phone catalog rows: persian genres, persian name from a folder, no paths; asking for a film we have is not demand', async () => {
-  const { api, media } = await withFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
-  fs.mkdirSync(path.join(media, 'Movies', 'بتمن آغاز می‌کند 2005 دوبله فارسی'), { recursive: true });
-  fs.writeFileSync(path.join(media, 'Movies', 'بتمن آغاز می‌کند 2005 دوبله فارسی', 'a.mkv'), 'x');
+  const { api, db, media } = await withFilms({ qr: async () => 'q', lanAddress: () => '10.0.0.5' });
+  fs.mkdirSync(path.join(media, 'Movies', 'بتمن آغاز می‌کند 2022 دوبله فارسی'), { recursive: true });
+  fs.writeFileSync(path.join(media, 'Movies', 'بتمن آغاز می‌کند 2022 دوبله فارسی', 'a.mkv'), 'x');
   await api.scan();
   await api.setSettings({ omdbKey: 'K', catalogPort: 0 });
   await api.startQueue(() => {});
+  db.prepare("UPDATE locations SET status = 'matched', title_id = (SELECT id FROM titles WHERE imdb_id = ?) WHERE folder_name LIKE ?")
+    .run(OMDB_BODY.imdbID, 'بتمن آغاز%');
+  await api.scan();
+  for (const entry of (await api.getEntries()).entries) await api.confirmGuess(entry.key);
   const r = await api.startCatalog();
   try {
     const base = `http://127.0.0.1:${new URL(r.url).port}`;
