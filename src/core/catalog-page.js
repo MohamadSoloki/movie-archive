@@ -166,6 +166,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 .season-selectable { position: relative; }
 .season-selectable > .season-content > summary { padding-inline-end: 48px; }
 .season-selectable > .season-checkbox { position: absolute; inset-inline-end: .2rem; inset-block-start: 0; width: 44px; display: grid; place-items: center; cursor: pointer; }
+#detailView .season-selectable:has(> .season-content:not([open])) > .season-checkbox { inset-block-start: 50%; transform: translateY(-50%); }
 .season-selectable .season-checkbox input { margin: 0; accent-color: var(--accent); }
 .season input[aria-invalid="true"] { border: 2px solid var(--error); }
 .season input[aria-invalid="true"]:focus-visible { outline-color: var(--error); }
