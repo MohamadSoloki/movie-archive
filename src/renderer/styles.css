@@ -250,7 +250,8 @@ main { grid-column: 2; grid-row: 3; overflow-y: auto; padding: 0 1.5rem 3rem; sc
 .sub { color: var(--muted); font-size: 0.92rem; }
 .score { display: inline-flex; align-items: center; gap: 0.4rem; width: fit-content; font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .score svg { width: 1.2rem; height: 1.2rem; fill: var(--star); stroke: none; }
-.score small { font-size: 0.78rem; font-weight: 500; color: var(--muted); }
+.score .imdb-link { font-size: 0.78rem; font-weight: 500; color: var(--muted); text-underline-offset: 0.17em; }
+.score .imdb-link:hover, .score .imdb-link:focus-visible { color: var(--accent); }
 .detail-body { padding: 0.4rem 1.5rem 2.5rem; display: flex; flex-direction: column; gap: 1.5rem; }
 .detail-body h3, .sheet-body h3 { font-size: 0.88rem; font-weight: 600; color: var(--muted); margin-block-end: 0.55rem; }
 .flags { display: flex; flex-wrap: wrap; gap: 0.4rem; list-style: none; margin: 0; padding: 0; }

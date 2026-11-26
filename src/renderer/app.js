@@ -32,7 +32,6 @@
     calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     tag: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
-    link: '<path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
   };
   function icon(name) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -1299,24 +1298,35 @@
     const flags = flagsOf(e);
     const folder = e.locations.find((l) => l.online && !l.missing);
     const folderBlocked = folder ? null : t(e.locations.some((l) => !l.missing) ? 'open_offline' : 'open_missing');
+    const openImdb = (event) => {
+      event.preventDefault();
+      api.openImdb(e.titleId);
+    };
+    const imdbLink = /^tt\d{7,10}$/.test(e.imdbId || '') ? h('a', {
+      href: `https://www.imdb.com/title/${e.imdbId}/`,
+      class: 'imdb-link', 'aria-label': t('open_imdb'), title: t('open_imdb'),
+      onclick: openImdb,
+      onauxclick: (event) => { if (event.button === 1) openImdb(event); },
+    }, 'IMDb') : null;
     // dir="auto": English titles and plots from OMDb stay left-to-right inside the right-to-left Persian UI
     d.replaceChildren(
       hero(e,
         h('h2', { dir: 'auto' }, shownTitle(e)),
         h('p', { class: 'sub', dir: 'auto' }, [shownTitle(e) !== e.title ? e.title : null, e.year, e.type].filter(Boolean).join(' · ')),
-        e.rating ? h('span', { class: 'score', dir: 'ltr', title: t('rating') }, icon('star'), String(e.rating), h('small', {}, 'IMDb')) : null),
+        e.rating || imdbLink ? h('span', { class: 'score', dir: 'ltr' },
+          e.rating ? icon('star') : null,
+          e.rating ? h('span', { title: t('rating') }, String(e.rating)) : null,
+          imdbLink) : null),
       h('div', { class: 'detail-body' }, ...[
         flags.length ? h('ul', { class: 'flags' }, flags.map((f) => h('li', { class: f.cls }, f.text))) : null,
         e.attention === 'guess' ? h('button', { type: 'button', class: 'btn confirm-btn', onclick: async () => { if ((await api.confirmGuess(e.key)).ok) await refresh(true); } }, icon('check'), t('confirm_guess')) : null,
-        h('div', { class: 'hero-actions' },
-          e.imdbId ? h('button', { type: 'button', class: 'btn', onclick: () => api.openImdb(e.titleId) }, icon('link'), t('open_imdb')) : null,
-          h('div', { class: 'hero-actions' }, cartButton(e), h('button', {
-            type: 'button', class: 'btn', disabled: !folder, title: folderBlocked,
-            onclick: async () => {
-              const result = await api.openLocation(folder.id);
-              if (!result.ok) setStatus(errText(result.error));
-            },
-          }, icon('folder'), t('open_folder')))),
+        h('div', { class: 'hero-actions' }, cartButton(e), h('button', {
+          type: 'button', class: 'btn', disabled: !folder, title: folderBlocked,
+          onclick: async () => {
+            const result = await api.openLocation(folder.id);
+            if (!result.ok) setStatus(errText(result.error));
+          },
+        }, icon('folder'), t('open_folder'))),
         e.manual ? h('div', { class: 'hero-actions' }, h('button', { type: 'button', class: 'btn', onclick: () => openManual(e) }, icon('tag'), t('manual_edit'))) : null,
         h('div', { class: 'detail-editors' }, myTagsSection(e), persianNameSection(e)),
         qualitySection(e),
