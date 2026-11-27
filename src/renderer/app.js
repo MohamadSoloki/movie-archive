@@ -2303,17 +2303,8 @@
     $('set-price-season').value = s.priceSeason || '';
     backupNote('');
     paintCalc();
-    paintHidden();
     $('settings-dlg').showModal();
   });
-  // Titles the owner took out of the archive view (right-click → hide). Only the app's list: the folders were never touched.
-  async function paintHidden() {
-    const list = await api.getHidden();
-    $('hidden-list').replaceChildren(...list.map((x) => h('li', { class: 'loc' },
-      h('span', { class: 'where', dir: 'auto' }, x.title, ' ', h('span', { class: 'path' }, `${x.driveLabel} ${x.relPath}`)),
-      h('button', { type: 'button', class: 'btn', onclick: async () => { await api.unhide(x.id); await paintHidden(); await refresh(true); } }, t('hidden_restore')))));
-    $('hidden-none').hidden = list.length > 0;
-  }
   // The price calculator: tries the prices typed in the form (saved or not) on a number of movies, seasons and episodes.
   async function paintCalc() {
     const num = (id) => $(id).value;
