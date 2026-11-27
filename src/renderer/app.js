@@ -847,7 +847,7 @@
   const copyMsg = (text, bad = false) => { $('copy-msg').textContent = text; $('copy-msg').classList.toggle('bad', bad); };
 
   const money = (n) => `${new Intl.NumberFormat(state.lang === 'fa' ? 'fa-IR' : 'en-US').format(n)} ${t('currency')}`;
-  const dateOf = (ts, long) => new Intl.DateTimeFormat(state.lang === 'fa' ? 'fa-IR-u-ca-persian' : 'en-GB', long ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' }).format(ts);
+  const dateOf = (ts, long = false, numberingSystem) => new Intl.DateTimeFormat(state.lang === 'fa' ? 'fa-IR-u-ca-persian' : 'en-GB', { dateStyle: 'medium', timeStyle: long ? 'short' : undefined, numberingSystem }).format(ts);
 
   // The total size and the destination's free space, live while films are chosen, and the price when one is set.
   let capToken = 0;
@@ -922,25 +922,46 @@
   }
   $('copy-customer').addEventListener('input', updateDebt);
 
+  let planToken = 0;
   async function updateCopyPlan() {
+    clearTimeout(planTimer);
+    const token = ++planToken;
     updateCapacity();
     updateDelivered();
     const name = $('copy-name').value.trim();
+    const info = $('copy-info');
+    const skipped = $('copy-skipped');
     state.copyPlan = null;
-    $('copy-info').classList.remove('bad');
-    $('copy-skipped').replaceChildren();
-    if (!state.cart.size || !name || !state.copyDest) { $('copy-info').textContent = ''; renderCopy(); return; }
-    const plan = await api.planTransfer({ keys: [...state.cart.keys()], destDir: state.copyDest, name, picks: picksNow() });
-    if ($('copy-name').value.trim() !== name) return; // typing went on while the plan was computed
-    state.copyPlan = plan;
-    if (!plan.ok) {
-      $('copy-info').classList.add('bad');
-      $('copy-info').textContent = t(`copy_err_${plan.error}`, plan.error === 'no_space' ? { needed: size(plan.needed), free: size(plan.free) } : {});
-    } else {
-      $('copy-info').textContent = plan.jobs.length ? t('copy_summary', { n: plan.jobs.length, size: size(plan.bytes) }) : t('copy_err_nothing');
-      $('copy-skipped').replaceChildren(...plan.skipped.map((x) => h('li', { dir: 'auto' }, t('copy_skip', { title: x.title, reason: t(`copy_skip_${x.reason}`) }))));
+    info.classList.remove('bad');
+    skipped.replaceChildren();
+    skipped.parentElement.hidden = true;
+    skipped.parentElement.open = false;
+
+    if (!state.cart.size || !name || !state.copyDest) {
+      info.textContent = !state.cart.size ? '' : t(!name ? 'copy_enter_name' : 'copy_choose_dest');
+      renderCopyActions();
+      return;
     }
-    renderCopy();
+
+    info.textContent = t('copy_checking_plan');
+    renderCopyActions();
+    let plan;
+    try {
+      plan = await api.planTransfer({ keys: [...state.cart.keys()], destDir: state.copyDest, name, picks: picksNow() });
+    } catch {
+      plan = { ok: false, error: 'busy' };
+    }
+    if (token !== planToken) return;
+    state.copyPlan = plan;
+    info.classList.toggle('bad', !plan.ok || !plan.jobs.length);
+    if (!plan.ok) {
+      info.textContent = t(`copy_err_${plan.error}`, plan.error === 'no_space' ? { needed: size(plan.needed), free: size(plan.free) } : {});
+    } else {
+      info.textContent = plan.jobs.length ? t('copy_summary', { n: plan.jobs.length, size: size(plan.bytes) }) : t('copy_err_nothing');
+      skipped.replaceChildren(...plan.skipped.map((x) => h('li', { dir: 'auto' }, t('copy_skip', { title: x.title, reason: t(`copy_skip_${x.reason}`) }))));
+      skipped.parentElement.hidden = !plan.skipped.length;
+    }
+    renderCopyActions();
   }
 
   // the customer's choice of seasons / episodes, for the films that are in the list on screen
@@ -955,16 +976,38 @@
 
   function renderCopy() {
     renderListSelect();
-    $('copy-items').replaceChildren(...[...state.cart].map(([key, title]) => h('li', { class: state.delivered[key] ? 'dup' : '' },
-      h('span', { dir: 'auto' }, title, currentList()?.picks[key] ? h('small', { class: 'dup-note' }, ` · ${pickText(currentList().picks[key])}`) : null, state.delivered[key] ? h('small', { class: 'dup-note' }, ` · ${t('order_dup_item', { date: dateOf(state.delivered[key].created) })}`) : null),
-      h('button', { type: 'button', class: 'icon-btn x', 'aria-label': t('copy_item_remove', { title }), title: t('copy_item_remove', { title }),
-        onclick: () => { toggleCart(key, title); updateCopyPlan(); } }, icon('x')))));
+    const items = $('copy-items');
+    const focusedKey = items.contains(document.activeElement) ? document.activeElement.dataset.key : undefined;
+    const focusedIndex = focusedKey === undefined ? -1 : [...items.children].findIndex((row) => row.dataset.key === focusedKey);
+    const picks = currentList()?.picks ?? {};
+    items.replaceChildren(...[...state.cart].map(([key, title]) => {
+      const delivered = state.delivered[key];
+      const selection = pickText(picks[key]);
+      return h('li', { 'data-key': key },
+        h('div', { class: 'copy-item-text' },
+          h('strong', { dir: 'auto' }, title),
+          selection ? h('small', { dir: 'auto' }, selection) : null,
+          delivered ? h('small', { class: 'copy-duplicate', dir: 'auto' }, t('order_dup_item', { date: dateOf(delivered.created, false, 'latn') })) : null),
+        h('button', { type: 'button', class: 'icon-btn x', disabled: state.copying, 'data-key': key, 'aria-label': t('copy_item_remove', { title }), title: t('copy_item_remove', { title }),
+          onclick: () => { toggleCart(key, title); updateCopyPlan(); } }, icon('x')));
+    }));
+    if (focusedIndex >= 0 && !state.copying) {
+      const buttons = [...items.querySelectorAll('button')];
+      (buttons.find((button) => button.dataset.key === focusedKey) ?? buttons[Math.min(focusedIndex, buttons.length - 1)] ?? $('copy-list')).focus({ preventScroll: true });
+    }
+    $('copy-count').textContent = state.cart.size;
     $('copy-empty').hidden = state.cart.size > 0;
+    $('copy-x').disabled = state.copying;
+    $('copy-removable').inert = state.copying;
+    $('copy-name').disabled = $('copy-browse').disabled = state.copying;
+    for (const id of ['copy-customer', 'copy-phone', 'copy-note', 'copy-paid']) $(id).disabled = state.copying;
+    renderCopyActions();
+  }
+
+  function renderCopyActions() {
     $('copy-clear').disabled = state.copying || !state.cart.size;
     $('copy-go').textContent = t(state.copying ? 'copy_cancel' : 'copy_start');
     $('copy-go').disabled = !state.copying && !(state.copyPlan?.ok && state.copyPlan.jobs.length);
-    $('copy-name').disabled = $('copy-browse').disabled = state.copying;
-    for (const id of ['copy-customer', 'copy-phone', 'copy-note', 'copy-paid']) $(id).disabled = state.copying;
   }
 
   async function runCopy() {
@@ -1169,7 +1212,7 @@
       const report = state.reports[c.id];
       const off = state.copying;
       return h('li', { class: `done-item ${stateKey(c)}` },
-        h('div', { class: 'cal-main' },
+        h('div', { class: 'copy-done-heading' },
           h('strong', { dir: 'auto' }, c.name),
           h('span', { class: `tag st-${stateKey(c)}` }, t(`copies_state_${stateKey(c)}`)),
           h('span', { class: 'cal-when' }, t('copies_info', { n: c.files, size: size(c.bytes) }))),
@@ -1520,6 +1563,12 @@
   $('copy-name').addEventListener('input', () => {
     const l = currentList();
     if (l) { l.name = $('copy-name').value; saveLists(); renderListSelect(); }
+    ++planToken;
+    state.copyPlan = null;
+    $('copy-info').classList.remove('bad');
+    $('copy-info').textContent = state.cart.size ? t('copy_checking_plan') : '';
+    $('copy-skipped').parentElement.hidden = true;
+    renderCopyActions();
     clearTimeout(planTimer);
     planTimer = setTimeout(updateCopyPlan, 300);
   });
@@ -1536,7 +1585,11 @@
     if (p) chooseDest(p);
   });
   $('copy-go').addEventListener('click', runCopy);
-  $('copy-clear').addEventListener('click', () => { for (const key of [...state.cart.keys()]) toggleCart(key, ''); updateCopyPlan(); });
+  $('copy-clear').addEventListener('click', () => {
+    if (!window.confirm(t('copy_confirm_clear'))) return;
+    for (const key of [...state.cart.keys()]) toggleCart(key, '');
+    updateCopyPlan();
+  });
   $('folders-btn').addEventListener('click', async () => { await renderRoots(); $('folders-dlg').showModal(); });
   $('folders-x').addEventListener('click', () => $('folders-dlg').close());
   $('settings-x').addEventListener('click', () => $('settings-dlg').close());

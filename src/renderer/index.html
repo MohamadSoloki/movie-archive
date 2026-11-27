@@ -215,61 +215,104 @@
 
   <dialog id="copy-dlg" class="sheet" aria-labelledby="copy-title">
     <header class="sheet-head">
-      <h2 id="copy-title" data-i18n="copy_title"></h2>
+      <div class="copy-heading">
+        <span class="copy-heading-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Zm9 9-9 5-9-5m18 4-9 5-9-5"/></svg></span>
+        <h2 id="copy-title" data-i18n="copy_list"></h2>
+      </div>
       <button id="copy-x" type="button" class="icon-btn" data-i18n-label="close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </header>
     <div class="sheet-body">
-      <div class="field-row">
-        <select id="copy-list" data-i18n-label="copy_lists"></select>
-        <button id="copy-new" type="button" class="btn" data-i18n="copy_new_list"></button>
-        <button id="copy-del" type="button" class="btn" data-i18n="copy_delete_list"></button>
-      </div>
-      <ul id="copy-items" class="plain"></ul>
-      <p id="copy-empty" class="help" data-i18n="copy_empty"></p>
-      <div>
-        <label for="copy-name" data-i18n="copy_folder_name"></label>
-        <input id="copy-name" type="text" maxlength="100" dir="auto" autocomplete="off">
-      </div>
-      <div>
-        <label for="copy-customer" data-i18n="order_customer"></label>
-        <div class="field-row">
-          <input id="copy-customer" type="text" maxlength="80" dir="auto" list="customer-suggest" autocomplete="off" data-i18n-placeholder="order_customer_ph">
-          <input id="copy-phone" type="text" maxlength="30" dir="ltr" autocomplete="off" data-i18n-placeholder="order_phone_ph">
+      <div class="copy-layout">
+        <section class="copy-queue" aria-labelledby="copy-queue-title">
+          <div class="copy-section-head">
+            <h3 id="copy-queue-title" data-i18n="copy_selected"></h3>
+            <span id="copy-count" class="copy-count" aria-hidden="true">0</span>
+          </div>
+          <div class="copy-list-tools">
+            <select id="copy-list" dir="auto" data-i18n-label="copy_lists" autofocus></select>
+            <button id="copy-new" type="button" class="btn" data-i18n="copy_new_list"></button>
+            <button id="copy-del" type="button" class="btn ghost" data-i18n="copy_delete_list"></button>
+          </div>
+          <ul id="copy-items" class="plain" aria-labelledby="copy-queue-title"></ul>
+          <p id="copy-empty" class="copy-empty" data-i18n="copy_empty"></p>
+        </section>
+        <div class="copy-setup">
+          <section aria-labelledby="copy-destination-title">
+            <h3 id="copy-destination-title" data-i18n="copy_dest"></h3>
+            <div class="copy-field">
+              <label for="copy-name" data-i18n="copy_folder_name"></label>
+              <input id="copy-name" name="folder" type="text" maxlength="100" dir="auto" autocomplete="off">
+            </div>
+            <div class="copy-field">
+              <label for="copy-dest" data-i18n="copy_destination_folder"></label>
+              <div class="field-row">
+                <input id="copy-dest" name="destination" type="text" readonly dir="ltr" autocomplete="off" aria-describedby="copy-cap copy-eta" data-i18n-placeholder="copy_no_dest">
+                <button id="copy-browse" type="button" class="btn" data-i18n="browse"></button>
+              </div>
+            </div>
+            <div id="copy-removable" class="chips"></div>
+            <p id="copy-cap" class="help" role="status"></p>
+            <p id="copy-eta" class="help" role="status" hidden></p>
+          </section>
+
+          <section aria-labelledby="copy-customer-title">
+            <h3 id="copy-customer-title" data-i18n="order_customer"></h3>
+            <div class="copy-fields">
+              <div class="copy-field">
+                <label for="copy-customer" data-i18n="order_customer_ph"></label>
+                <input id="copy-customer" name="customer" type="text" maxlength="80" dir="auto" list="customer-suggest" autocomplete="off">
+              </div>
+              <div class="copy-field">
+                <label for="copy-phone" data-i18n="order_phone_ph"></label>
+                <input id="copy-phone" name="phone" type="tel" maxlength="30" dir="ltr" autocomplete="off">
+              </div>
+              <div class="copy-field">
+                <label for="copy-note" data-i18n="order_note_ph"></label>
+                <input id="copy-note" name="note" type="text" maxlength="200" dir="auto" autocomplete="off">
+              </div>
+              <div class="copy-field">
+                <label for="copy-paid" data-i18n="copy_paid_label"></label>
+                <input id="copy-paid" name="paid" type="text" inputmode="numeric" maxlength="14" dir="ltr" autocomplete="off" aria-describedby="copy-paid-hint">
+                <p id="copy-paid-hint" class="help" data-i18n="copy_paid_hint"></p>
+              </div>
+            </div>
+            <p id="copy-debt" class="help bad copy-warning" role="status" hidden></p>
+            <p id="copy-warn" class="help bad copy-warning" role="alert" hidden></p>
+          </section>
+
+          <div id="copy-price" role="status" hidden>
+            <ul id="copy-price-lines" class="plain price-lines"></ul>
+            <p id="copy-price-total" class="price"></p>
+          </div>
         </div>
-        <input id="copy-note" type="text" maxlength="200" dir="auto" autocomplete="off" data-i18n-placeholder="order_note_ph">
-        <input id="copy-paid" type="text" inputmode="numeric" maxlength="14" dir="ltr" autocomplete="off" data-i18n-placeholder="order_paid_ph">
-        <p id="copy-debt" class="help bad" role="status" hidden></p>
-        <p id="copy-warn" class="help bad" role="alert" hidden></p>
       </div>
-      <div>
-        <label for="copy-dest" data-i18n="copy_dest"></label>
-        <div class="field-row">
-          <input id="copy-dest" type="text" readonly dir="ltr" data-i18n-placeholder="copy_no_dest">
-          <button id="copy-browse" type="button" class="btn" data-i18n="browse"></button>
+
+      <section class="copy-history" aria-labelledby="copy-history-title">
+        <div class="copy-section-head">
+          <h3 id="copy-history-title" data-i18n="copies_title"></h3>
         </div>
-      </div>
-      <div id="copy-removable" class="chips"></div>
-      <p id="copy-info" class="help" role="status"></p>
-      <p id="copy-cap" class="help" role="status"></p>
-      <p id="copy-eta" class="help" role="status" hidden></p>
-      <div id="copy-price" role="status" hidden>
-        <ul id="copy-price-lines" class="plain price-lines"></ul>
-        <p id="copy-price-total" class="price"></p>
-      </div>
-      <ul id="copy-skipped" class="plain"></ul>
-      <progress id="copy-bar" max="100" value="0" hidden></progress>
-      <p id="copy-msg" role="status"></p>
-      <p id="copy-speed" class="help" role="status" hidden></p>
-      <div id="copy-after" class="row" hidden></div>
-      <section>
-        <h3 data-i18n="copies_title"></h3>
         <ul id="copy-done" class="plain"></ul>
-        <p id="copy-done-empty" class="help" data-i18n="copies_empty"></p>
+        <p id="copy-done-empty" class="copy-empty" data-i18n="copies_empty"></p>
       </section>
     </div>
-    <footer class="sheet-foot">
-      <button id="copy-clear" type="button" class="btn" data-i18n="copy_clear"></button>
-      <button id="copy-go" type="button" class="btn primary" data-i18n="copy_start"></button>
+    <footer class="sheet-foot copy-footer">
+      <div class="copy-operation">
+        <progress id="copy-bar" max="100" value="0" aria-labelledby="copy-title" hidden></progress>
+        <p id="copy-msg" role="status" dir="auto"></p>
+        <p id="copy-speed" class="help" role="status" hidden></p>
+        <div id="copy-after" class="row" hidden></div>
+      </div>
+      <details class="copy-skipped" hidden>
+        <summary data-i18n="copy_skipped_title"></summary>
+        <ul id="copy-skipped" class="plain"></ul>
+      </details>
+      <div class="copy-footer-row">
+        <p id="copy-info" class="help" role="status"></p>
+        <div class="copy-actions">
+          <button id="copy-clear" type="button" class="btn ghost" data-i18n="copy_clear"></button>
+          <button id="copy-go" type="button" class="btn primary" data-i18n="copy_start"></button>
+        </div>
+      </div>
     </footer>
   </dialog>
 
