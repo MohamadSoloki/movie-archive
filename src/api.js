@@ -17,6 +17,7 @@ const { forgetSeasons, getCache, putCache, cached } = require('./core/cache.js')
 const { createSearch } = require('./core/search.js');
 const { lightOf, badgesOf } = require('./core/library.js');
 const { createCatalogServer } = require('./core/catalog-server.js');
+const { createCatalogCode, rotationMinutes } = require('./core/catalog-code.js');
 const { catalogDetail } = require('./core/catalog-details.js');
 const { createTunnel } = require('./core/tunnel.js');
 const tags = require('./core/tags.js');
@@ -74,7 +75,7 @@ function catalogRow(e, lang) {
 // "The Batman!" and "the batman" are the same name
 const nameKey = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
-const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate', 'priceMovie', 'priceSeason', 'priceEpisode', 'shopName', 'phoneCatalog', 'phoneInternet', 'catalogPort'];
+const SETTING_KEYS = ['language', 'omdbKey', 'patterns', 'ignore', 'collections', 'translateEmail', 'autoTranslate', 'priceMovie', 'priceSeason', 'priceEpisode', 'shopName', 'phoneCatalog', 'phoneInternet', 'catalogPort', 'catalogCodeEnabled', 'catalogCodeMinutes'];
 const PRICE_KEYS = ['priceMovie', 'priceSeason', 'priceEpisode'];
 const RECENT_COPY_MS = 30 * 60 * 1000;
 
@@ -580,7 +581,12 @@ function createApi({
     const entry = search.find(key);
     return isPublicTitle(entry) ? entry : null;
   };
+  const catalogCode = createCatalogCode({
+    readSettings: () => ({ enabled: getSetting(db, 'catalogCodeEnabled') === true, minutes: getSetting(db, 'catalogCodeMinutes') }),
+    clock,
+  });
   const catalogServer = createCatalogServer({
+    checkWishCode: catalogCode.check,
     viaTunnel: () => tunnel.status().state === 'on',
     films: (lang) => {
       const list = publicTitles();
@@ -607,7 +613,7 @@ function createApi({
     known: (k) => { const e = findPublicTitle(k); return e ? { key: e.key, title: e.title, year: e.year } : null; },
     submit: (w) => saveWish(db, w, now(), WISH_LIMIT),
     unchangedReceipt: (w) => unchangedReceipt(db, w),
-    info: () => ({ prices: { movie: getSetting(db, 'priceMovie'), season: getSetting(db, 'priceSeason'), episode: getSetting(db, 'priceEpisode') }, shop: getSetting(db, 'shopName') }),
+    info: () => ({ prices: { movie: getSetting(db, 'priceMovie'), season: getSetting(db, 'priceSeason'), episode: getSetting(db, 'priceEpisode') }, shop: getSetting(db, 'shopName'), requiresCode: getSetting(db, 'catalogCodeEnabled') === true }),
     // only a film that has season folders answers; the page then offers the seasons and episodes to pick from
     seasons: async (k) => {
       if (!findPublicTitle(k)) return null;
@@ -652,10 +658,12 @@ function createApi({
         let v = partial[k];
         if (PRICE_KEYS.includes(k)) { v = Number(v); v = Number.isFinite(v) && v > 0 ? v : 0; }
         if (k === 'shopName') v = String(v ?? '').trim().slice(0, 80);
-        if (k === 'phoneCatalog' || k === 'phoneInternet') v = !!v;
+        if (k === 'phoneCatalog' || k === 'phoneInternet' || k === 'catalogCodeEnabled') v = !!v;
+        if (k === 'catalogCodeMinutes') v = rotationMinutes(v);
         if (k === 'catalogPort') { v = Number(v); v = Number.isInteger(v) && v >= 0 && v <= 65535 ? v : 8787; }
         setSetting(db, k, v);
       }
+      if ('catalogCodeEnabled' in partial || 'catalogCodeMinutes' in partial) catalogCode.current();
       search.invalidate();
     },
     getDrives,
@@ -1316,6 +1324,7 @@ function createApi({
     async getCatalogInfo() {
       return catalogInfo();
     },
+    getCatalogCode: catalogCode.current,
     async openCatalogPage() {
       if (!catalogServer.running || !catalogUrl) return { ok: false };
       await openExternal(catalogUrl);

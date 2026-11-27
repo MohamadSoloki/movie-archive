@@ -2310,6 +2310,29 @@
     await paintPhone(r.ok ? '' : t(`phone_err_${r.error}`));
   });
 
+  let catalogCodeTimer;
+  function syncCatalogCodeOptions() {
+    const enabled = $('set-catalog-code').checked;
+    $('catalog-code-options').hidden = !enabled;
+    $('set-catalog-code-minutes').disabled = !enabled;
+  }
+  async function refreshCatalogCode() {
+    if (!$('settings-dlg').open) return;
+    const current = await api.getCatalogCode();
+    if (!$('settings-dlg').open) return;
+    const output = $('catalog-code-number');
+    const value = current.enabled ? String(current.code) : '';
+    if (output.textContent !== value) output.textContent = value;
+    $('catalog-code-current').hidden = !current.enabled;
+    clearTimeout(catalogCodeTimer);
+    if (current.enabled) {
+      const delay = Math.max(50, Math.min(60_000, current.expiresAt - Date.now() + 50));
+      catalogCodeTimer = setTimeout(refreshCatalogCode, delay);
+    }
+  }
+  $('set-catalog-code').addEventListener('change', syncCatalogCodeOptions);
+  $('settings-dlg').addEventListener('close', () => clearTimeout(catalogCodeTimer));
+
   $('settings-btn').addEventListener('click', async () => {
     const s = await api.getSettings();
     paintPhone();
@@ -2321,9 +2344,14 @@
     $('set-price-episode').value = s.priceEpisode || '';
     $('set-price-movie').value = s.priceMovie || '';
     $('set-price-season').value = s.priceSeason || '';
+    $('set-catalog-code').checked = s.catalogCodeEnabled === true;
+    $('set-catalog-code-minutes').value = s.catalogCodeMinutes;
+    syncCatalogCodeOptions();
+    $('catalog-code-current').hidden = true;
     backupNote('');
     paintCalc();
     $('settings-dlg').showModal();
+    await refreshCatalogCode();
   });
   // The price calculator: tries the prices typed in the form (saved or not) on a number of movies, seasons and episodes.
   async function paintCalc() {
@@ -2350,6 +2378,8 @@
       priceEpisode: $('set-price-episode').value,
       priceMovie: $('set-price-movie').value,
       priceSeason: $('set-price-season').value,
+      catalogCodeEnabled: $('set-catalog-code').checked,
+      ...($('set-catalog-code').checked ? { catalogCodeMinutes: $('set-catalog-code-minutes').valueAsNumber } : {}),
     });
     $('settings-dlg').close();
     setStatus(t('saved'));

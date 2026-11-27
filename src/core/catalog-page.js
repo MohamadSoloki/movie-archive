@@ -12,6 +12,10 @@ const TEXT = {
     name: 'اسم شما', phone: 'شماره تماس (اختیاری)', note: 'توضیح (اختیاری)', submit: 'ارسال', close: 'بستن', remove: 'حذف از لیست',
     done: 'لیستت ثبت شد. شمارهٔ پیگیری:', updated: 'لیستت به‌روز شد. شمارهٔ پیگیری:', updateList: 'به‌روزرسانی لیست',
     saved: 'ثبت شده', receipt: 'شمارهٔ پیگیری',
+    shopCode: 'کد ارسال لیست', shopCodeHint: 'عدد 0 تا 100 را از متصدی بپرس و وارد کن.',
+    shopCodeRange: 'کد باید یک عدد از 0 تا 100 باشد.',
+    shopCodeInvalid: 'کد درست نیست یا عوض شده. کد فعلی را از متصدی بپرس.',
+    shopCodeLocked: 'تعداد تلاش‌ها زیاد شده. پس از عوض شدن کد دوباره امتحان کن.',
     sending: 'در حال ارسال…', undo: 'برگرداندن', clearedList: 'انتخاب‌ها پاک شدند.', removedTitle: 'عنوان از لیست برداشته شد.', skipToCatalog: 'رفتن به محتوای اصلی',
     fail: 'ارسال نشد. بعداً دوباره امتحان کن.', slow: 'چند بار پشت هم فرستادی. چند دقیقه بعد دوباره امتحان کن.',
     full: 'الان لیست جدید قبول نمی‌کنیم. به مغازه بگو.', none: 'چیزی پیدا نشد.', more: 'نمایش بیشتر', loadFail: 'کاتالوگ باز نشد. دوباره امتحان کن.', retry: 'تلاش دوباره',
@@ -200,6 +204,9 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
 .price { color: var(--accent); font-size: 0.85rem; white-space: nowrap; }
 .msg { color: var(--ok); font-weight: 600; margin: 0; }
 .msg.bad { color: var(--error); }
+#shopCode { max-inline-size: 9rem; font-variant-numeric: tabular-nums; }
+#shopCode[aria-invalid="true"] { border-color: var(--error); }
+#shopCodeHint { display: block; color: var(--muted); font-size: .85rem; }
 #open { display: block; max-width: 44rem; margin-inline: auto; }
 #dlg { max-height: 90dvh; border: 1px solid var(--line); }
 #seasonPicker { max-height: 90dvh; border: 1px solid var(--line); padding: 0; overflow: hidden; }
@@ -295,6 +302,11 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     <label>${x.name}<input id="name" maxlength="80" autocomplete="name" required></label>
     <label>${x.phone}<input id="phone" maxlength="30" inputmode="tel" dir="ltr" autocomplete="tel"></label>
     <label>${x.note}<textarea id="note" maxlength="200" rows="2"></textarea></label>
+    <label id="shopCodeField" hidden>
+      ${x.shopCode}
+      <input id="shopCode" name="shopCode" type="text" inputmode="numeric" dir="ltr" maxlength="3" autocomplete="off" aria-describedby="shopCodeHint" disabled>
+      <span id="shopCodeHint">${x.shopCodeHint}</span>
+    </label>
     <p class="msg" id="msg" role="status"></p>
     <button type="submit" id="submit" class="big">${x.submit}</button>
     <button type="button" id="clearAll" class="big quiet">${x.clearAll}</button>
@@ -564,9 +576,14 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
   $('genreToggle').onclick = function () { $('genres').hidden = !$('genres').hidden; updateGenreToggle(); };
   $('tariffToggle').onclick = function () { $('tariffDialog').showModal(); };
   $('closeTariff').onclick = function () { $('tariffDialog').close(); };
-  // prices are read once; without them the page shows no money at all
-  function loadPrices() {
+  function requireShopCode(required) {
+    $('shopCodeField').hidden = !required;
+    $('shopCode').disabled = !required;
+    if (!required) $('shopCode').value = '';
+  }
+  function loadShopInfo() {
     fetch('/api/info').then(function (r) { return r.json(); }).then(function (j) {
+      requireShopCode(j.requiresCode === true);
       P = { movie: +j.prices.movie || 0, season: +j.prices.season || 0, episode: +j.prices.episode || 0 };
       var rates = [[T.perMovie, P.movie], [T.perSeason, P.season], [T.perEpisode, P.episode]].filter(function (rate) { return rate[1] > 0; });
       $('tariffToggle').hidden = !rates.length;
@@ -849,7 +866,7 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     return block;
   }
   function load() {
-    loadPrices();
+    loadShopInfo();
     fetch('/api/films?lang=' + T.lang).then(function (r) { if (!r.ok) throw new Error('bad'); return r.json(); }).then(function (list) {
       films = list.map(function (f) {
         var cartoon = f.kd === 'animation' || f.kd === 'anime' ? 'کارتون انیمیشن' : '';
@@ -912,8 +929,17 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     $('msg').textContent = sending ? T.sending : wishId ? T.receipt + ' ' + formatNumber(wishId) : '';
     $('msg').className = 'msg';
   }
-  $('form').addEventListener('input', function () { syncSend(); showReference(); });
-  $('open').onclick = $('detailCart').onclick = function () { listBox(); showReference(); $('dlg').showModal(); };
+  $('form').addEventListener('input', function (event) {
+    if (event.target.id === 'shopCode') $('shopCode').removeAttribute('aria-invalid');
+    syncSend();
+    showReference();
+  });
+  $('open').onclick = $('detailCart').onclick = function () {
+    listBox();
+    showReference();
+    $('dlg').showModal();
+    loadShopInfo();
+  };
   $('close').onclick = function () { $('dlg').close(); };
   var clearedSelection = null;
   function dismissUndo() {
@@ -921,6 +947,8 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     $('undoClearRow').hidden = true;
   }
   $('dlg').addEventListener('close', function () {
+    $('shopCode').value = '';
+    $('shopCode').removeAttribute('aria-invalid');
     dismissUndo();
     if (activeDetail) renderTitle(activeDetail);
   });
@@ -944,10 +972,29 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     save(); render(); listBox();
     (restoredKey ? $('remove-list-' + restoredKey) : $('clearAll')).focus();
   };
+  function showShopCodeError(message, focus) {
+    requireShopCode(true);
+    $('msg').className = 'msg bad';
+    $('msg').textContent = message;
+    if (focus && $('dlg').open) {
+      $('shopCode').setAttribute('aria-invalid', 'true');
+      $('shopCode').focus();
+    }
+  }
   $('form').onsubmit = function (ev) {
     ev.preventDefault();
     var body = draft(), snapshot = signature(body);
     if (sending || (!body.keys.length && !wishId) || (wishId && snapshot === lastSent)) return;
+    var entered = $('shopCode').value.trim().replace(/[۰-۹٠-٩]/g, function (c) {
+      return String(c.charCodeAt(0) - (c >= '۰' ? 0x06f0 : 0x0660));
+    });
+    if (entered) {
+      if (!/^[0-9]{1,3}$/.test(entered) || Number(entered) > 100) {
+        showShopCodeError(T.shopCodeRange, true);
+        return;
+      }
+      body.code = Number(entered);
+    }
     dismissUndo();
     body.editKey = browserEditKey();
     sending = true;
@@ -960,6 +1007,8 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
     }).then(function (a) {
       sending = false;
       if (a[0] === 200 && a[1].ok && a[1].id) {
+        $('shopCode').value = '';
+        $('shopCode').removeAttribute('aria-invalid');
         var edited = wishId === a[1].id;
         wishId = a[1].id;
         store('wishId', String(wishId));
@@ -968,7 +1017,14 @@ li.row button { flex: none; min-width: 44px; min-height: 44px; border: 0; backgr
         listBox(); render();
         $('msg').className = 'msg'; $('msg').textContent = (edited ? T.updated : T.done) + ' ' + wishId + ' · ' + T.doneNote;
       } else {
-        $('msg').className = 'msg bad'; $('msg').textContent = a[0] === 429 ? T.slow : a[0] === 503 ? T.full : T.fail;
+        var error = a[1].error;
+        if (error === 'shop_code_required') showShopCodeError(T.shopCodeHint, true);
+        else if (error === 'shop_code_invalid') showShopCodeError(T.shopCodeInvalid, true);
+        else if (error === 'shop_code_locked') showShopCodeError(T.shopCodeLocked, false);
+        else {
+          $('msg').className = 'msg bad';
+          $('msg').textContent = a[0] === 429 ? T.slow : a[0] === 503 ? T.full : T.fail;
+        }
         syncSend();
       }
     }, function () { sending = false; $('msg').className = 'msg bad'; $('msg').textContent = T.fail; syncSend(); });

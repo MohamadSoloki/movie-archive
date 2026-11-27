@@ -600,6 +600,22 @@ body.selecting main { padding-block-end: 6rem; }
 /* the invoice shows only on paper */
 .print-area { display: none; }
 
+.catalog-code-settings {
+  min-inline-size: 0; margin: 0.9rem 0; padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line); border-radius: 0.8rem; background: var(--raised);
+}
+.catalog-code-settings legend { padding-inline: 0.35rem; font-weight: 600; }
+#settings-dlg .catalog-code-toggle { display: flex; align-items: center; gap: 0.6rem; margin: 0; }
+.catalog-code-toggle input { inline-size: 1.1rem; block-size: 1.1rem; accent-color: var(--accent); }
+#set-catalog-code-minutes { max-inline-size: 9rem; font-variant-numeric: tabular-nums; }
+.catalog-code-current {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.65rem;
+  margin-block-start: 0.6rem; padding-block-start: 0.6rem; border-block-start: 1px solid var(--line);
+}
+#catalog-code-number {
+  min-inline-size: 3rem; padding: 0.15rem 0.55rem; border-radius: 0.55rem;
+  background: var(--accent-soft); color: var(--accent); text-align: center; font-weight: 700; font-variant-numeric: tabular-nums;
+}
 .phone-link { min-inline-size: 0; overflow-wrap: anywhere; color: var(--accent); text-decoration: underline; text-underline-offset: 0.22em; }
 .phone-link:hover { color: var(--ink); }
 @media screen { .phone-box { display: flex; align-items: center; gap: 1rem; } .phone-box[hidden] { display: none; } .phone-box img { background: #fff; padding: 4px; border-radius: 8px; } }

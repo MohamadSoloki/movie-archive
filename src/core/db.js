@@ -1,5 +1,6 @@
 'use strict';
 const { DatabaseSync } = require('node:sqlite');
+const { DEFAULT_ROTATION_MINUTES } = require('./catalog-code.js');
 
 const DEFAULTS = {
   copySpeeds: {}, // bytes per second of the last copy, per destination drive (internal: used to guess the time of the next one)
@@ -16,6 +17,8 @@ const DEFAULTS = {
   shopName: '',
   phoneCatalog: false,
   catalogPort: 8787,
+  catalogCodeEnabled: true,
+  catalogCodeMinutes: DEFAULT_ROTATION_MINUTES,
 };
 
 const SCHEMA = `
