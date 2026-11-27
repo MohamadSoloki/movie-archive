@@ -2260,7 +2260,14 @@
     const info = await api.getCatalogInfo();
     $('phone-toggle').textContent = t(info.running ? 'phone_stop' : 'phone_start');
     $('phone-box').hidden = !info.running;
-    if (info.running) { $('phone-qr').src = info.qr; $('phone-url').textContent = info.url; }
+    const link = $('phone-url');
+    link.textContent = info.url ?? '';
+    if (info.running) {
+      $('phone-qr').src = info.qr;
+      link.href = info.url;
+    } else {
+      link.removeAttribute('href');
+    }
     $('phone-note').hidden = !note;
     $('phone-note').textContent = note;
     // reachable from the customer's own internet: only offered while the catalog is on
@@ -2274,6 +2281,19 @@
     $('internet-note').hidden = !(net.state === 'error' || net.state === 'starting');
     $('internet-note').textContent = net.state === 'error' ? t(`internet_err_${net.error}`) : t('internet_starting');
   }
+  async function openPhoneLink(event) {
+    event.preventDefault();
+    try {
+      if ((await api.openCatalogPage()).ok) return;
+    } catch {
+      // Report IPC or browser-launch errors in the catalog settings.
+    }
+    $('phone-note').textContent = t('phone_open_error');
+    $('phone-note').hidden = false;
+  }
+  $('phone-url').addEventListener('click', openPhoneLink);
+  $('phone-url').addEventListener('auxclick', (event) => { if (event.button === 1) openPhoneLink(event); });
+
   $('internet-toggle').addEventListener('click', async () => {
     const info = await api.getCatalogInfo();
     if (info.internet?.state === 'on') { await api.stopInternet(); await paintPhone(); return; }

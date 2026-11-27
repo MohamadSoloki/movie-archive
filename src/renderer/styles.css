@@ -599,6 +599,9 @@ body.selecting main { padding-block-end: 6rem; }
 
 /* the invoice shows only on paper */
 .print-area { display: none; }
+
+.phone-link { min-inline-size: 0; overflow-wrap: anywhere; color: var(--accent); text-decoration: underline; text-underline-offset: 0.22em; }
+.phone-link:hover { color: var(--ink); }
 @media screen { .phone-box { display: flex; align-items: center; gap: 1rem; } .phone-box[hidden] { display: none; } .phone-box img { background: #fff; padding: 4px; border-radius: 8px; } }
 @media print {
   html, body { background: #fff !important; color: #000 !important; display: block !important; height: auto !important; overflow: visible !important; }

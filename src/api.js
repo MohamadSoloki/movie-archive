@@ -1316,6 +1316,11 @@ function createApi({
     async getCatalogInfo() {
       return catalogInfo();
     },
+    async openCatalogPage() {
+      if (!catalogServer.running || !catalogUrl) return { ok: false };
+      await openExternal(catalogUrl);
+      return { ok: true };
+    },
     async startCatalog() {
       try {
         const { port } = await catalogServer.start(getSetting(db, 'catalogPort'));
