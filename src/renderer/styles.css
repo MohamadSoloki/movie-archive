@@ -488,7 +488,7 @@ dialog[open] { animation: pop 0.18s ease-out; }
 .copy-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; align-items: start; }
 #copy-dlg .copy-field label { margin: 0 0 0.3rem; color: var(--muted); font-size: 0.83rem; }
 #copy-dlg .copy-setup .help { margin: 0; overflow-wrap: anywhere; }
-#copy-dlg #copy-paid-hint { margin-block-start: 0.35rem; }
+.copy-note-field { grid-column: 1 / -1; }
 #copy-dest { flex: 1; min-inline-size: 0; }
 #copy-removable .chip { max-inline-size: 100%; height: auto; min-height: 1.95rem; padding-block: 0.25rem; white-space: normal; overflow-wrap: anywhere; text-align: start; }
 .copy-warning { padding: 0.55rem 0.65rem; border-inline-start: 2px solid currentColor; background: var(--surface); }

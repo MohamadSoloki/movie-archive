@@ -1000,7 +1000,7 @@
     $('copy-x').disabled = state.copying;
     $('copy-removable').inert = state.copying;
     $('copy-name').disabled = $('copy-browse').disabled = state.copying;
-    for (const id of ['copy-customer', 'copy-phone', 'copy-note', 'copy-paid']) $(id).disabled = state.copying;
+    for (const id of ['copy-customer', 'copy-phone', 'copy-note']) $(id).disabled = state.copying;
     renderCopyActions();
   }
 
@@ -1027,7 +1027,7 @@
     let r;
     try {
       r = await api.startTransfer({ keys: [...state.cart.keys()], destDir: state.copyDest, name: $('copy-name').value.trim(), picks: picksNow(),
-        customer: $('copy-customer').value.trim(), phone: $('copy-phone').value.trim(), note: $('copy-note').value.trim(), paid: $('copy-paid').value.trim() });
+        customer: $('copy-customer').value.trim(), phone: $('copy-phone').value.trim(), note: $('copy-note').value.trim() });
     } catch { r = { ok: false, error: 'busy' }; }
     state.copying = false;
     $('copy-bar').hidden = true;
@@ -1047,7 +1047,7 @@
       state.holdPrice = !!r.price;
       paintPrice(r.price);
       for (const key of [...state.cart.keys()]) toggleCart(key, '');
-      for (const id of ['copy-customer', 'copy-phone', 'copy-note', 'copy-paid']) $(id).value = ''; // the next customer starts empty
+      for (const id of ['copy-customer', 'copy-phone', 'copy-note']) $(id).value = ''; // the next customer starts empty
       if (currentList()) { currentList().customer = ''; currentList().phoneKeys = new Set(); saveLists(); }
     }
     refreshCustomers();
