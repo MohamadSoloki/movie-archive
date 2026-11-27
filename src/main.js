@@ -11,6 +11,20 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'poster', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
+// The portable launcher extracts the application to a temporary directory.
+const portableDir = app.isPackaged && process.platform === 'win32' && process.env.PORTABLE_EXECUTABLE_DIR;
+const portableDataDir = portableDir && path.join(portableDir, 'Movie Archive Data');
+if (portableDataDir) {
+  try {
+    fs.mkdirSync(portableDataDir, { recursive: true });
+    app.setPath('userData', portableDataDir);
+    app.setPath('sessionData', portableDataDir);
+  } catch (error) {
+    dialog.showErrorBox('Movie Archive', `Cannot open the portable data folder:\n${portableDataDir}\n\n${error.message}`);
+    app.exit(1);
+  }
+}
+
 // A second launch must not open a second window: it quits at once and the first window comes forward.
 const primary = app.requestSingleInstanceLock();
 if (!primary) app.quit();
@@ -29,7 +43,7 @@ app.whenReady().then(() => {
   const api = createApi({
     db: openDb(path.join(userData, 'archive.db')), userDataDir: userData,
     openPath: (p) => shell.openPath(p), openExternal: (u) => shell.openExternal(u),
-    updater: createUpdater({ isPackaged: app.isPackaged }), version: require('../package.json').version,
+    updater: createUpdater({ isPackaged: app.isPackaged && !portableDir }), version: require('../package.json').version,
   });
 
   api.initCatalog().catch(() => {}); // the phone catalog comes back when it was left on
