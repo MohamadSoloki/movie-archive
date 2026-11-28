@@ -675,9 +675,15 @@ body.selecting main { padding-block-end: 6rem; }
   .delivery-order .delivery-year-col { inline-size: 16%; }
   .delivery-order bdi { unicode-bidi: isolate; }
 }
-.delivery-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.55rem; }
-.delivery-actions input { flex: 1 1 13rem; min-inline-size: 0; }
-.delivery-actions .help { flex: 1 0 100%; margin: 0; }
+.delivery-actions {
+  min-inline-size: 0; border: 1px solid var(--line); border-radius: 0.75rem;
+  padding: 0.6rem 0.75rem 0.75rem; margin: 0.65rem 0 0; background: var(--raised);
+}
+.delivery-actions legend { font-weight: 600; padding-inline: 0.3rem; }
+.delivery-range { display: flex; flex-wrap: wrap; align-items: end; gap: 0.55rem; }
+.delivery-range label { display: grid; gap: 0.25rem; flex: 1 1 8rem; margin: 0; }
+.delivery-range input[aria-invalid="true"] { border-color: var(--red); }
+.delivery-actions .help { margin: 0.4rem 0 0; }
 .delivery-actions .help:empty { display: none; }
 #tabs { max-width: 100%; overflow-x: auto; }
 

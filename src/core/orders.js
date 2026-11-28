@@ -42,10 +42,13 @@ function recordOrder(db, { customer = '', phone = '', note = '', items, bytes = 
   return id;
 }
 
-function listOrders(db, { customer } = {}) {
-  const key = customer == null ? null : customerKey(customer);
-  const rows = key === null ? db.prepare('SELECT * FROM orders ORDER BY created DESC, id DESC').all()
-    : db.prepare('SELECT * FROM orders WHERE customer_key = ? ORDER BY created DESC, id DESC').all(key);
+function listOrders(db, { customer, from, before } = {}) {
+  const filters = [], values = [];
+  if (customer != null) { filters.push('customer_key = ?'); values.push(customerKey(customer)); }
+  if (Number.isFinite(from)) { filters.push('created >= ?'); values.push(from); }
+  if (Number.isFinite(before)) { filters.push('created < ?'); values.push(before); }
+  const where = filters.length ? ' WHERE ' + filters.join(' AND ') : '';
+  const rows = db.prepare(`SELECT * FROM orders${where} ORDER BY created DESC, id DESC`).all(...values);
   const items = db.prepare('SELECT ref, title, year, kind, detail FROM order_items WHERE order_id = ? ORDER BY rowid');
   return rows.map((r) => ({ id: r.id, customer: r.customer, phone: r.phone, note: r.note, created: r.created, bytes: r.bytes, price: r.price,
     paid: r.paid, due: dueOf(r),

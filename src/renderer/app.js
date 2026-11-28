@@ -1242,7 +1242,7 @@
             h('th', { scope: 'col' }, t('invoice_col_detail')))),
         h('tbody', {}, o.items.length ? o.items.map((item) => h('tr', {},
           h('td', {}, isolated(item.title)),
-          h('td', {}, isolated(item.year || missing)),
+          h('td', {}, item.kind === 'series' ? null : isolated(item.year || missing)),
           h('td', {}, isolated(item.detail || missing)),
         )) : h('tr', {}, h('td', { colspan: 3 }, missing)))));
     };
@@ -1259,7 +1259,7 @@
       [...days].map(([day, orders]) => h('section', { class: 'delivery-day' }, h('h2', {}, day), orders.map(orderTable))));
   }
 
-  async function saveDeliveryReport(button, status) {
+  async function saveDeliveryReport(button, status, range) {
     if (deliveryPdfBusy) return;
     deliveryPdfBusy = true;
     const printArea = $('print-area');
@@ -1268,8 +1268,11 @@
     status.textContent = t('delivery_pdf_busy');
     status.classList.remove('bad');
     try {
-      const rows = await api.getOrders();
-      if (!rows.length) { status.textContent = t('delivery_pdf_empty'); return; }
+      const rows = await api.getOrders(range);
+      if (!rows.length) {
+        status.textContent = t(range.from != null || range.before != null ? 'delivery_pdf_empty_range' : 'delivery_pdf_empty');
+        return;
+      }
       report = deliveryReport(rows, (await api.getSettings()).shopName);
       printArea.replaceChildren(report);
       await document.fonts.ready;
@@ -2338,9 +2341,40 @@
     // every copy made for a customer, newest first, with the films in it; the same list gives the invoice again
     async orders(body) {
       await refreshCustomers();
+      const dateField = (name) => h('input', {
+        type: 'text', name, dir: 'ltr', maxlength: 10, autocomplete: 'off', spellcheck: 'false',
+        placeholder: t('delivery_date_example'), 'aria-describedby': 'delivery-date-hint',
+        oninput: (event) => event.currentTarget.removeAttribute('aria-invalid'),
+      });
+      const from = dateField('from');
+      const to = dateField('to');
       const exportStatus = h('p', { class: 'help', role: 'status' });
-      const exportButton = h('button', { type: 'button', class: 'btn primary',
-        onclick: (event) => saveDeliveryReport(event.currentTarget, exportStatus) }, t('delivery_pdf'));
+      const exportButton = h('button', { type: 'submit', class: 'btn primary' }, t('delivery_pdf'));
+      const rejectDate = (field, message) => {
+        exportStatus.textContent = t(message);
+        exportStatus.classList.add('bad');
+        field.setAttribute('aria-invalid', 'true');
+        field.focus();
+      };
+      const printForm = h('form', { onsubmit: (event) => {
+        event.preventDefault();
+        if (deliveryPdfBusy) return;
+        from.removeAttribute('aria-invalid');
+        to.removeAttribute('aria-invalid');
+        const start = window.reportDates.parseDate(from.value, state.lang);
+        const end = window.reportDates.parseDate(to.value, state.lang);
+        if (start === null) { rejectDate(from, 'delivery_date_invalid'); return; }
+        if (end === null) { rejectDate(to, 'delivery_date_invalid'); return; }
+        if (start && end && start > end) { rejectDate(to, 'delivery_date_order'); return; }
+        // Ending dates are inclusive, including orders close to midnight.
+        if (end) end.setDate(end.getDate() + 1);
+        saveDeliveryReport(exportButton, exportStatus, { from: start?.getTime(), before: end?.getTime() });
+      } }, h('fieldset', { class: 'delivery-actions' },
+        h('legend', {}, t('delivery_range')),
+        h('div', { class: 'delivery-range' },
+          h('label', {}, t('delivery_from'), from), h('label', {}, t('delivery_to'), to), exportButton),
+        h('p', { class: 'help', id: 'delivery-date-hint' }, t('delivery_date_hint')),
+        exportStatus));
       const filter = h('input', { type: 'search', list: 'customer-suggest', dir: 'auto', autocomplete: 'off', placeholder: t('order_filter_ph'), 'aria-label': t('order_filter_ph') });
       const list = h('ul', { class: 'plain orders' });
       const paint = async () => {
@@ -2363,7 +2397,7 @@
       };
       filter.addEventListener('input', paint);
       await paint();
-      body.replaceChildren(h('div', { class: 'delivery-actions' }, filter, exportButton, exportStatus), list);
+      body.replaceChildren(filter, printForm, list);
     },
     // films customers asked for that the archive lacks; asking again counts up
     async requests(body) {
