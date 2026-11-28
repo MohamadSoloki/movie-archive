@@ -498,66 +498,169 @@
   // ---- a film typed in by hand (and the same form to edit it) ------------------
   const DEFAULT_GENRES = ['Action', 'Adventure', 'Animation', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy', 'History', 'Horror', 'Music', 'Mystery', 'Romance', 'Sci-Fi', 'Thriller', 'War', 'Western'];
   const VIDEO_EXT = ['mkv', 'mp4', 'avi', 'mov', 'wmv', 'm4v', 'ts', 'm2ts', 'mpg', 'mpeg', 'flv', 'webm', 'iso', 'vob'];
-  let manualEntry = null; // null = adding a new film, else the manual entry being edited
+  let manualEntry = null;
   let manualGenres = new Set();
+  let manualPosterUrl = null;
+  let manualRevision = 0;
+  let manualSaving = false;
+  const MANUAL_FIELDS = { title: 'title', year: 'year', runtime: 'runtime', country: 'country', director: 'director',
+    actors: 'actors', plot: 'plot', rating: 'rating', rated: 'rated', awards: 'awards', totalSeasons: 'seasons' };
+
   function paintManualGenres() {
-    const names = [...new Set([...DEFAULT_GENRES, ...manualGenres])];
-    $('m-genres').replaceChildren(...names.map((g) => h('button', {
+    $('m-genres').replaceChildren(...DEFAULT_GENRES.map((g) => h('button', {
       type: 'button', class: 'chip', 'aria-pressed': String(manualGenres.has(g)),
-      onclick: () => { if (manualGenres.has(g)) manualGenres.delete(g); else manualGenres.add(g); paintManualGenres(); },
+      onclick: (ev) => {
+        if (manualGenres.has(g)) manualGenres.delete(g); else manualGenres.add(g);
+        ev.currentTarget.setAttribute('aria-pressed', String(manualGenres.has(g)));
+      },
     }, genreName(g))));
   }
-  function openManual(entry = null) {
-    manualEntry = entry;
-    const known = new Set(entry?.genreList ?? []);
-    manualGenres = new Set([...known].filter((g) => DEFAULT_GENRES.includes(g)));
-    const set = (id, v) => { $(id).value = v ?? ''; };
-    $('manual-title').textContent = t(entry ? 'manual_edit' : 'manual_new');
-    set('m-file', ''); set('m-title', entry?.title); set('m-year', entry?.year); set('m-runtime', entry?.runtime); set('m-country', entry?.country);
-    set('m-director', entry?.director); set('m-actors', entry?.actors); set('m-plot', entry?.plot); set('m-poster', ''); set('m-file2', '');
-    set('m-genres-extra', [...known].filter((g) => !DEFAULT_GENRES.includes(g)).join(', '));
-    $('m-kind').value = entry?.kind === 'series' ? 'series' : 'movie';
-    $('m-file-label').hidden = !!entry;
-    $('m-file').closest('.field-row').hidden = !!entry;
-    $('m-newfile').hidden = !entry;
-    $('manual-msg').textContent = '';
+
+  function setManualGenres(genres) {
+    manualGenres = new Set(genres.filter((g) => DEFAULT_GENRES.includes(g)));
+    $('m-genres-extra').value = genres.filter((g) => !DEFAULT_GENRES.includes(g)).join(', ');
     paintManualGenres();
-    if (!$('manual-dlg').open) $('manual-dlg').showModal();
-    $('m-title').focus();
   }
+
+  function setManualKind(kind) {
+    const series = kind === 'series';
+    $('m-kind').value = series ? 'series' : 'movie';
+    $('m-seasons-field').hidden = !series;
+    $('m-seasons').disabled = !series;
+  }
+
+  function setManualLookupBusy(busy) {
+    $('m-link').readOnly = busy;
+    $('m-fetch').disabled = busy;
+    $('m-fetch').textContent = t(busy ? 'manual_online_loading' : 'manual_fetch');
+    $('m-fields').disabled = busy;
+    $('manual-save').disabled = busy;
+  }
+
+  function openManual(entry = null) {
+    ++manualRevision;
+    manualEntry = entry;
+    manualPosterUrl = null;
+    for (const [name, id] of Object.entries(MANUAL_FIELDS)) $('m-' + id).value = entry?.[name] ?? '';
+    for (const id of ['file', 'file2', 'poster', 'link']) $('m-' + id).value = '';
+    setManualKind(entry?.kind);
+    setManualGenres(entry?.genreList ?? []);
+    $('m-source').hidden = !!entry;
+    $('m-file').disabled = !!entry;
+    $('m-online').hidden = !!entry;
+    $('m-newfile').hidden = !entry;
+    $('m-online-poster-row').hidden = true;
+    $('m-online-poster').checked = false;
+    $('m-lookup-msg').replaceChildren();
+    $('m-lookup-msg').classList.remove('bad');
+    $('manual-msg').replaceChildren();
+    $('manual-title').textContent = t(entry ? 'manual_edit' : 'manual_new');
+    $('manual-save').textContent = t(entry ? 'manual_save' : 'manual_add_confirm');
+    setManualLookupBusy(false);
+    if (!$('manual-dlg').open) $('manual-dlg').showModal();
+    $(entry ? 'm-title' : 'm-file-pick').focus();
+  }
+
+  async function lookupManual() {
+    if ($('m-fetch').disabled) return;
+    const revision = manualRevision;
+    const msg = $('m-lookup-msg');
+    const link = $('m-link');
+    msg.classList.remove('bad');
+    if (!link.value.trim()) {
+      msg.classList.add('bad');
+      msg.textContent = t('manual_online_invalid_link');
+      link.focus();
+      return;
+    }
+    msg.replaceChildren();
+    setManualLookupBusy(true);
+    let result;
+    try { result = await api.lookupManualFilm(link.value.trim()); }
+    catch { result = { ok: false, error: 'network' }; }
+    if (revision !== manualRevision || !$('manual-dlg').open) return;
+    setManualLookupBusy(false);
+    if (!result.ok) {
+      msg.classList.add('bad');
+      msg.textContent = t(`manual_online_${result.error}`);
+      link.focus();
+      return;
+    }
+    for (const [name, id] of Object.entries(MANUAL_FIELDS)) {
+      if (result.fields[name] != null && result.fields[name] !== '') $('m-' + id).value = result.fields[name];
+    }
+    setManualKind(result.fields.type);
+    if (result.fields.genres) setManualGenres(result.fields.genres.split(', '));
+    manualPosterUrl = result.posterUrl;
+    $('m-online-poster-row').hidden = !manualPosterUrl;
+    $('m-online-poster').checked = !!manualPosterUrl;
+    msg.textContent = t('manual_online_ready');
+  }
+
   $('manual-btn').addEventListener('click', () => openManual());
   $('manual-x').addEventListener('click', () => $('manual-dlg').close());
   $('manual-cancel').addEventListener('click', () => $('manual-dlg').close());
-  const pickInto = (btn, input, name, extensions) => $(btn).addEventListener('click', async () => { const p = await api.pickOpenFile([{ name, extensions }]); if (p) $(input).value = p; });
+  $('manual-dlg').addEventListener('close', () => { ++manualRevision; });
+  $('manual-dlg').addEventListener('cancel', (event) => { if (manualSaving) event.preventDefault(); });
+  $('m-kind').addEventListener('change', (event) => setManualKind(event.target.value));
+  $('m-fetch').addEventListener('click', lookupManual);
+  $('m-link').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); lookupManual(); }
+  });
+  const pickInto = (btn, input, name, extensions) => $(btn).addEventListener('click', async () => {
+    const revision = manualRevision;
+    const file = await api.pickOpenFile([{ name, extensions }]);
+    if (file && revision === manualRevision && $('manual-dlg').open) $(input).value = file;
+  });
   pickInto('m-file-pick', 'm-file', 'Video', VIDEO_EXT);
   pickInto('m-file2-pick', 'm-file2', 'Video', VIDEO_EXT);
   pickInto('m-poster-pick', 'm-poster', 'Image', ['jpg', 'jpeg', 'png', 'webp']);
+  $('m-folder-pick').addEventListener('click', async () => {
+    const revision = manualRevision;
+    const folder = await api.pickFolder();
+    if (folder && revision === manualRevision && $('manual-dlg').open) $('m-file').value = folder;
+  });
+
+  function setManualSaving(busy) {
+    manualSaving = busy;
+    for (const id of ['manual-save', 'manual-x', 'manual-cancel', 'm-fields', 'm-fetch', 'm-file-pick', 'm-folder-pick', 'm-file2-pick']) $(id).disabled = busy;
+    for (const id of ['m-file', 'm-file2', 'm-link']) $(id).readOnly = busy;
+    $('manual-save').textContent = t(busy ? 'manual_saving' : manualEntry ? 'manual_save' : 'manual_add_confirm');
+  }
+
   $('manual-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
+    if ($('manual-save').disabled || manualSaving) return;
     const msg = $('manual-msg');
+    msg.replaceChildren();
     const extra = $('m-genres-extra').value.split(/[,،]/).map((x) => x.trim()).filter(Boolean);
     const info = {
-      title: $('m-title').value, year: $('m-year').value, kind: $('m-kind').value, genres: [...manualGenres, ...extra], plot: $('m-plot').value,
-      director: $('m-director').value, actors: $('m-actors').value, runtime: $('m-runtime').value, country: $('m-country').value, posterPath: $('m-poster').value.trim(),
+      ...Object.fromEntries(Object.entries(MANUAL_FIELDS).map(([name, id]) => [name, $('m-' + id).value])),
+      kind: $('m-kind').value, genres: [...manualGenres, ...extra], posterPath: $('m-poster').value.trim(),
     };
-    const fail = (r) => { msg.textContent = t(`manual_err_${r.error}`); };
-    let key;
-    if (manualEntry) {
-      const r = await api.updateManualFilm(manualEntry.key, info);
-      if (!r.ok) return fail(r);
-      const more = $('m-file2').value.trim();
-      if (more) { const p = await api.addManualPath(manualEntry.key, more); if (!p.ok) return fail(p); }
-      key = manualEntry.key;
-    } else {
-      const r = await api.addManualFilm({ ...info, filePath: $('m-file').value.trim() });
-      if (!r.ok) return fail(r);
-      key = r.key;
+    let key, result;
+    setManualSaving(true);
+    try {
+      if (manualEntry) {
+        key = manualEntry.key;
+        result = await api.updateManualFilm(key, info);
+        const more = $('m-file2').value.trim();
+        if (result.ok && more) result = await api.addManualPath(key, more);
+      } else {
+        result = await api.addManualFilm({ ...info, filePath: $('m-file').value.trim(), onlinePoster: $('m-online-poster').checked ? manualPosterUrl : null });
+        key = result.key;
+      }
+    } catch {
+      result = { ok: false, error: 'save_failed' };
+    } finally {
+      setManualSaving(false);
     }
+    if (!result.ok) { msg.textContent = t(`manual_err_${result.error}`); return; }
     $('manual-dlg').close();
     await resetView();
     state.selected = key;
     await renderDetail();
-    setStatus(t('manual_saved'));
+    setStatus(t(result.posterMissing ? 'manual_saved_no_poster' : 'manual_saved'));
   });
 
   function appendChunk() {
@@ -1547,7 +1650,7 @@
   $('filter-x').addEventListener('click', () => sheet.close());
   $('filter-show').addEventListener('click', () => sheet.close());
   $('filter-clear').addEventListener('click', clearFilters);
-  for (const dlg of document.querySelectorAll('dialog')) dlg.addEventListener('click', (ev) => { if (ev.target === dlg && !(dlg.id === 'copy-dlg' && state.copying)) dlg.close(); }); // the backdrop
+  for (const dlg of document.querySelectorAll('dialog')) dlg.addEventListener('click', (ev) => { if (ev.target === dlg && !(dlg.id === 'copy-dlg' && state.copying) && !(dlg.id === 'manual-dlg' && manualSaving)) dlg.close(); }); // the backdrop
 
   $('select-btn').addEventListener('click', () => setSelecting(!state.selecting));
   $('sel-done').addEventListener('click', () => setSelecting(false));

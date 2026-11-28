@@ -136,43 +136,101 @@
       <h2 id="manual-title"></h2>
       <button id="manual-x" type="button" class="icon-btn" data-i18n-label="close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </header>
-    <form id="manual-form" class="sheet-body">
-      <p class="help" data-i18n="manual_hint"></p>
-      <label for="m-file" id="m-file-label" data-i18n="manual_file"></label>
-      <div class="field-row"><input id="m-file" type="text" dir="ltr" autocomplete="off"><button id="m-file-pick" type="button" class="btn" data-i18n="browse"></button></div>
-      <label for="m-title" data-i18n="manual_title_field"></label>
-      <input id="m-title" type="text" maxlength="200" dir="auto" required>
-      <div class="price-fields">
-        <label for="m-year" data-i18n="manual_year"></label>
-        <input id="m-year" type="text" maxlength="9" dir="ltr" inputmode="numeric">
-        <label for="m-kind" data-i18n="manual_kind"></label>
-        <select id="m-kind"><option value="movie" data-i18n="manual_kind_movie"></option><option value="series" data-i18n="manual_kind_series"></option></select>
-        <label for="m-runtime" data-i18n="manual_runtime"></label>
-        <input id="m-runtime" type="text" maxlength="30" dir="auto">
-        <label for="m-country" data-i18n="manual_country"></label>
-        <input id="m-country" type="text" maxlength="120" dir="auto">
-        <label for="m-director" data-i18n="director"></label>
-        <input id="m-director" type="text" maxlength="200" dir="auto">
-        <label for="m-actors" data-i18n="actors"></label>
-        <input id="m-actors" type="text" maxlength="400" dir="auto">
+    <form id="manual-form" class="sheet-form">
+      <div class="sheet-body">
+        <section id="m-source" class="manual-section">
+          <label for="m-file" data-i18n="manual_file"></label>
+          <div class="field-row manual-path">
+            <input id="m-file" name="file" type="text" dir="ltr" autocomplete="off" required>
+            <button id="m-file-pick" type="button" class="btn" data-i18n="manual_choose_file"></button>
+            <button id="m-folder-pick" type="button" class="btn" data-i18n="manual_choose_folder"></button>
+          </div>
+        </section>
+        <section id="m-online" class="manual-section manual-online" aria-labelledby="m-online-title">
+          <h3 id="m-online-title" data-i18n="manual_online"></h3>
+          <label for="m-link" data-i18n="manual_imdb_link"></label>
+          <div class="field-row manual-path">
+            <input id="m-link" name="imdb" type="text" dir="ltr" inputmode="url" autocomplete="off" spellcheck="false" maxlength="350" aria-describedby="m-online-hint">
+            <button id="m-fetch" type="button" class="btn" data-i18n="manual_fetch"></button>
+          </div>
+          <p id="m-online-hint" class="help" data-i18n="manual_online_hint"></p>
+          <p id="m-lookup-msg" class="msg" role="status"></p>
+        </section>
+        <fieldset id="m-fields" class="manual-section manual-fields">
+          <legend data-i18n="manual_details"></legend>
+          <div class="manual-grid">
+            <div class="manual-wide">
+              <label for="m-title" data-i18n="manual_title_field"></label>
+              <input id="m-title" name="title" type="text" maxlength="200" dir="auto" required>
+            </div>
+            <div class="manual-field">
+              <label for="m-year" data-i18n="manual_year"></label>
+              <input id="m-year" name="year" type="text" maxlength="9" dir="ltr">
+            </div>
+            <div class="manual-field">
+              <label for="m-kind" data-i18n="manual_kind"></label>
+              <select id="m-kind" name="kind"><option value="movie" data-i18n="manual_kind_movie"></option><option value="series" data-i18n="manual_kind_series"></option></select>
+            </div>
+            <div class="manual-field">
+              <label for="m-runtime" data-i18n="manual_runtime"></label>
+              <input id="m-runtime" name="runtime" type="text" maxlength="30" dir="auto">
+            </div>
+            <div class="manual-field">
+              <label for="m-country" data-i18n="manual_country"></label>
+              <input id="m-country" name="country" type="text" maxlength="120" dir="auto">
+            </div>
+            <div class="manual-field">
+              <label for="m-director" data-i18n="director"></label>
+              <input id="m-director" name="director" type="text" maxlength="200" dir="auto">
+            </div>
+            <div class="manual-field">
+              <label for="m-actors" data-i18n="actors"></label>
+              <input id="m-actors" name="actors" type="text" maxlength="400" dir="auto">
+            </div>
+            <div class="manual-field">
+              <label for="m-rating" data-i18n="rating"></label>
+              <input id="m-rating" name="rating" type="text" maxlength="10" inputmode="decimal" dir="ltr">
+            </div>
+            <div class="manual-field">
+              <label for="m-rated" data-i18n="rated"></label>
+              <input id="m-rated" name="rated" type="text" maxlength="30" dir="ltr">
+            </div>
+            <div class="manual-field" id="m-seasons-field" hidden>
+              <label for="m-seasons" data-i18n="manual_seasons"></label>
+              <input id="m-seasons" name="seasons" type="text" maxlength="4" inputmode="numeric" dir="ltr" pattern="[0-9]{1,4}">
+            </div>
+            <div class="manual-wide">
+              <label for="m-awards" data-i18n="awards"></label>
+              <input id="m-awards" name="awards" type="text" maxlength="500" dir="auto">
+            </div>
+          </div>
+          <h3 id="m-genres-heading" data-i18n="genres"></h3>
+          <div id="m-genres" class="chips" role="group" aria-labelledby="m-genres-heading"></div>
+          <label for="m-genres-extra" data-i18n="manual_genres_extra"></label>
+          <input id="m-genres-extra" name="genres" type="text" maxlength="500" dir="auto">
+          <label for="m-plot" data-i18n="plot"></label>
+          <textarea id="m-plot" name="plot" rows="4" maxlength="4000" dir="auto"></textarea>
+          <label id="m-online-poster-row" class="manual-check" hidden>
+            <input id="m-online-poster" type="checkbox">
+            <span data-i18n="manual_online_poster"></span>
+          </label>
+          <label for="m-poster" data-i18n="manual_poster"></label>
+          <div class="field-row manual-path">
+            <input id="m-poster" name="poster" type="text" dir="ltr" autocomplete="off">
+            <button id="m-poster-pick" type="button" class="btn" data-i18n="browse"></button>
+          </div>
+        </fieldset>
+        <div id="m-newfile" class="manual-section" hidden>
+          <label for="m-file2" data-i18n="manual_newfile"></label>
+          <div class="field-row manual-path"><input id="m-file2" name="new-file" type="text" dir="ltr" autocomplete="off"><button id="m-file2-pick" type="button" class="btn" data-i18n="browse"></button></div>
+          <p class="help" data-i18n="manual_newfile_hint"></p>
+        </div>
       </div>
-      <h3 data-i18n="genres"></h3>
-      <div id="m-genres" class="chips" role="group"></div>
-      <input id="m-genres-extra" type="text" maxlength="120" dir="auto" data-i18n-placeholder="manual_genres_extra" aria-label="genres">
-      <label for="m-plot" data-i18n="plot"></label>
-      <textarea id="m-plot" rows="4" maxlength="4000" dir="auto"></textarea>
-      <label for="m-poster" data-i18n="manual_poster"></label>
-      <div class="field-row"><input id="m-poster" type="text" dir="ltr" autocomplete="off"><button id="m-poster-pick" type="button" class="btn" data-i18n="browse"></button></div>
-      <div id="m-newfile" hidden>
-        <label for="m-file2" data-i18n="manual_newfile"></label>
-        <div class="field-row"><input id="m-file2" type="text" dir="ltr" autocomplete="off"><button id="m-file2-pick" type="button" class="btn" data-i18n="browse"></button></div>
-        <p class="help" data-i18n="manual_newfile_hint"></p>
-      </div>
-      <p id="manual-msg" class="msg" role="alert"></p>
-      <div class="row">
-        <button type="submit" class="btn primary" data-i18n="manual_save"></button>
+      <footer class="sheet-foot">
+        <p id="manual-msg" role="status"></p>
         <button id="manual-cancel" type="button" class="btn" data-i18n="close"></button>
-      </div>
+        <button id="manual-save" type="submit" class="btn primary" data-i18n="manual_save"></button>
+      </footer>
     </form>
   </dialog>
   <dialog id="folders-dlg" class="sheet" aria-labelledby="folders-title">

@@ -16,7 +16,7 @@ const plain = (rows) => rows.map((r) => ({ ...r }));
 // the typed films carry their facts, their files' places and the picture (small, as base64), because a rescan cannot find them again
 function manualFilmsOf(db, postersDir) {
   const where = db.prepare('SELECT drive_serial AS driveSerial, rel_path AS relPath FROM locations WHERE title_id = ? ORDER BY id');
-  return db.prepare("SELECT id, title, year, type, plot, genres, director, actors, runtime, country, poster_file FROM titles WHERE source = 'manual' ORDER BY id").all().map((t) => {
+  return db.prepare("SELECT id, title, year, type, plot, genres, director, actors, runtime, country, rating, rated, awards, total_seasons, poster_file FROM titles WHERE source = 'manual' ORDER BY id").all().map((t) => {
     let poster = null;
     if (t.poster_file && postersDir) {
       try { poster = { ext: path.extname(t.poster_file).slice(1).toLowerCase(), data: fs.readFileSync(path.join(postersDir, path.basename(t.poster_file))).toString('base64') }; } catch { /* the picture is gone: the film still comes back */ }
@@ -75,13 +75,15 @@ function importData(db, data, { postersDir = null } = {}) {
     }
     // a typed film is added only when none of its files is already stored here (importing twice changes nothing)
     const IMAGE = new Set(['png', 'jpg', 'jpeg', 'webp']);
-    const addTitle = db.prepare(`INSERT INTO titles(source, title, year, type, plot, genres, director, actors, runtime, country) VALUES('manual',?,?,?,?,?,?,?,?,?)`);
+    const addTitle = db.prepare(`INSERT INTO titles(source, title, year, type, plot, genres, director, actors, runtime, country, rating, rated, awards, total_seasons) VALUES('manual',?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const addLoc = db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, parsed_year, title_id, status, pinned) VALUES(?,?,?,?,?,?, 'matched', 1)`);
     for (const f of arr(data.manualFilms)) {
       const places = arr(f?.locations).filter((l) => typeof l?.driveSerial === 'string' && typeof l.relPath === 'string');
       if (typeof f?.title !== 'string' || !f.title.trim() || !places.length || places.some((l) => find.get(l.driveSerial, l.relPath))) continue;
       const s = (v) => (typeof v === 'string' ? v : null);
-      const id = Number(addTitle.run(f.title.slice(0, 200), s(f.year), f.type === 'series' ? 'series' : 'movie', s(f.plot), s(f.genres), s(f.director), s(f.actors), s(f.runtime), s(f.country)).lastInsertRowid);
+      const seasons = Number.isInteger(f.total_seasons) && f.total_seasons > 0 ? f.total_seasons : null;
+      const id = Number(addTitle.run(f.title.slice(0, 200), s(f.year), f.type === 'series' ? 'series' : 'movie',
+        s(f.plot), s(f.genres), s(f.director), s(f.actors), s(f.runtime), s(f.country), s(f.rating), s(f.rated), s(f.awards), seasons).lastInsertRowid);
       for (const l of places) addLoc.run(l.driveSerial, l.relPath, path.basename(l.relPath), f.title, s(f.year), id);
       if (f.poster && postersDir && IMAGE.has(f.poster.ext) && typeof f.poster.data === 'string') {
         try {

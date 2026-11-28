@@ -7,6 +7,7 @@ const { listDrivesHere: defaultListDrives, refreshDrives, toDriveRel, listRemova
 const { scanFolder, VIDEO } = require('./core/scanner.js');
 const { syncScan } = require('./core/sync.js');
 const { createOmdb } = require('./core/omdb.js');
+const { extractImdbId } = require('./core/link.js');
 const { createJikan } = require('./core/jikan.js');
 const { savePoster } = require('./core/posters.js');
 const { runQueue } = require('./core/pipeline.js');
@@ -568,10 +569,19 @@ function createApi({
       return file;
     } catch { return null; }
   }
+  function manualPosterUrl(value) {
+    try {
+      const url = new URL(value);
+      const hosts = ['m.media-amazon.com', 'ia.media-imdb.com', 'images-na.ssl-images-amazon.com'];
+      return url.protocol === 'https:' && hosts.includes(url.host) && !url.username && !url.password ? url.href : null;
+    } catch { return null; }
+  }
   const manualFields = (f) => ({
     title: manualText(f.title, 200), year: manualText(f.year, 9) || null, type: f.kind === 'series' ? 'series' : 'movie',
     plot: manualText(f.plot, 4000) || null, genres: manualGenres(f.genres), director: manualText(f.director, 200) || null,
     actors: manualText(f.actors, 400) || null, runtime: manualText(f.runtime, 30) || null, country: manualText(f.country, 120) || null,
+    rating: manualText(f.rating, 10) || null, rated: manualText(f.rated, 30) || null, awards: manualText(f.awards, 500) || null,
+    totalSeasons: f.kind === 'series' && /^[0-9]{1,4}$/.test(String(f.totalSeasons)) && Number(f.totalSeasons) > 0 ? Number(f.totalSeasons) : null,
   });
 
   // ---- phone catalog: a read-only page on the shop network, customers send back the films they want ----
@@ -986,6 +996,21 @@ function createApi({
       search.invalidate();
       return { ok: true };
     },
+    async lookupManualFilm(link) {
+      const imdbId = extractImdbId(link);
+      if (!imdbId) return { ok: false, error: 'invalid_link' };
+      if (!key()) return { ok: false, error: 'bad_key' };
+      try {
+        const omdb = createOmdb({ apiKey: key(), fetch: (url) => fetch(url, { signal: AbortSignal.timeout(12_000) }) });
+        const info = await omdb.byId(imdbId);
+        if (!info.title) return { ok: false, error: 'not_found' };
+        if (info.type !== 'movie' && info.type !== 'series') return { ok: false, error: 'unsupported' };
+        const fields = manualFields({ ...info, kind: info.type });
+        return { ok: true, fields, posterUrl: manualPosterUrl(info.posterUrl) };
+      } catch (error) {
+        return { ok: false, error: ['not_found', 'bad_key', 'quota'].includes(error.kind) ? error.kind : 'network' };
+      }
+    },
     // A film the owner types in: facts + picture + the file. It is a verified entry (pinned), so no scan, queue or fix run touches it;
     // it changes only through updateManualFilm or an Online Info Fix link the owner gives.
     async addManualFilm(f) {
@@ -997,16 +1022,20 @@ function createApi({
       let titleId;
       db.exec('BEGIN');
       try {
-        titleId = Number(db.prepare(`INSERT INTO titles(source, title, year, type, plot, genres, director, actors, runtime, country)
-          VALUES('manual', ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(v.title, v.year, v.type, v.plot, v.genres, v.director, v.actors, v.runtime, v.country).lastInsertRowid);
+        titleId = Number(db.prepare(`INSERT INTO titles(source, title, year, type, plot, genres, director, actors, runtime, country, rating, rated, awards, total_seasons)
+          VALUES('manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+            v.title, v.year, v.type, v.plot, v.genres, v.director, v.actors, v.runtime, v.country, v.rating, v.rated, v.awards, v.totalSeasons).lastInsertRowid);
         db.prepare(`INSERT INTO locations(drive_serial, rel_path, folder_name, parsed_title, parsed_year, title_id, status, pinned)
           VALUES(?, ?, ?, ?, ?, ?, 'matched', 1)`).run(place.serial, place.relPath, place.name, v.title, v.year, titleId);
         db.exec('COMMIT');
       } catch (err) { db.exec('ROLLBACK'); throw err; }
-      const poster = manualPoster(titleId, f.posterPath);
+      const onlinePoster = !f.posterPath && manualPosterUrl(f.onlinePoster);
+      const poster = onlinePoster
+        ? await savePoster(onlinePoster, postersDir, `manual-${titleId}-${Date.now()}`, (url) => fetch(url, { redirect: 'error', signal: AbortSignal.timeout(12_000) }))
+        : manualPoster(titleId, f.posterPath);
       if (poster) db.prepare('UPDATE titles SET poster_file = ? WHERE id = ?').run(poster, titleId);
       search.invalidate();
-      return { ok: true, key: `t:${titleId}` };
+      return { ok: true, key: `t:${titleId}`, posterMissing: Boolean(onlinePoster && !poster) };
     },
     // only what the owner typed: the fields sent replace the old ones, the others stay
     async updateManualFilm(key, f) {
@@ -1017,8 +1046,8 @@ function createApi({
       if (row?.source !== 'manual') return { ok: false, error: 'not_manual' };
       const v = manualFields({ ...e, kind: e.kind, ...f, genres: f.genres ?? e.genres });
       if (!v.title) return { ok: false, error: 'no_title' };
-      db.prepare('UPDATE titles SET title = ?, year = ?, type = ?, plot = ?, genres = ?, director = ?, actors = ?, runtime = ?, country = ? WHERE id = ?')
-        .run(v.title, v.year, v.type, v.plot, v.genres, v.director, v.actors, v.runtime, v.country, e.titleId);
+      db.prepare('UPDATE titles SET title = ?, year = ?, type = ?, plot = ?, genres = ?, director = ?, actors = ?, runtime = ?, country = ?, rating = ?, rated = ?, awards = ?, total_seasons = ? WHERE id = ?')
+        .run(v.title, v.year, v.type, v.plot, v.genres, v.director, v.actors, v.runtime, v.country, v.rating, v.rated, v.awards, v.totalSeasons, e.titleId);
       db.prepare('UPDATE locations SET parsed_title = ?, parsed_year = ? WHERE title_id = ?').run(v.title, v.year, e.titleId);
       if (f.posterPath) {
         const poster = manualPoster(e.titleId, f.posterPath);
