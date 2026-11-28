@@ -83,6 +83,22 @@ app.whenReady().then(() => {
     // spellcheck off: it would load a dictionary into memory for a window with one search box
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, spellcheck: false },
   });
+  ipcMain.handle('report:save-delivery-pdf', async (event) => {
+    if (event.sender !== win.webContents || event.senderFrame?.parent !== null) return { status: 'error' };
+    try {
+      const data = await win.webContents.printToPDF({ pageSize: 'A4', preferCSSPageSize: true, printBackground: true });
+      const stamp = new Intl.DateTimeFormat('sv-SE').format(new Date());
+      const { canceled, filePath } = await dialog.showSaveDialog(win, {
+        defaultPath: path.join(app.getPath('documents'), `Delivery History - ${stamp}.pdf`),
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      });
+      if (canceled || !filePath) return { status: 'cancelled' };
+      await fs.promises.writeFile(filePath, data);
+      return { status: 'saved' };
+    } catch {
+      return { status: 'error' };
+    }
+  });
   win.setMenuBarVisibility(false);
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 });

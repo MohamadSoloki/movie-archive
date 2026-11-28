@@ -636,7 +636,49 @@ body.selecting main { padding-block-end: 6rem; }
   .catalog li { break-inside: avoid; padding: 0.04cm 0; }
   .catalog section { break-inside: auto; }
   .invoice .total { font-size: 15pt; font-weight: 700; }
+  html:has(.delivery-report), body:has(.delivery-report) { color-scheme: light !important; }
+  @page delivery-report {
+    size: A4;
+    margin: 14mm 14mm 16mm;
+    @bottom-center { content: counter(page) " / " counter(pages); direction: ltr; font: 9pt sans-serif; color: #475569; }
+  }
+  .delivery-report {
+    page: delivery-report; font-family: Vazirmatn, system-ui, sans-serif; font-size: 10pt;
+    color: #172437; line-height: 1.5; overflow-wrap: anywhere; print-color-adjust: exact;
+  }
+  .delivery-report h1 { font-size: 21pt; line-height: 1.25; margin: 0 0 2mm; }
+  .delivery-report .delivery-masthead { border-block-end: 2px solid #263d5b; padding-block-end: 3mm; margin-block-end: 4mm; }
+  .delivery-masthead p { font-size: 9pt; color: #475569; margin: 0.75mm 0; }
+  .delivery-shop { font-weight: 700; }
+  .delivery-totals {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2mm;
+    margin: 0 0 4mm; padding: 3mm; background: #edf2f8; border: 1px solid #cbd5e1;
+    break-inside: avoid; font-variant-numeric: tabular-nums;
+  }
+  .delivery-totals dt { color: #475569; font-size: 8.5pt; }
+  .delivery-totals dd { margin: 0; font-weight: 700; }
+  .delivery-day h2 {
+    font-size: 12pt; margin: 4mm 0 2mm; border-block-end: 1px solid #9aaac0;
+    padding-block-end: 1mm; break-after: avoid;
+  }
+  .delivery-order { margin: 0 0 3.5mm; }
+  .delivery-order h3 { font-size: 10.5pt; margin: 0 0 1mm; }
+  .delivery-order p { margin: 0.65mm 0; }
+  .delivery-order table { border-collapse: collapse; table-layout: fixed; inline-size: 100%; }
+  .delivery-order thead { display: table-header-group; }
+  .delivery-order th, .delivery-order td { text-align: start; padding: 1.4mm 1.8mm; vertical-align: top; border-bottom: 1px solid #d9e1eb; }
+  .delivery-order .delivery-order-title { background: #edf2f8; color: #172437; font-weight: 400; }
+  .delivery-order .delivery-order-title p { font-size: 9pt; color: #334155; }
+  .delivery-order .delivery-columns { background: #f4f6f9; font-size: 9pt; }
+  .delivery-order tr { break-inside: avoid; }
+  .delivery-order .delivery-title-col { inline-size: 48%; }
+  .delivery-order .delivery-year-col { inline-size: 16%; }
+  .delivery-order bdi { unicode-bidi: isolate; }
 }
+.delivery-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.55rem; }
+.delivery-actions input { flex: 1 1 13rem; min-inline-size: 0; }
+.delivery-actions .help { flex: 1 0 100%; margin: 0; }
+.delivery-actions .help:empty { display: none; }
 #tabs { max-width: 100%; overflow-x: auto; }
 
 .ctx-menu { position: fixed; z-index: 50; min-width: 13rem; padding: 0.3rem; display: grid; gap: 0.1rem; background: var(--raised); border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); }

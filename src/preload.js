@@ -10,6 +10,7 @@ const METHODS = [
 
 const api = Object.fromEntries(METHODS.map((m) => [m, (...args) => ipcRenderer.invoke(`api:${m}`, ...args)]));
 api.pickFolder = () => ipcRenderer.invoke('dialog:folder');
+api.saveDeliveryPdf = () => ipcRenderer.invoke('report:save-delivery-pdf');
 api.pickSaveFile = (name, filters) => ipcRenderer.invoke('dialog:save', name, filters);
 api.pickOpenFile = (filters) => ipcRenderer.invoke('dialog:open', filters);
 // the path of a file or folder dropped on the window

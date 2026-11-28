@@ -1176,11 +1176,14 @@
     $('copy-after').hidden = !buttons.length;
   }
 
-  // The invoice is built in #print-area, which only shows when printing (see the print rules in styles.css).
+  // All printable reports share the print surface, which is hidden on screen.
+  let deliveryPdfBusy = false;
   async function showInvoice(orderId) {
+    if (deliveryPdfBusy) return;
     const order = (await api.getOrders()).find((o) => o.id === orderId);
     if (!order) return;
     const shop = (await api.getSettings()).shopName;
+    if (deliveryPdfBusy) return;
     $('print-area').replaceChildren(h('article', { class: 'invoice', dir: state.lang === 'fa' ? 'rtl' : 'ltr' },
       h('header', {}, shop ? h('h1', { dir: 'auto' }, shop) : null, h('h2', {}, `${t('invoice_title')} ${order.id}`), h('p', {}, dateOf(order.created, true))),
       order.customer ? h('p', { dir: 'auto' }, `${t('order_customer')}: ${order.customer}${order.phone ? ` · ${order.phone}` : ''}`) : null,
@@ -1191,6 +1194,96 @@
       order.due > 0 ? h('p', {}, t('invoice_paid_due', { paid: money(order.paid), due: money(order.due) })) : null,
       order.note ? h('p', { dir: 'auto' }, order.note) : null));
     window.print();
+  }
+
+  function deliveryReport(rows, shop) {
+    const days = new Map();
+    const format = new Intl.NumberFormat(state.lang === 'fa' ? 'fa-IR' : 'en', { numberingSystem: 'latn' });
+    const number = (n) => format.format(n);
+    const amount = (n) => `${number(n)} ${t('currency')}`;
+    const isolated = (s) => h('bdi', {}, s);
+    const facts = (items) => items.map(([key, value], i) => [i ? ' · ' : '', t(key), ' ', isolated(value)]).flat();
+    const totals = { items: 0, price: 0, paid: 0, due: 0 };
+    let priced = false;
+    const missing = '—';
+    for (const row of rows) {
+      const day = dateOf(row.created, false, 'latn');
+      if (!days.has(day)) days.set(day, []);
+      days.get(day).push(row);
+      totals.items += row.items.length;
+      if (row.price != null) {
+        priced = true;
+        totals.price += row.price;
+        totals.paid += row.paid;
+        totals.due += row.due;
+      }
+    }
+    const first = dateOf(rows.at(-1).created, false, 'latn');
+    const last = dateOf(rows[0].created, false, 'latn');
+    const metric = (key, value) => h('div', {}, h('dt', {}, t(key)), h('dd', {}, isolated(value)));
+    const orderTable = (o) => {
+      const contact = [];
+      if (o.phone) contact.push(h('p', {}, t('delivery_report_phone'), ' ', h('bdi', { dir: 'ltr' }, o.phone)));
+      if (o.note) contact.push(h('p', {}, t('delivery_report_note'), ' ', isolated(o.note)));
+      const charges = o.price == null ? [] : [
+        ['sales_income', amount(o.price)], ['sales_paid', amount(o.paid)], ['delivery_report_due', amount(o.due)],
+      ];
+      const summary = [['delivery_report_items', number(o.items.length)], ['delivery_report_size', o.bytes ? size(o.bytes) : missing], ...charges];
+      return h('article', { class: 'delivery-order' }, h('table', {},
+        h('colgroup', {}, h('col', { class: 'delivery-title-col' }), h('col', { class: 'delivery-year-col' }), h('col')),
+        h('thead', {},
+          h('tr', {}, h('th', { colspan: 3, class: 'delivery-order-title' },
+            h('h3', {}, t('delivery_report_order', { id: o.id }), ' · ', isolated(o.customer || t('order_nameless'))),
+            h('p', {}, dateOf(o.created, true, 'latn'), ' · ', facts(summary)),
+            contact)),
+          h('tr', { class: 'delivery-columns' },
+            h('th', { scope: 'col' }, t('invoice_col_title')),
+            h('th', { scope: 'col' }, t('delivery_report_year')),
+            h('th', { scope: 'col' }, t('invoice_col_detail')))),
+        h('tbody', {}, o.items.length ? o.items.map((item) => h('tr', {},
+          h('td', {}, isolated(item.title)),
+          h('td', {}, isolated(item.year || missing)),
+          h('td', {}, isolated(item.detail || missing)),
+        )) : h('tr', {}, h('td', { colspan: 3 }, missing)))));
+    };
+    return h('article', { class: 'delivery-report', dir: state.lang === 'fa' ? 'rtl' : 'ltr' },
+      h('header', { class: 'delivery-masthead' },
+        h('h1', {}, t('delivery_report_title')),
+        shop ? h('p', { class: 'delivery-shop' }, isolated(shop)) : null,
+        h('p', {}, t('delivery_report_at'), ' ', isolated(dateOf(Date.now(), true, 'latn'))),
+        h('p', {}, t('delivery_report_period'), ' ', isolated(first), first === last ? null : [' – ', isolated(last)])),
+      h('dl', { class: 'delivery-totals' },
+        metric('sales_orders', number(rows.length)), metric('delivery_report_items', number(totals.items)),
+        metric('sales_income', priced ? amount(totals.price) : missing), metric('sales_paid', priced ? amount(totals.paid) : missing),
+        metric('delivery_report_due', priced ? amount(totals.due) : missing)),
+      [...days].map(([day, orders]) => h('section', { class: 'delivery-day' }, h('h2', {}, day), orders.map(orderTable))));
+  }
+
+  async function saveDeliveryReport(button, status) {
+    if (deliveryPdfBusy) return;
+    deliveryPdfBusy = true;
+    const printArea = $('print-area');
+    let report;
+    button.disabled = true;
+    status.textContent = t('delivery_pdf_busy');
+    status.classList.remove('bad');
+    try {
+      const rows = await api.getOrders();
+      if (!rows.length) { status.textContent = t('delivery_pdf_empty'); return; }
+      report = deliveryReport(rows, (await api.getSettings()).shopName);
+      printArea.replaceChildren(report);
+      await document.fonts.ready;
+      const result = await api.saveDeliveryPdf();
+      if (result.status === 'error') throw new Error('PDF export failed');
+      status.textContent = result.status === 'saved' ? t('delivery_pdf_saved') : '';
+    } catch {
+      status.classList.add('bad');
+      status.textContent = t('delivery_pdf_error');
+    } finally {
+      if (report?.parentNode === printArea) report.remove();
+      deliveryPdfBusy = false;
+      button.disabled = false;
+    }
   }
 
   // ---- named copy lists -----------------------------------------------------
@@ -2079,7 +2172,7 @@
       h('header', {}, shop ? h('h1', { dir: 'auto' }, shop) : null, h('h2', {}, t('cat_title')), h('p', {}, `${t('count', { n: total })} · ${dateOf(Date.now())}`)),
       ...groups.map((g) => h('section', {}, h('h3', {}, g.genre ? genreName(g.genre) : t('cat_other')), h('ul', {}, g.items.map(line)))));
     body.replaceChildren(h('p', { class: 'help' }, t('cat_help', { n: total })),
-      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: () => { $('print-area').replaceChildren(sheet()); window.print(); } }, t('cat_print'))),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: () => { if (!deliveryPdfBusy) { $('print-area').replaceChildren(sheet()); window.print(); } } }, t('cat_print'))),
       ...groups.map((g) => h('section', {}, h('h3', {}, `${g.genre ? genreName(g.genre) : t('cat_other')} (${g.items.length})`))));
   }
 
@@ -2245,6 +2338,9 @@
     // every copy made for a customer, newest first, with the films in it; the same list gives the invoice again
     async orders(body) {
       await refreshCustomers();
+      const exportStatus = h('p', { class: 'help', role: 'status' });
+      const exportButton = h('button', { type: 'button', class: 'btn primary',
+        onclick: (event) => saveDeliveryReport(event.currentTarget, exportStatus) }, t('delivery_pdf'));
       const filter = h('input', { type: 'search', list: 'customer-suggest', dir: 'auto', autocomplete: 'off', placeholder: t('order_filter_ph'), 'aria-label': t('order_filter_ph') });
       const list = h('ul', { class: 'plain orders' });
       const paint = async () => {
@@ -2267,7 +2363,7 @@
       };
       filter.addEventListener('input', paint);
       await paint();
-      body.replaceChildren(filter, list);
+      body.replaceChildren(h('div', { class: 'delivery-actions' }, filter, exportButton, exportStatus), list);
     },
     // films customers asked for that the archive lacks; asking again counts up
     async requests(body) {
